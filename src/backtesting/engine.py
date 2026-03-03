@@ -16,7 +16,7 @@ Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
 
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Optional
 
 from config.settings import (
@@ -43,6 +43,8 @@ def run_backtest(
     reserve_pct:        float   = DEFAULT_RESERVE_PCT,
     interval:           str     = DEFAULT_INTERVAL,
     days:               int     = DEFAULT_BACKTEST_DAYS,
+    start_date: Optional[date] = None,
+    end_date:   Optional[date] = None,
     stop_loss_pct:      Optional[float] = None,
     enable_recentering: bool    = False,
     recenter_threshold: float   = 0.05,
@@ -79,7 +81,7 @@ def run_backtest(
         Dictionary mit vollstaendigen Backtesting-Ergebnissen
     """
     # --- Preisdaten laden ---
-    df, from_cache = get_price_data(coin, days=days, interval=interval, force=force_reload)
+    df, from_cache = get_price_data(coin, days=days, interval=interval, force=force_reload, start_date=start_date, end_date=end_date)
     if df is None or df.empty:
         return _error_result("Keine Preisdaten verfuegbar.")
 
