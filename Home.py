@@ -33,8 +33,8 @@ st.markdown("""
 # ---------------------------------------------------------------------------
 
 st.sidebar.markdown("""
-    <div style="padding: 8px 0 16px 0;">
-        <div style="font-family: 'Space Mono', monospace; font-size: 1.1rem;
+    <div style="padding: 8px 0 10px 0;">
+        <div style="font-family: 'Space Mono', monospace; font-size: 1.35rem;
                     font-weight: 700; color: #E2E8F0; line-height: 1.3;">
             Grid Bot<br>Dashboard
         </div>
@@ -47,8 +47,9 @@ st.sidebar.markdown("""
 st.sidebar.divider()
 
 st.sidebar.markdown(
-    "<div style='font-size:0.7rem; color:#64748B; text-transform:uppercase; "
-    "letter-spacing:0.1em; margin-bottom:8px;'>Navigation</div>",
+    "<div style='font-size:1.15rem; color:#CBD5E1; font-family:Inter,-apple-system,sans-serif; "
+    "font-weight:600; text-transform:uppercase; letter-spacing:0.06em; "
+    "margin-bottom:4px;'>Navigation</div>",
     unsafe_allow_html=True
 )
 

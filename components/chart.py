@@ -75,7 +75,7 @@ LAYOUT_BASE = dict(
         spikedash    = "dot",
         spikemode    = "across",
     ),
-    hovermode    = "x unified",
+    hovermode    = "closest",
     hoverdistance = 50,
     spikedistance = 50,
 )
@@ -91,6 +91,8 @@ def plot_grid_chart(
     trade_log:   list,
     coin:        str        = "BTC",
     show_volume: bool       = True,
+    chart_type:  str        = "Candlestick",
+    show_grid_bg:   bool    = True,
     title:       str        = "",
 ) -> go.Figure:
     """
@@ -117,18 +119,38 @@ def plot_grid_chart(
         row_heights=heights,
     )
 
-    # Candlestick
-    fig.add_trace(go.Candlestick(
-        x     = df["timestamp"],
-        open  = df["open"],
-        high  = df["high"],
-        low   = df["low"],
-        close = df["close"],
-        name  = f"{coin}/USDT",
-        increasing = dict(line=dict(color="#34D399", width=1), fillcolor="#34D399"),
-        decreasing = dict(line=dict(color="#F87171", width=1), fillcolor="#F87171"),
-        showlegend = True,
-    ), row=1, col=1)
+    # Chart Typ
+    if chart_type == "Linie":
+        fig.add_trace(go.Scatter(
+            x          = df["timestamp"],
+            y          = df["close"],
+            mode       = "lines",
+            name       = f"{coin}/USDT",
+            line       = dict(color=COLORS["price"], width=1.5),
+            showlegend = True,
+        ), row=1, col=1)
+    else:
+        fig.add_trace(go.Candlestick(
+            x     = df["timestamp"],
+            open  = df["open"],
+            high  = df["high"],
+            low   = df["low"],
+            close = df["close"],
+            name  = f"{coin}/USDT",
+            increasing = dict(line=dict(color="#34D399", width=1), fillcolor="#34D399"),
+            decreasing = dict(line=dict(color="#F87171", width=1), fillcolor="#F87171"),
+            showlegend = True,
+        ), row=1, col=1)
+
+    # Grid-Bereich Hintergrund
+    if show_grid_bg and grid_lines:
+        fig.add_hrect(
+            y0          = min(grid_lines),
+            y1          = max(grid_lines),
+            fillcolor   = "rgba(59,130,246,0.06)",
+            line_width  = 0,
+            row=1, col=1,
+        )
 
     # Grid-Linien
     price_min = float(df["low"].min())

@@ -40,9 +40,9 @@ def _arrow(value: float) -> str:
 
 REGIME_COLORS = {
     "range":      ("#34D399", "Range-Markt ✓"),
-    "trend_up":   ("#FBBF24", "Aufwaertstrend ↑"),
-    "trend_down": ("#F87171", "Abwaertstrend ↓"),
-    "unknown":    ("#94A3B8", "Unbekannt ?"),
+    "trend_up":   ("#FBBF24", "Aufwärtstrend ↑"),
+    "trend_down": ("#F87171", "Abwärtstrend ↓"),
+    "unknown":    ("#94A3B8", "Unbekannt"),
 }
 
 
