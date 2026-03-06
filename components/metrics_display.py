@@ -42,7 +42,7 @@ REGIME_COLORS = {
     "range":      ("#34D399", "Range-Markt ✓"),
     "trend_up":   ("#FBBF24", "Aufwärtstrend ↑"),
     "trend_down": ("#F87171", "Abwärtstrend ↓"),
-    "unknown":    ("#94A3B8", "Unbekannt"),
+    "unknown":    ("#64748B", "Regime: Nicht erkannt"),
 }
 
 
@@ -70,7 +70,7 @@ def _metric_card(
             border: 1px solid rgba(255,255,255,0.08);
             border-radius: 8px;
             padding: 12px 14px;
-            height: 80px;
+            height: 95px;
         ">
             <div style="font-size:0.7rem; color:#64748B; text-transform:uppercase;
                         letter-spacing:0.08em; margin-bottom:4px;">{label}</div>
@@ -159,9 +159,42 @@ def render_metrics_row(metrics: dict, mode: str = "backtest") -> None:
         with cols2[3]:
             _metric_card(
                 "Profit-Faktor",
-                f"{pf:.2f}" if pf is not None else "–",
+                f"{pf:.2f}" if pf is not None else "∞",
                 delta = "gut ≥ 1.5",
-                color = "#34D399" if (pf or 0) >= 1.5 else "#FBBF24" if (pf or 0) >= 1 else "#F87171",
+                color = "#34D399" if pf is None or (pf or 0) >= 1.5 else "#FBBF24" if (pf or 0) >= 1 else "#F87171",
+            )
+
+    # Zeile 3: Kapital-Übersicht
+    if mode == "backtest":
+        st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+        cols3 = st.columns(4)
+        initial = metrics.get("initial_investment", None)
+        final   = metrics.get("final_value", None)
+        fees    = metrics.get("fees_paid", 0) or 0
+        profit  = metrics.get("roi_pct", 0) or 0
+        with cols3[0]:
+            _metric_card(
+                "Startkapital",
+                f"${initial:,.2f}" if initial else "–",
+                color="#E2E8F0",
+            )
+        with cols3[1]:
+            _metric_card(
+                "Endwert",
+                f"${final:,.2f}" if final else "–",
+                color=_color_roi(profit),
+            )
+        with cols3[2]:
+            _metric_card(
+                "Gezahlte Gebühren",
+                f"${fees:,.2f}",
+                color="#F87171" if fees > 0 else "#94A3B8",
+            )
+        with cols3[3]:
+            _metric_card(
+                "Gewinn / Verlust",
+                f"${((final or 0) - (initial or 0)):+,.2f}" if initial and final else "–",
+                color=_color_roi(profit),
             )
 
     # Outperformance Banner

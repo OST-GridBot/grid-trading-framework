@@ -19,9 +19,23 @@ from config.settings import DEFAULT_NUM_GRIDS, DEFAULT_GRID_MODE, DEFAULT_FEE_RA
 COINS = ["BTC","ETH","BNB","SOL","XRP","ADA","DOGE","AVAX","DOT","MATIC",
          "LINK","UNI","ATOM","LTC","BCH","NEAR","APT","OP","ARB","FTM"]
 
+LABEL_STYLE = (
+    "font-size:1.15rem; font-weight:600; color:#CBD5E1; "
+    "font-family:Inter,-apple-system,sans-serif; text-transform:uppercase; "
+    "letter-spacing:0.06em; margin-bottom:4px; margin-top:0px;"
+)
+CAPTION_STYLE = (
+    "font-size:0.75rem; color:#94A3B8; "
+    "font-family:Inter,-apple-system,sans-serif; margin-bottom:2px;"
+)
+
+def _label(text):
+    return f"<div style='{LABEL_STYLE}'>{text}</div>"
+
+def _caption(text):
+    return f"<div style='{CAPTION_STYLE}'>{text}</div>"
 
 def _calc_grid_profit(lower, upper, num_grids, grid_mode, fee_rate):
-    """Berechnet Gewinn pro Grid nach Fees."""
     try:
         if grid_mode == "arithmetic":
             step = (upper - lower) / num_grids
@@ -37,12 +51,9 @@ def _calc_grid_profit(lower, upper, num_grids, grid_mode, fee_rate):
 
 
 def show_backtesting():
-    """Rendert die komplette Backtesting-Seite."""
 
-    # CSS für seriöse Sidebar-Schriftart und einheitliche Abstände
     st.markdown("""
     <style>
-        /* Abstände nach Streamlit-Widgets auf 0 */
         [data-testid="stSidebar"] .stRadio,
         [data-testid="stSidebar"] .stSelectbox,
         [data-testid="stSidebar"] .stNumberInput,
@@ -65,22 +76,9 @@ def show_backtesting():
             padding-bottom: 0px !important;
             gap: 0px !important;
         }
-        /* Abstand zwischen Elementen einheitlich */
-        [data-testid="stSidebar"] .stRadio,
-        [data-testid="stSidebar"] .stSelectbox,
-        [data-testid="stSidebar"] .stNumberInput,
-        [data-testid="stSidebar"] .stSlider,
-        [data-testid="stSidebar"] .stDateInput {
-            margin-bottom: 0px !important;
-        }
-        /* Vertikaler Block-Abstand vereinheitlichen */
-        [data-testid="stSidebar"] .block-container > div {
-            gap: 0 !important;
-        }
     </style>
     """, unsafe_allow_html=True)
 
-    # Session State
     if "bt_result" not in st.session_state:
         st.session_state.bt_result = None
     if "bt_df" not in st.session_state:
@@ -90,13 +88,8 @@ def show_backtesting():
     # Sidebar
     # -----------------------------------------------------------------------
 
-    # Coin
-    st.sidebar.markdown(
-        "<div style='font-size:1.15rem; font-weight:600; color:#CBD5E1; "
-        "font-family:Inter,-apple-system,sans-serif; text-transform:uppercase; "
-        "letter-spacing:0.06em; margin-bottom:4px; margin-top:0px;'>Coin</div>",
-        unsafe_allow_html=True
-    )
+    # COIN
+    st.sidebar.markdown(_label("Coin"), unsafe_allow_html=True)
     coin_mode = st.sidebar.radio("", ["Aus Liste","Eigene Eingabe"],
                                  horizontal=True, key="bt_coin_mode")
     if coin_mode == "Aus Liste":
@@ -105,24 +98,16 @@ def show_backtesting():
         coin = st.sidebar.text_input("", value="BTC", label_visibility="collapsed",
                                      key="bt_coin_input").upper().strip()
 
+    # INTERVALL
     st.sidebar.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
-    st.sidebar.markdown(
-        "<div style='font-size:1.15rem; font-weight:600; color:#CBD5E1; "
-        "font-family:Inter,-apple-system,sans-serif; text-transform:uppercase; "
-        "letter-spacing:0.06em; margin-bottom:4px; margin-top:0px;'>Intervall</div>",
-        unsafe_allow_html=True
-    )
+    st.sidebar.markdown(_label("Intervall"), unsafe_allow_html=True)
     interval = st.sidebar.radio("", ["1m","5m","15m","1h","4h","1d"],
                                  index=3, horizontal=True, key="bt_interval",
                                  label_visibility="collapsed")
 
+    # ZEITRAUM
     st.sidebar.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
-    st.sidebar.markdown(
-        "<div style='font-size:1.15rem; font-weight:600; color:#CBD5E1; "
-        "font-family:Inter,-apple-system,sans-serif; text-transform:uppercase; "
-        "letter-spacing:0.06em; margin-bottom:4px; margin-top:0px;'>Zeitraum</div>",
-        unsafe_allow_html=True
-    )
+    st.sidebar.markdown(_label("Zeitraum"), unsafe_allow_html=True)
     col_d1, col_d2 = st.sidebar.columns(2)
     with col_d1:
         start_date = st.date_input("Von", value=date.today() - timedelta(days=30), key="bt_start")
@@ -133,25 +118,18 @@ def show_backtesting():
     days = max(1, (end_date - start_date).days)
     st.sidebar.caption(f"→ {days} Tage")
 
+    # STARTKAPITAL
     st.sidebar.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
-    st.sidebar.markdown(
-        "<div style='font-size:1.15rem; font-weight:600; color:#CBD5E1; "
-        "font-family:Inter,-apple-system,sans-serif; text-transform:uppercase; "
-        "letter-spacing:0.06em; margin-bottom:4px; margin-top:0px;'>Startkapital</div>",
-        unsafe_allow_html=True
-    )
+    st.sidebar.markdown(_label("Startkapital"), unsafe_allow_html=True)
     total_investment = float(st.sidebar.number_input(
         "", min_value=100.0, max_value=1_000_000.0,
         value=10_000.0, step=500.0, label_visibility="collapsed", key="bt_capital"
     ))
 
+    # GRID-PARAMETER
     st.sidebar.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
-    st.sidebar.markdown(
-        "<div style='font-size:1.15rem; font-weight:600; color:#CBD5E1; "
-        "font-family:Inter,-apple-system,sans-serif; text-transform:uppercase; "
-        "letter-spacing:0.06em; margin-bottom:4px; margin-top:0px;'>Grid-Parameter</div>",
-        unsafe_allow_html=True
-    )
+    st.sidebar.markdown(_label("Grid-Parameter"), unsafe_allow_html=True)
+
     current_price, lower_s, upper_s = None, None, None
     try:
         df_tmp, _ = get_price_data(coin, days=14, interval="1h")
@@ -165,64 +143,119 @@ def show_backtesting():
     upper_s  = upper_s  or current_price * 1.20
     step_val = float(round(current_price * 0.01, 2))
 
-    pct_lower = (current_price - lower_s) / current_price * 100
-    pct_upper = (upper_s - current_price) / current_price * 100
-    st.sidebar.caption(
-        f"Aktueller Preis: **{current_price:,.2f} USDT**"
-        f"Vorschlag: {lower_s:,.0f} (−{pct_lower:.0f}%) – {upper_s:,.0f} (+{pct_upper:.0f}%)"
+    pct_lower_default = round((current_price - lower_s) / current_price * 100, 1)
+    pct_upper_default = round((upper_s - current_price) / current_price * 100, 1)
+
+    # Aktueller Preis + Vorschlag – mit Zeilenumbruch
+    st.sidebar.markdown(
+        f"<div style='font-size:0.75rem; color:#94A3B8; margin-bottom:4px;'>"
+        f"Aktueller Preis: <b style='color:#E2E8F0'>{current_price:,.2f} USDT</b><br>"
+        f"Vorschlag: {lower_s:,.0f} (−{pct_lower_default:.0f}%) – {upper_s:,.0f} (+{pct_upper_default:.0f}%)"
+        f"</div>",
+        unsafe_allow_html=True
     )
 
-    c1, c2 = st.sidebar.columns(2)
-    with c1:
-        lower_price = st.number_input("Lower ($)", min_value=0.001,
-                                      value=float(round(lower_s, 2)),
-                                      step=step_val, key="bt_lower")
-    with c2:
-        upper_price = st.number_input("Upper ($)", min_value=0.001,
-                                      value=float(round(upper_s, 2)),
-                                      step=step_val, key="bt_upper")
+    pct_mode = st.sidebar.checkbox("Preisgrenzen prozentual setzen", value=False, key="bt_pct_mode")
 
-    num_grids = st.sidebar.slider("Anzahl Grids", 1, 100, DEFAULT_NUM_GRIDS, 1, key="bt_grids")
-    grid_mode = st.sidebar.radio("Grid-Modus", ["arithmetic","geometric"],
-                                  horizontal=True, key="bt_mode")
-    fee_rate  = st.sidebar.number_input("Gebührenrate (%)", 0.0, 1.0,
-                                        DEFAULT_FEE_RATE * 100, 0.01,
-                                        format="%.3f", key="bt_fee") / 100
+    if pct_mode:
+        c1, c2 = st.sidebar.columns(2)
+        with c1:
+            st.markdown(_caption("Untere Grenze (%)"), unsafe_allow_html=True)
+            pct_lower_val = st.number_input("", 1.0, 50.0, pct_lower_default, 1.0,
+                                            key="bt_pct_lower", label_visibility="collapsed")
+        with c2:
+            st.markdown(_caption("Obere Grenze (%)"), unsafe_allow_html=True)
+            pct_upper_val = st.number_input("", 1.0, 50.0, pct_upper_default, 1.0,
+                                            key="bt_pct_upper", label_visibility="collapsed")
+        lower_price = round(current_price * (1 - pct_lower_val / 100), 2)
+        upper_price = round(current_price * (1 + pct_upper_val / 100), 2)
+        st.sidebar.caption(f"→ {lower_price:,.2f} – {upper_price:,.2f} USDT")
+    else:
+        c1, c2 = st.sidebar.columns(2)
+        with c1:
+            st.markdown(_caption("Untere Grenze ($)"), unsafe_allow_html=True)
+            lower_price = st.number_input("", min_value=0.001,
+                                          value=float(round(lower_s, 2)),
+                                          step=step_val, key="bt_lower",
+                                          label_visibility="collapsed")
+        with c2:
+            st.markdown(_caption("Obere Grenze ($)"), unsafe_allow_html=True)
+            upper_price = st.number_input("", min_value=0.001,
+                                          value=float(round(upper_s, 2)),
+                                          step=step_val, key="bt_upper",
+                                          label_visibility="collapsed")
+
+    # Anzahl Grids
+    col_gl, col_gv = st.sidebar.columns([3, 1])
+    with col_gl:
+        st.markdown(_caption("Anzahl Grids"), unsafe_allow_html=True)
+    with col_gv:
+        st.markdown(
+            f"<div style='text-align:right; color:#3B82F6; font-weight:600;'>"
+            f"{st.session_state.get('bt_grids', DEFAULT_NUM_GRIDS)}</div>",
+            unsafe_allow_html=True
+        )
+    num_grids = st.sidebar.number_input(
+        "", min_value=1, max_value=100,
+        value=st.session_state.get("bt_grids", DEFAULT_NUM_GRIDS),
+        step=1, key="bt_grids", label_visibility="collapsed"
+    )
+
+    # Grid-Modus
+    st.sidebar.markdown(_caption("Grid-Modus"), unsafe_allow_html=True)
+    st.sidebar.caption("Arithmetic: gleiche Abstände | Geometric: gleiche % Abstände")
+    grid_mode = st.sidebar.radio("", ["arithmetic","geometric"],
+                                  horizontal=True, key="bt_mode",
+                                  label_visibility="collapsed")
+
+    # Gebührenrate
+    st.sidebar.markdown(_caption("Gebührenrate"), unsafe_allow_html=True)
+    fee_rate = st.sidebar.number_input(
+        "", 0.0, 1.0, DEFAULT_FEE_RATE * 100, 0.01,
+        format="%.3f", key="bt_fee", label_visibility="collapsed"
+    ) / 100
 
     # Gewinn pro Grid nach Fees
     gmin, gmax = _calc_grid_profit(lower_price, upper_price, num_grids, grid_mode, fee_rate)
     if gmin is not None and gmax is not None:
         color = "#34D399" if gmin > 0 else "#F87171"
         st.sidebar.markdown(
-            f'''<div style="margin-top:6px; padding:8px 10px;
+            f'''<div style="margin-top:6px; margin-bottom:4px; padding:8px 10px;
                 background:rgba(52,211,153,0.08); border-left:3px solid {color};
                 border-radius:4px; font-size:0.8rem;">
-                <span style="color:{color}; font-weight:600;">
-                    ▲ Gewinn pro Grid (nach Fees):</span><br>
+                <span style="color:{color}; font-weight:600;">▲ Gewinn pro Grid (nach Fees):</span><br>
                 <span style="color:{color};">{gmin:.2f}% – {gmax:.2f}%</span>
             </div>''',
             unsafe_allow_html=True
         )
 
-    # Erweiterte Einstellungen
-    with st.sidebar.expander("Erweiterte Einstellungen"):
-        reserve_pct = st.slider("Kapitalreserve (%)", 0.0, 20.0,
-                                 DEFAULT_RESERVE_PCT * 100, 1.0, key="bt_reserve") / 100
-        sl_enabled = st.checkbox("Stop-Loss aktivieren", value=False, key="bt_sl")
-        stop_loss_pct = None
-        if sl_enabled:
-            stop_loss_pct = st.slider("Stop-Loss (%)", 5.0, 50.0, 20.0, 5.0, key="bt_sl_pct") / 100
-        enable_recentering = st.checkbox("Recentering aktivieren", value=False, key="bt_recenter")
-        recenter_threshold = 0.05
-        if enable_recentering:
-            recenter_threshold = st.slider("Recentering-Schwelle (%)", 1.0, 20.0, 5.0, 1.0,
-                                            key="bt_recenter_thr") / 100
+    # ERWEITERTE EINSTELLUNGEN (als eigener Abschnitt, keine Box)
+    st.sidebar.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
+    st.sidebar.markdown(_label("Erweiterte Einstellungen"), unsafe_allow_html=True)
+    st.sidebar.markdown(_caption("Kapitalreserve (%)"), unsafe_allow_html=True)
+    reserve_pct = st.sidebar.slider("", 0.0, 20.0, DEFAULT_RESERVE_PCT * 100, 1.0,
+                         key="bt_reserve", label_visibility="collapsed") / 100
+    sl_enabled = st.sidebar.checkbox("Stop-Loss aktivieren", value=False, key="bt_sl")
+    stop_loss_pct = None
+    if sl_enabled:
+        st.sidebar.markdown(_caption("Stop-Loss (%)"), unsafe_allow_html=True)
+        stop_loss_pct = st.sidebar.slider("", 5.0, 50.0, 20.0, 5.0, key="bt_sl_pct",
+                                      label_visibility="collapsed") / 100
+    enable_recentering = st.sidebar.checkbox("Recentering aktivieren", value=False, key="bt_recenter")
+    recenter_threshold = 0.05
+    if enable_recentering:
+        st.sidebar.markdown(_caption("Recentering-Schwelle (%)"), unsafe_allow_html=True)
+        recenter_threshold = st.sidebar.slider("", 1.0, 20.0, 5.0, 1.0, key="bt_recenter_thr",
+                                            label_visibility="collapsed") / 100
 
-    # Chart Einstellungen
-    with st.sidebar.expander("Chart Einstellungen"):
-        chart_type   = st.selectbox("Chart Typ", ["Candlestick","Linie"], key="bt_chart_type")
-        show_volume  = st.checkbox("Volumen anzeigen",    value=True,  key="bt_show_vol")
-        show_grid_bg = st.checkbox("Gridbereich anzeigen", value=True, key="bt_show_grid")
+    # CHART EINSTELLUNGEN (ganz unten)
+    st.sidebar.divider()
+    st.sidebar.markdown(_label("Chart Einstellungen"), unsafe_allow_html=True)
+    st.sidebar.markdown(_caption("Chart Typ"), unsafe_allow_html=True)
+    chart_type   = st.sidebar.selectbox("", ["Candlestick","Linie"], key="bt_chart_type",
+                                    label_visibility="collapsed")
+    show_volume  = st.sidebar.checkbox("Volumen anzeigen",     value=True, key="bt_show_vol")
+    show_grid_bg = st.sidebar.checkbox("Gridbereich anzeigen", value=True, key="bt_show_grid")
 
     # -----------------------------------------------------------------------
     # Header
@@ -237,7 +270,7 @@ def show_backtesting():
 
     st.divider()
 
-    # Preisdaten immer laden
+    # Preisdaten laden
     with st.spinner(f"Lade {coin}/USDT Preisdaten..."):
         df_chart, _ = get_price_data(coin, interval=interval,
                                      start_date=start_date, end_date=end_date)
@@ -293,17 +326,19 @@ def show_backtesting():
             st.markdown("<div style='margin-bottom:12px'></div>", unsafe_allow_html=True)
 
         metrics_dict = {
-            "roi_pct":        result.get("profit_pct", 0),
-            "sharpe":         result.get("sharpe_ratio", 0),
-            "max_dd_pct":     result.get("max_drawdown_pct", 0),
-            "num_trades":     result.get("num_trades", 0),
-            "bh_roi_pct":     result.get("price_change_pct", 0),
-            "outperformance": (result.get("profit_pct") or 0) - (result.get("price_change_pct") or 0),
-            "cagr_pct":       result.get("cagr", 0),
-            "calmar":         result.get("calmar_ratio", 0),
-            "win_rate":       result.get("win_rate", 0),
-            "profit_factor":  result.get("profit_factor", 0),
-            "fees_paid":      result.get("fees_paid", 0),
+            "roi_pct":            result.get("profit_pct", 0),
+            "sharpe":             result.get("sharpe_ratio", 0),
+            "max_dd_pct":         result.get("max_drawdown_pct", 0),
+            "num_trades":         result.get("num_trades", 0),
+            "bh_roi_pct":         result.get("price_change_pct", 0),
+            "outperformance":     (result.get("profit_pct") or 0) - (result.get("price_change_pct") or 0),
+            "cagr_pct":           result.get("cagr", 0),
+            "calmar":             result.get("calmar_ratio", 0),
+            "win_rate":           result.get("win_rate", 0),
+            "profit_factor":      result.get("profit_factor", 0),
+            "fees_paid":          result.get("fees_paid", 0),
+            "initial_investment": result.get("initial_investment", total_investment),
+            "final_value":        result.get("final_value", 0),
         }
         render_metrics_row(metrics_dict, mode="backtest")
         st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
@@ -317,14 +352,14 @@ def show_backtesting():
     with tab1:
         if df is not None and not df.empty:
             fig = plot_grid_chart(
-                df          = df,
-                grid_lines  = grid_lines,
-                trade_log   = trade_log,
-                coin        = coin,
-                title       = f"{coin}/USDT · {interval} · {start_date} – {end_date}",
-                show_volume = show_volume,
-                show_grid_bg= show_grid_bg,
-                chart_type  = chart_type,
+                df           = df,
+                grid_lines   = grid_lines,
+                trade_log    = trade_log,
+                coin         = coin,
+                title        = f"{coin}/USDT · {interval} · {start_date} – {end_date}",
+                show_volume  = show_volume,
+                show_grid_bg = show_grid_bg,
+                chart_type   = chart_type,
             )
             st.plotly_chart(fig, use_container_width=True)
         else:
