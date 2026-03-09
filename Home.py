@@ -60,6 +60,10 @@ PAGES = {
     "🔴  Live Trading":   "live_trading",
 }
 
+if "nav_redirect" in st.session_state:
+    redirect = st.session_state.pop("nav_redirect")
+    st.session_state["navigation"] = redirect
+
 selected = st.sidebar.radio(
     "",
     list(PAGES.keys()),

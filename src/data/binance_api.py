@@ -219,10 +219,12 @@ def validate_symbol(coin: str) -> tuple:
         if "code" in data:
             return False, f"Symbol '{symbol}' nicht auf Binance gefunden."
 
-        status = data.get("status", "")
+        symbols_list = data.get("symbols", [])
+        if not symbols_list:
+            return False, f"Symbol '{symbol}' nicht auf Binance gefunden."
+        status = symbols_list[0].get("status", "")
         if status != "TRADING":
             return False, f"Symbol '{symbol}' nicht aktiv (Status: {status})."
-
         return True, symbol
 
     except Exception as e:

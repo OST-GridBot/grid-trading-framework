@@ -51,6 +51,7 @@ LAYOUT_BASE = dict(
         spikethickness = 1,
         spikedash      = "dot",
         spikemode      = "across",
+        spikesnap      = "cursor",
     ),
     yaxis = dict(
         gridcolor      = COLORS["grid_color"],
@@ -63,10 +64,11 @@ LAYOUT_BASE = dict(
         spikethickness = 1,
         spikedash      = "dot",
         spikemode      = "across",
+        spikesnap      = "cursor",
     ),
-    hovermode     = "closest",
-    hoverdistance = 50,
-    spikedistance = 50,
+    hovermode     = "x",
+    hoverdistance = 100,
+    spikedistance = 100,
 )
 
 
