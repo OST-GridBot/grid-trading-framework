@@ -152,6 +152,7 @@ def run_backtest(
         "profit_factor":       metrics["profit_factor"],
         "win_rate":            metrics["win_rate"],
         "avg_profit_per_trade":metrics["avg_profit_per_trade"],
+        "calmar_ratio":        metrics["calmar_ratio"],
         # Risiko
         "max_drawdown_pct":    dd.max_drawdown_pct,
         "max_drawdown_usdt":   dd.max_drawdown_usdt,
@@ -218,12 +219,19 @@ def calculate_metrics(
     profits = [t["profit"] for t in sell_trades]
     avg_profit = round(np.mean(profits), 4) if profits else 0.0
 
+    # Calmar Ratio: CAGR / Max Drawdown
+    from src.strategy.risk import calculate_drawdown
+    from src.backtesting.metrics import calculate_calmar_ratio
+    dd     = calculate_drawdown(sim.get("daily_values", {}))
+    calmar = calculate_calmar_ratio(cagr, dd.max_drawdown_pct)
+
     return {
         "cagr":                 cagr,
         "sharpe_ratio":         sharpe,
         "profit_factor":        profit_factor,
         "win_rate":             win_rate,
         "avg_profit_per_trade": avg_profit,
+        "calmar_ratio":         calmar,
     }
 
 

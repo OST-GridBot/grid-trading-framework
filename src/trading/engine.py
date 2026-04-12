@@ -115,15 +115,6 @@ class TradingEngine:
             enable_recentering = self.config.enable_recentering,
         )
 
-        # FIX 3: Initialer Trade-Timestamp auf jetzt (UTC) setzen
-        if self.bot.trade_log:
-            t = self.bot.trade_log[0]
-            self.broker.execute_buy(
-                grid_price  = t["price"],
-                amount_usdt = t["amount"] * t["price"],
-                timestamp   = _now_utc().isoformat(),
-            )
-
         self.state = TradingState(
             config        = asdict(self.config),
             mode          = self.config.mode,

@@ -325,13 +325,19 @@ def render_trade_log(trade_log: list, max_rows: int = 50) -> None:
         st.info("Noch keine Trades.")
         return
 
+    from src.utils.timezone import utc_to_zurich
+
     rows = []
     for t in trade_log[-max_rows:]:
         trade_type = t.get("type", "")
         is_sell    = "SELL" in trade_type.upper()
         profit     = t.get("profit", 0) or 0
+        try:
+            ts_str = utc_to_zurich(t.get("timestamp", "")).strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            ts_str = str(t.get("timestamp", ""))[:16]
         rows.append({
-            "Zeit":    str(t.get("timestamp", ""))[:16],
+            "Zeit":    ts_str,
             "Typ":     trade_type,
             "Preis":   f"{t.get('price', 0):,.2f}",
             "Menge":   f"{t.get('amount', 0):.6f}",

@@ -351,10 +351,23 @@ def show_backtesting():
 
     with tab1:
         if df is not None and not df.empty:
+            # Timestamps UTC→MEZ konvertieren fuer Anzeige
+            from src.utils.timezone import convert_df_timestamps
+            df_display = convert_df_timestamps(df)
+            # Trade-Log Timestamps ebenfalls konvertieren
+            from src.utils.timezone import utc_to_zurich
+            trade_log_display = []
+            for t in trade_log:
+                t2 = dict(t)
+                try:
+                    t2["timestamp"] = utc_to_zurich(t2["timestamp"])
+                except Exception:
+                    pass
+                trade_log_display.append(t2)
             fig = plot_grid_chart(
-                df           = df,
+                df           = df_display,
                 grid_lines   = grid_lines,
-                trade_log    = trade_log,
+                trade_log    = trade_log_display,
                 coin         = coin,
                 title        = f"{coin}/USDT · {interval} · {start_date} – {end_date}",
                 show_volume  = show_volume,

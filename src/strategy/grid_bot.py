@@ -170,7 +170,6 @@ class GridBot:
         self.trade_log:    List[dict]        = []
         self.daily_values: Dict[str, float]  = {}
         self.grids:        Dict[float, GridState] = {}
-        self.initial_coin: float = 0.0
         self.recentering_count: int = 0
         self.stop_loss_triggered: bool = False
 
@@ -191,71 +190,32 @@ class GridBot:
         initial_price:    Optional[float],
     ) -> None:
         """
-        Initialisiert alle Grid-Levels und kauft initial Coins.
+        Initialisiert alle Grid-Levels.
 
-        Logik:
-            Der Anteil des Kapitals der in Coins investiert wird,
-            entspricht dem Anteil der Grids OBERHALB des Startpreises.
-            Dadurch ist das Portfolio von Anfang an korrekt ausbalanciert.
+        Bot startet ausschliesslich mit USDT. Kein initialer Coin-Kauf.
+        Grids unterhalb initial_price sind Buy-Grids.
+        Grids oberhalb initial_price sind Sell-Grids.
         """
         if initial_price is None:
             initial_price = self.grid_lines[len(self.grid_lines) // 2]
 
-        # Effektives Kapital (abzueglich Reserve)
-        effective_investment = total_investment * (1 - self.reserve_pct)
-        base_amount_usdt     = effective_investment / (self.num_grids + 1)
+        # Effektives Kapital gleichmaessig auf alle Grids verteilen
+        effective_investment  = total_investment * (1 - self.reserve_pct)
+        base_amount_usdt      = effective_investment / self.num_grids
         self.base_amount_usdt = base_amount_usdt
 
-        # Anteil Sell-Grids berechnen
-        num_sell_grids  = len([p for p in self.grid_lines if p > initial_price])
-        num_total_grids = len(self.grid_lines)
-        sell_ratio      = num_sell_grids / num_total_grids if num_total_grids > 0 else 0.5
-
-        # Initialer Coin-Kauf
-        initial_investment = total_investment * 0.95 * sell_ratio
-        self.initial_coin  = initial_investment / (initial_price * (1 + self.fee_rate))
-        fee                = self.initial_coin * initial_price * self.fee_rate
-
-        self.position["usdt"] -= (self.initial_coin * initial_price) + fee
-        self.position["coin"] += self.initial_coin
-        self.coin_inventory.append(
-            (self.initial_coin, initial_price, pd.Timestamp.now())
-        )
-
-        # Initial-Trade im Log
-        self.trade_log.append({
-            "timestamp":  pd.to_datetime("now"),
-            "type":       "Initial BUY",
-            "cprice":     initial_price,
-            "price":      initial_price,
-            "amount":     self.initial_coin,
-            "fee":        fee,
-            "profit":     0.0,
-        })
-
-        # Grid-States initialisieren
+        # Grid-States initialisieren – kein Initial BUY
         for price in self.grid_lines:
-            if price > initial_price:
-                coin_amount = base_amount_usdt / (price * (1 + self.fee_rate))
-                self.grids[price] = GridState(
-                    price=round(price, 8),
-                    side="sell",
-                    trade_amount=coin_amount,
-                )
-            elif price < initial_price:
-                coin_amount = base_amount_usdt / (price * (1 + self.fee_rate))
-                self.grids[price] = GridState(
-                    price=round(price, 8),
-                    side="buy",
-                    trade_amount=coin_amount,
-                )
+            coin_amount = base_amount_usdt / (price * (1 + self.fee_rate))
+            if price >= initial_price:
+                side = "sell"
             else:
-                coin_amount = base_amount_usdt / (price * (1 + self.fee_rate))
-                self.grids[price] = GridState(
-                    price=round(price, 8),
-                    side="blocked",
-                    trade_amount=coin_amount,
-                )
+                side = "buy"
+            self.grids[price] = GridState(
+                price=round(price, 8),
+                side=side,
+                trade_amount=coin_amount,
+            )
 
     # -----------------------------------------------------------------------
     # Grid-Zustände aktualisieren
@@ -365,29 +325,29 @@ class GridBot:
 
         try:
             if grid.side == "sell":
-                remaining = grid.trade_amount
+                # Tatsaechlich verkaufte Menge aus FIFO ermitteln
+                # (eine FIFO-Position = ein BUY, exakt diese Menge verkaufen)
+                if not self.coin_inventory:
+                    return  # Kein Inventar vorhanden
 
-                # FIFO: aelteste Coins zuerst verkaufen
-                while remaining > 1e-10 and self.coin_inventory:
-                    oldest_amt, oldest_price, oldest_time = self.coin_inventory[0]
-                    sell_amt = min(oldest_amt, remaining)
-                    profit  += (grid.price - oldest_price) * sell_amt
+                # Genau eine FIFO-Position verkaufen (aelteste zuerst)
+                oldest_amt, oldest_price, oldest_time = self.coin_inventory[0]
+                actual_sell_amt = oldest_amt  # exakte Menge aus dem BUY
 
-                    if np.isclose(oldest_amt, sell_amt):
-                        self.coin_inventory.pop(0)
-                    else:
-                        self.coin_inventory[0] = (
-                            oldest_amt - sell_amt, oldest_price, oldest_time
-                        )
-                    remaining -= sell_amt
+                # Genuegend Coins vorhanden?
+                if self.position["coin"] < actual_sell_amt - 1e-10:
+                    return
 
-                if remaining > 1e-10:
-                    return  # Nicht genuegend Coins
-
-                fee = grid.trade_amount * grid.price * self.fee_rate
-                self.position["coin"] -= grid.trade_amount
-                self.position["usdt"] += (grid.trade_amount * grid.price) - fee
+                profit = (grid.price - oldest_price) * actual_sell_amt
+                fee    = actual_sell_amt * grid.price * self.fee_rate
                 profit -= fee
+
+                self.coin_inventory.pop(0)
+                self.position["coin"] -= actual_sell_amt
+                self.position["usdt"] += (actual_sell_amt * grid.price) - fee
+
+                # trade_amount fuer den Log auf tatsaechliche Menge setzen
+                grid.trade_amount = actual_sell_amt
 
             else:  # buy
                 required_usdt = grid.trade_amount * grid.price * (1 + self.fee_rate)
@@ -633,7 +593,6 @@ def simulate_grid_bot(
             "trade_log":           bot.trade_log,
             "grid_lines":          bot.grid_lines,
             "final_position":      dict(bot.position),
-            "initial_coin":        bot.initial_coin,
             "initial_price":       initial_price,
             "final_price":         final_price,
             "price_change_pct":    ((final_price - initial_price) / initial_price) * 100,
@@ -655,7 +614,6 @@ def simulate_grid_bot(
             "trade_log":           [],
             "grid_lines":          [],
             "final_position":      {"usdt": total_investment, "coin": 0.0},
-            "initial_coin":        0.0,
             "initial_price":       0.0,
             "final_price":         0.0,
             "price_change_pct":    0.0,
