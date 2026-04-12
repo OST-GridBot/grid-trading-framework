@@ -34,12 +34,29 @@ st.markdown("""
 
 st.sidebar.markdown("""
     <div style="padding: 8px 0 10px 0;">
-        <div style="font-family: 'Space Mono', monospace; font-size: 1.35rem;
-                    font-weight: 700; color: #E2E8F0; line-height: 1.3;">
-            Grid Bot<br>Dashboard
-        </div>
-        <div style="font-size: 0.7rem; color: #374151; margin-top: 4px;">
-            Bachelorarbeit OST · Enes Eryilmaz
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div>
+                <div style="font-family: 'Space Mono', monospace; font-size: 1.35rem;
+                            font-weight: 700; color: #E2E8F0; line-height: 1.3;">
+                    Grid Bot<br>Dashboard
+                </div>
+                <div style="font-size: 0.7rem; color: #374151; margin-top: 4px;">
+                    Bachelorarbeit OST · Enes Eryilmaz
+                </div>
+            </div>
+            <a href="/" target="_self" style="
+                display: inline-block;
+                padding: 6px 14px;
+                background: rgba(255,255,255,0.06);
+                border: 1px solid rgba(255,255,255,0.12);
+                border-radius: 6px;
+                color: #E2E8F0;
+                font-size: 0.85rem;
+                font-weight: 600;
+                text-decoration: none;
+                cursor: pointer;
+                white-space: nowrap;
+            ">Cockpit</a>
         </div>
     </div>
 """, unsafe_allow_html=True)
@@ -69,6 +86,7 @@ selected = st.sidebar.radio(
     list(PAGES.keys()),
     label_visibility = "collapsed",
     key = "navigation",
+    index = None,
 )
 
 st.sidebar.divider()
@@ -77,9 +95,13 @@ st.sidebar.divider()
 # Router
 # ---------------------------------------------------------------------------
 
-page = PAGES[selected]
+page = PAGES.get(selected, "cockpit")
 
-if page == "backtesting":
+if page in ("cockpit", None) or selected is None:
+    from pages.page_market import show_market
+    show_market()
+
+elif page == "backtesting":
     from pages.page_backtesting import show_backtesting
     show_backtesting()
 

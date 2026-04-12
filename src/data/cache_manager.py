@@ -139,11 +139,26 @@ def get_price_data(
     filepath = _get_cache_filepath(symbol, interval, days, start_date, end_date)
 
     # 3. Cache pruefen
-    if not force and _is_cache_valid(filepath):
+    # Wenn Enddatum heute ist: Cache ignorieren (Daten könnten veraltet sein)
+    from datetime import date as _date
+    _end_is_today = (end_date is None) or (
+        hasattr(end_date, "date") and end_date.date() >= _date.today()
+    ) or (
+        hasattr(end_date, "year") and end_date >= _date.today()
+    )
+    if not force and not _end_is_today and _is_cache_valid(filepath):
         df = _load_from_cache(filepath)
         if df is not None:
             print(f"Cache: {filepath.name} ({len(df)} Kerzen)")
             return df, True
+    elif not force and _end_is_today and _is_cache_valid(filepath):
+        # Heute als Enddatum: Cache nur wenn unter 1h alt
+        age_hours = (__import__("datetime").datetime.now().timestamp() - filepath.stat().st_mtime) / 3600
+        if age_hours < 1.0:
+            df = _load_from_cache(filepath)
+            if df is not None:
+                print(f"Cache (fresh): {filepath.name} ({len(df)} Kerzen)")
+                return df, True
 
     # 4. API aufrufen
     print(f"API: Lade {symbol} {interval} ({days} Tage) von Binance...")
