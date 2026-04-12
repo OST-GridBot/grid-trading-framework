@@ -91,6 +91,18 @@ def show_market():
     # -----------------------------------------------------------------------
     st.markdown("# Cockpit")
 
+    # Marktübersicht Section Header
+    st.markdown("""
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px; margin-top:8px;">
+        <span style="font-size:1.2rem;">🌐</span>
+        <span style="font-size:1.15rem; font-weight:600; color:#CBD5E1;
+                     text-transform:uppercase; letter-spacing:0.06em;">
+            Marktübersicht
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+
+
     # -----------------------------------------------------------------------
     # Preisdaten laden
     # -----------------------------------------------------------------------
@@ -147,3 +159,39 @@ def show_market():
     # Cache-Info
     cache_txt = "aus Cache" if from_cache else "live von Binance"
     st.caption(f"Daten: {cache_txt} · {len(df)} Kerzen · {coin}/USDT {interval}")
+
+
+    # -----------------------------------------------------------------------
+    # Bot-Status Felder
+    # -----------------------------------------------------------------------
+    st.markdown("<div style='margin-top:32px'></div>", unsafe_allow_html=True)
+
+    # Paper Trading
+    st.markdown("""
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+        <span style="font-size:1.2rem;">📄</span>
+        <span style="font-size:1.15rem; font-weight:600; color:#CBD5E1;
+                     text-transform:uppercase; letter-spacing:0.06em;">Paper Trading</span>
+    </div>
+    <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08);
+                border-radius:10px; padding:20px 24px; margin-bottom:20px;">
+        <div style="color:#475569; font-size:0.85rem; font-style:italic;">
+            🔧 Wird noch implementiert
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Live Trading
+    st.markdown("""
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+        <span style="font-size:1.2rem;">🔴</span>
+        <span style="font-size:1.15rem; font-weight:600; color:#CBD5E1;
+                     text-transform:uppercase; letter-spacing:0.06em;">Live Trading</span>
+    </div>
+    <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08);
+                border-radius:10px; padding:20px 24px; margin-bottom:20px;">
+        <div style="color:#475569; font-size:0.85rem; font-style:italic;">
+            🔧 Wird noch implementiert
+        </div>
+    </div>
+    """, unsafe_allow_html=True)

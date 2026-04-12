@@ -147,18 +147,42 @@ def get_price_data(
         hasattr(end_date, "year") and end_date >= _date.today()
     )
     if not force and not _end_is_today and _is_cache_valid(filepath):
+        # Historischer Zeitraum: Cache direkt verwenden
         df = _load_from_cache(filepath)
         if df is not None:
             print(f"Cache: {filepath.name} ({len(df)} Kerzen)")
             return df, True
-    elif not force and _end_is_today and _is_cache_valid(filepath):
-        # Heute als Enddatum: Cache nur wenn unter 1h alt
-        age_hours = (__import__("datetime").datetime.now().timestamp() - filepath.stat().st_mtime) / 3600
-        if age_hours < 1.0:
-            df = _load_from_cache(filepath)
-            if df is not None:
-                print(f"Cache (fresh): {filepath.name} ({len(df)} Kerzen)")
-                return df, True
+    elif not force and _end_is_today and filepath.exists():
+        # Enddatum heute: Append-Strategie — neue Kerzen an Cache anhängen
+        df_cached = _load_from_cache(filepath)
+        if df_cached is not None:
+            last_cached_ts = pd.to_datetime(df_cached["timestamp"].iloc[-1])
+            now_utc = datetime.utcnow()
+            # Nur Append wenn letzte Kerze älter als 1 Intervall
+            _interval_mins = {"1m":1,"5m":5,"15m":15,"1h":60,"4h":240,"1d":1440}.get(interval, 60)
+            _age_mins = (now_utc - last_cached_ts.to_pydatetime()).total_seconds() / 60
+            if _age_mins < _interval_mins:
+                # Cache ist aktuell genug
+                print(f"Cache (aktuell): {filepath.name} ({len(df_cached)} Kerzen)")
+                return df_cached, True
+            # Neue Kerzen ab letzter Kerze holen
+            print(f"Cache-Append: lade neue Kerzen ab {last_cached_ts} (vor {_age_mins:.0f} min)...")
+            _diff_mins = (now_utc - last_cached_ts.to_pydatetime()).total_seconds() / 60
+            _max_bars  = min(max(int(_diff_mins / _interval_mins) + 10, 10), 5000)
+            _start_ts  = last_cached_ts.to_pydatetime().replace(tzinfo=__import__("datetime").timezone.utc)
+            _end_ts    = now_utc.replace(tzinfo=__import__("datetime").timezone.utc)
+            from src.data.binance_api import fetch_klines_df as _fkdf
+            df_new, _meta, _err_new = _fkdf(coin, interval, _start_ts, _end_ts, max_bars=_max_bars)
+            if (not _err_new) and df_new is not None and hasattr(df_new, "empty") and not df_new.empty:
+                df_merged = pd.concat([df_cached, df_new]).drop_duplicates(
+                    subset="timestamp", keep="last"
+                ).sort_values("timestamp").reset_index(drop=True)
+                _save_to_cache(df_merged, filepath)
+                print(f"Cache-Append OK: {len(df_cached)}+{len(df_new)}={len(df_merged)} Kerzen, last={df_merged['timestamp'].iloc[-1]}")
+                return df_merged, True
+            else:
+                print(f"Cache-Append fehlgeschlagen (err={_err_new}), nutze alten Cache")
+                return df_cached, True
 
     # 4. API aufrufen
     print(f"API: Lade {symbol} {interval} ({days} Tage) von Binance...")

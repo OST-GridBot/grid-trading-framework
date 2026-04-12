@@ -135,7 +135,9 @@ def show_backtesting():
         df_tmp, _ = get_price_data(coin, days=14, interval="1h")
         if df_tmp is not None and not df_tmp.empty:
             current_price = float(df_tmp["close"].iloc[-1])
-            lower_s, upper_s, _ = suggest_grid_range(df_tmp, current_price)
+            _suggestion = suggest_grid_range(df_tmp, current_price)
+            lower_s = _suggestion.lower_price
+            upper_s = _suggestion.upper_price
     except Exception:
         pass
     current_price = current_price or 68000.0
@@ -270,11 +272,12 @@ def show_backtesting():
 
     st.divider()
 
-    # Preisdaten laden
+    # Preisdaten laden — immer frisch wenn end_date heute ist
     with st.spinner(f"Lade {coin}/USDT Preisdaten..."):
         df_chart, _ = get_price_data(coin, interval=interval,
                                      start_date=start_date, end_date=end_date)
-    st.session_state.bt_df = df_chart
+    if df_chart is not None and not df_chart.empty:
+        st.session_state.bt_df = df_chart
 
     # -----------------------------------------------------------------------
     # Backtest ausführen
