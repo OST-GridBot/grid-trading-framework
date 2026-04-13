@@ -23,7 +23,7 @@ from src.metrics import (
     calculate_kelly_fraction,
     calculate_drawdown,
     calculate_all_metrics,
-    get_num_days as _get_num_days,
+    get_num_days,
     calculate_benchmark,
     format_metrics_summary,
     DrawdownResult,
