@@ -368,70 +368,38 @@ def _show_bots_overview(bots: list):
         rt_str = runtime.get("formatted", "–") if isinstance(runtime, dict) else "–"
         color   = "#34D399" if roi >= 0 else "#F87171"
 
-        with st.container():
-            st.markdown(f"""
-            <div style="background:rgba(255,255,255,0.03);
-                        border:1px solid rgba(255,255,255,0.08);
-                        border-left: 3px solid {color};
-                        border-radius:8px; padding:14px 18px;
-                        margin-bottom:10px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <div>
-                        <span style="font-weight:700; color:#E2E8F0; font-size:1rem;">
-                            {bot.get('name', bot['coin']+'/USDT')}
-                        </span>
-                        <span style="color:#64748B; font-size:0.8rem; margin-left:12px;">
-                            {bot['coin']}/USDT · {bot['interval']} · ID: {bot['bot_id']}
-                        </span>
-                    </div>
-                    {_status_badge(bot['status'])}
-                </div>
-                <div style="display:flex; gap:24px; margin-top:8px;">
-                    <span style="color:#94A3B8; font-size:0.85rem;">
-                        ROI: <b style="color:{color};">{roi:+.2f}%</b>
+        # Klickbare Bot-Karte
+        st.markdown(f"""
+        <div style="background:rgba(255,255,255,0.03);
+                    border:1px solid rgba(255,255,255,0.08);
+                    border-left: 3px solid {color};
+                    border-radius:8px; padding:14px 18px;
+                    margin-bottom:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <span style="font-weight:700; color:#E2E8F0; font-size:1rem;">
+                        {bot.get('name', bot['coin']+'/USDT')}
                     </span>
-                    <span style="color:#94A3B8; font-size:0.85rem;">
-                        Trades: <b style="color:#E2E8F0;">{trades}</b>
-                    </span>
-                    <span style="color:#94A3B8; font-size:0.85rem;">
-                        Kapital: <b style="color:#E2E8F0;">${cfg.get('total_investment',0):,.0f}</b>
-                    </span>
-                    <span style="color:#94A3B8; font-size:0.85rem;">
-                        Grids: <b style="color:#E2E8F0;">{cfg.get('num_grids',0)}</b>
-                    </span>
-                    <span style="color:#94A3B8; font-size:0.85rem;">
-                        Laufzeit: <b style="color:#E2E8F0;">{rt_str}</b>
-                    </span>
-                    <span style="color:#94A3B8; font-size:0.85rem;">
-                        Einstand: <b style="color:#E2E8F0;">{_format_ts(bot.get('created_at',''))}</b>
+                    <span style="color:#64748B; font-size:0.8rem; margin-left:12px;">
+                        {bot['coin']}/USDT · {bot['interval']} · ID: {bot['bot_id']}
                     </span>
                 </div>
+                {_status_badge(bot["status"])}
             </div>
-            """, unsafe_allow_html=True)
-
-            col1, col2, col3 = st.columns([2, 1, 1])
-            with col1:
-                if st.button("🔍 Details anzeigen",
-                              key=f"pt_detail_{bot['bot_id']}",
-                              use_container_width=True):
-                    st.session_state.pt_selected_bot = bot["bot_id"]
-                    st.rerun()
-            with col2:
-                if st.button("⏹ Stoppen",
-                              key=f"pt_stop_{bot['bot_id']}",
-                              disabled=bot["status"] != "running",
-                              use_container_width=True):
-                    bot_store.set_status(bot["bot_id"], "stopped")
-                    st.rerun()
-            with col3:
-                if st.button("🗑 Löschen",
-                              key=f"pt_del_{bot['bot_id']}",
-                              use_container_width=True):
-                    bot_store.delete_bot(bot["bot_id"])
-                    if st.session_state.pt_selected_bot == bot["bot_id"]:
-                        st.session_state.pt_selected_bot = None
-                    st.rerun()
-
+            <div style="display:flex; gap:24px; margin-top:8px;">
+                <span style="color:#94A3B8; font-size:0.85rem;">ROI: <b style="color:{color};">{roi:+.2f}%</b></span>
+                <span style="color:#94A3B8; font-size:0.85rem;">Trades: <b style="color:#E2E8F0;">{trades}</b></span>
+                <span style="color:#94A3B8; font-size:0.85rem;">Kapital: <b style="color:#E2E8F0;">${cfg.get('total_investment',0):,.0f}</b></span>
+                <span style="color:#94A3B8; font-size:0.85rem;">Grids: <b style="color:#E2E8F0;">{cfg.get('num_grids',0)}</b></span>
+                <span style="color:#94A3B8; font-size:0.85rem;">Laufzeit: <b style="color:#E2E8F0;">{rt_str}</b></span>
+                <span style="color:#94A3B8; font-size:0.85rem;">Einstand: <b style="color:#E2E8F0;">{_format_ts(bot.get('created_at',''))}</b></span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Details anzeigen", key=f"pt_detail_{bot['bot_id']}", use_container_width=True):
+            st.session_state.pt_selected_bot = bot["bot_id"]
+            st.rerun()
+        st.markdown("<div style='margin-bottom:8px'></div>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
 # Bot-Detailansicht
