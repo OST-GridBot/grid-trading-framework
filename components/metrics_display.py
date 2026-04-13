@@ -164,7 +164,46 @@ def render_metrics_row(metrics: dict, mode: str = "backtest") -> None:
                 color = "#34D399" if pf is None or (pf or 0) >= 1.5 else "#FBBF24" if (pf or 0) >= 1 else "#F87171",
             )
 
-    # Zeile 3: Kapital-Übersicht
+    # Zeile 3: Neue Metriken
+    if mode == "backtest":
+        st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+        cols_new = st.columns(4)
+        grid_eff    = metrics.get("grid_efficiency",      None)
+        avg_profit  = metrics.get("avg_profit_per_trade", None)
+        runtime     = metrics.get("runtime",              None)
+        upnl        = metrics.get("unrealized_pnl",       None)
+        with cols_new[0]:
+            _metric_card(
+                "Grid Efficiency",
+                f"{grid_eff:.1f}%" if grid_eff is not None else "–",
+                delta = "gut ≥ 50%",
+                color = "#34D399" if (grid_eff or 0) >= 50 else "#FBBF24",
+            )
+        with cols_new[1]:
+            _metric_card(
+                "Ø Profit/Trade",
+                f"${avg_profit:+.2f}" if avg_profit is not None else "–",
+                color = _color_roi(avg_profit or 0),
+            )
+        with cols_new[2]:
+            rt_str = runtime.get("formatted", "–") if isinstance(runtime, dict) else "–"
+            _metric_card(
+                "Laufzeit",
+                rt_str,
+                color = "#E2E8F0",
+            )
+        with cols_new[3]:
+            if upnl is not None and isinstance(upnl, dict):
+                _metric_card(
+                    "Unrealisiert",
+                    f"${upnl.get('usdt', 0):+.2f}",
+                    delta = f"{upnl.get('pct', 0):+.2f}%",
+                    color = _color_roi(upnl.get('usdt', 0)),
+                )
+            else:
+                _metric_card("Unrealisiert", "–", color="#94A3B8")
+
+    # Zeile 4: Kapital-Übersicht
     if mode == "backtest":
         st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
         cols3 = st.columns(4)

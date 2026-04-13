@@ -8,7 +8,7 @@ import pandas as pd
 from datetime import date, timedelta
 
 from components.chart import plot_grid_chart, plot_equity_curve, plot_drawdown_chart
-from components.metrics_display import render_metrics_row, render_trade_log, render_regime_badge
+from components.metrics_display import render_metrics_row, render_trade_log
 
 from src.backtesting.engine import run_backtest
 from src.backtesting.optimizer import optimize_num_grids
@@ -323,25 +323,35 @@ def show_backtesting():
     df     = st.session_state.bt_df
 
     if result and not result.get("error"):
-        regime = result.get("regime")
-        if regime and hasattr(regime, "regime"):
-            render_regime_badge(regime.regime, getattr(regime, "confidence", 0))
-            st.markdown("<div style='margin-bottom:12px'></div>", unsafe_allow_html=True)
+
+        # Neue Metriken berechnen
+        from src.metrics import (
+            calculate_grid_efficiency, calculate_avg_profit_per_trade,
+            calculate_runtime, calculate_unrealized_pnl
+        )
+        _trade_log   = result.get("trade_log", [])
+        _open_buys   = [t for t in _trade_log if t.get("type") == "BUY"]
+        _last_price  = float(df["close"].iloc[-1]) if df is not None and not df.empty else 0
+        _start_time  = result.get("start_time", None)
 
         metrics_dict = {
-            "roi_pct":            result.get("profit_pct", 0),
-            "sharpe":             result.get("sharpe_ratio", 0),
-            "max_dd_pct":         result.get("max_drawdown_pct", 0),
-            "num_trades":         result.get("num_trades", 0),
-            "bh_roi_pct":         result.get("price_change_pct", 0),
-            "outperformance":     (result.get("profit_pct") or 0) - (result.get("price_change_pct") or 0),
-            "cagr_pct":           result.get("cagr", 0),
-            "calmar":             result.get("calmar_ratio", 0),
-            "win_rate":           result.get("win_rate", 0),
-            "profit_factor":      result.get("profit_factor", 0),
-            "fees_paid":          result.get("fees_paid", 0),
-            "initial_investment": result.get("initial_investment", total_investment),
-            "final_value":        result.get("final_value", 0),
+            "roi_pct":              result.get("profit_pct", 0),
+            "sharpe":               result.get("sharpe_ratio", 0),
+            "max_dd_pct":           result.get("max_drawdown_pct", 0),
+            "num_trades":           result.get("num_trades", 0),
+            "bh_roi_pct":           result.get("price_change_pct", 0),
+            "outperformance":       (result.get("profit_pct") or 0) - (result.get("price_change_pct") or 0),
+            "cagr_pct":             result.get("cagr", 0),
+            "calmar":               result.get("calmar_ratio", 0),
+            "win_rate":             result.get("win_rate", 0),
+            "profit_factor":        result.get("profit_factor", 0),
+            "fees_paid":            result.get("fees_paid", 0),
+            "initial_investment":   result.get("initial_investment", total_investment),
+            "final_value":          result.get("final_value", 0),
+            "grid_efficiency":      calculate_grid_efficiency(_trade_log, num_grids),
+            "avg_profit_per_trade": calculate_avg_profit_per_trade(_trade_log),
+            "runtime":              calculate_runtime(_start_time) if _start_time else None,
+            "unrealized_pnl":       calculate_unrealized_pnl(_open_buys, _last_price, fee_rate),
         }
         render_metrics_row(metrics_dict, mode="backtest")
         st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
