@@ -40,8 +40,8 @@ from config.settings import (
 )
 from src.data.cache_manager import get_price_data
 from src.strategy.grid_bot import simulate_grid_bot
-from src.strategy.risk import calculate_drawdown
-from src.backtesting.metrics import (
+from src.metrics import calculate_drawdown
+from src.metrics import (
     calculate_roi, calculate_cagr, calculate_sharpe_ratio,
     calculate_calmar_ratio, calculate_profit_factor,
     calculate_win_rate, _get_num_days,

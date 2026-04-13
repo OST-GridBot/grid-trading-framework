@@ -8,6 +8,10 @@ Autor: Enes Eryilmaz
 Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
 """
 
+# Backward-Compatibility: Re-Export aus src.metrics
+from src.metrics import calculate_drawdown, calculate_kelly_fraction
+
+
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass

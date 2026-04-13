@@ -27,8 +27,8 @@ from config.settings import (
 )
 from src.data.binance_api import fetch_klines_df
 from src.strategy.grid_bot import GridBot
-from src.strategy.risk import calculate_drawdown
-from src.backtesting.metrics import calculate_roi, calculate_sharpe_ratio
+# calculate_drawdown jetzt in src.metrics
+from src.metrics import calculate_roi, calculate_sharpe_ratio, calculate_drawdown
 
 STATE_FILE = Path(CACHE_DIR) / "trading_state.json"
 
