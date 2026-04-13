@@ -1,371 +1,219 @@
 """
 src/trading/engine.py
 =====================
-Vereinte Trading-Engine fuer Paper- und Live-Trading.
+BotRunner fuer einen einzelnen Paper- oder Live-Trading Bot.
 
-Dependency Injection Pattern:
-    Paper : TradingEngine(config, broker=PaperBroker(...))
-    Live  : TradingEngine(config, broker=LiveBroker(...))
-
-Die Engine entscheidet DASS gehandelt wird.
-Der Broker entscheidet WIE die Order ausgefuehrt wird.
+Zusammenspiel:
+    BotStore  → verwaltet alle Bots (Speicher)
+    BotRunner → fuehrt einen einzelnen Bot aus (Logik)
+    Broker    → fuehrt Orders aus (Paper oder Live)
 
 Autor: Enes Eryilmaz
 Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
 """
 
-import json
 import pandas as pd
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from datetime import datetime, timezone
 from typing import Optional
-from dataclasses import dataclass, field, asdict
 
-from config.settings import (
-    DEFAULT_FEE_RATE, DEFAULT_GRID_MODE, DEFAULT_NUM_GRIDS,
-    DEFAULT_RESERVE_PCT, CACHE_DIR,
-)
+from config.settings import DEFAULT_FEE_RATE
 from src.data.binance_api import fetch_klines_df
 from src.strategy.grid_bot import GridBot
-# calculate_drawdown jetzt in src.metrics
-from src.metrics import calculate_roi, calculate_sharpe_ratio, calculate_drawdown
+from src.strategy.grid_builder import build_grid_config
+from src.trading.bot_store import BotStore, store as default_store
+from src.metrics import (
+    calculate_all_metrics, calculate_grid_efficiency,
+    calculate_avg_profit_per_trade, calculate_runtime,
+    calculate_unrealized_pnl,
+)
 
-STATE_FILE = Path(CACHE_DIR) / "trading_state.json"
 
-# Wie viele Stunden pro Intervall fuer den Kerzen-Abruf
-_INTERVAL_HOURS = {
-    "1m": 1, "5m": 1, "15m": 1, "1h": 3, "4h": 12
+# Kerzen pro Intervall fuer den initialen Abruf
+_INTERVAL_CANDLES = {
+    "1m": 60, "5m": 60, "15m": 60,
+    "1h": 48, "4h": 24, "1d": 30,
 }
 
 
 def _now_utc() -> datetime:
-    """Gibt aktuelle UTC-Zeit zurueck."""
     return datetime.now(tz=timezone.utc)
 
 
-@dataclass
-class TradingConfig:
-    coin:               str
-    lower_price:        float
-    upper_price:        float
-    total_investment:   float           = 10_000.0
-    num_grids:          int             = DEFAULT_NUM_GRIDS
-    grid_mode:          str             = DEFAULT_GRID_MODE
-    fee_rate:           float           = DEFAULT_FEE_RATE
-    reserve_pct:        float           = DEFAULT_RESERVE_PCT
-    stop_loss_pct:      Optional[float] = None
-    enable_recentering: bool            = False
-    interval:           str             = "1h"
-    mode:               str             = "paper"
+class BotRunner:
+    """
+    Fuehrt einen einzelnen Bot aus.
+    Laedt seinen Zustand aus dem BotStore und speichert ihn zurueck.
+    """
 
+    def __init__(self, bot_id: str, store: BotStore = None):
+        self.bot_id = bot_id
+        self.store  = store or default_store
+        self._bot   = self.store.get_bot(bot_id)
+        if self._bot is None:
+            raise ValueError(f"Bot {bot_id} nicht gefunden")
+        self._grid_bot: Optional[GridBot] = None
 
-@dataclass
-class TradingState:
-    config:            dict
-    mode:              str   = "paper"
-    position:          dict  = field(default_factory=lambda: {"usdt": 0.0, "coin": 0.0})
-    trade_log:         list  = field(default_factory=list)
-    daily_values:      dict  = field(default_factory=dict)
-    initial_price:     float = 0.0
-    last_price:        float = 0.0
-    start_time:        str   = ""
-    last_update:       str   = ""
-    num_candles:       int   = 0
-    is_running:        bool  = False
-    stop_loss_hit:     bool  = False
-    recentering_count: int   = 0
+    # ── Bot initialisieren ───────────────────────────────────────────────────
 
+    def initialize(self) -> tuple[bool, str]:
+        """
+        Initialisiert den GridBot mit historischen Daten.
+        Wird beim ersten Start oder nach einem Neustart aufgerufen.
+        
+        Returns:
+            (True, "") bei Erfolg
+            (False, Fehlermeldung) bei Fehler
+        """
+        cfg      = self._bot["config"]
+        coin     = self._bot["coin"]
+        interval = self._bot["interval"]
+        n_candles = _INTERVAL_CANDLES.get(interval, 48)
 
-class TradingEngine:
-    def __init__(self, config: TradingConfig, broker):
-        self.config   = config
-        self.broker   = broker
-        self.bot:     Optional[GridBot] = None
-        self.state:   Optional[TradingState] = None
-        self._running = False
+        # Preisdaten laden
+        from src.data.cache_manager import get_price_data
+        df, _ = get_price_data(coin, days=max(1, n_candles // 24 + 1), interval=interval)
+        if df is None or df.empty:
+            return False, f"Keine Preisdaten für {coin} verfügbar"
 
-    def start(self, resume: bool = False) -> dict:
-        if resume and STATE_FILE.exists():
-            return self._resume_session()
-        return self._start_new_session()
-
-    def _start_new_session(self) -> dict:
-        print(f"Trading [{self.config.mode}]: Neue Session fuer {self.config.coin}")
-
-        # FIX 1: UTC verwenden, nur 2 Stunden fuer aktuellen Preis
-        df, meta, err = fetch_klines_df(
-            self.config.coin, self.config.interval,
-            _now_utc() - timedelta(hours=2),
-            _now_utc()
-        )
-        if err or df is None or df.empty:
-            return {"error": f"Preisdaten nicht verfuegbar: {err}"}
-
-        initial_price = float(df["close"].iloc[-1])
-        self.bot = GridBot(
-            total_investment   = self.config.total_investment,
-            lower_price        = self.config.lower_price,
-            upper_price        = self.config.upper_price,
-            num_grids          = self.config.num_grids,
-            grid_mode          = self.config.grid_mode,
-            fee_rate           = self.config.fee_rate,
-            initial_price      = initial_price,
-            reserve_pct        = self.config.reserve_pct,
-            stop_loss_pct      = self.config.stop_loss_pct,
-            enable_recentering = self.config.enable_recentering,
+        # Grid konfigurieren
+        grid_config = build_grid_config(
+            lower_price = cfg["lower_price"],
+            upper_price = cfg["upper_price"],
+            num_grids   = cfg["num_grids"],
+            mode        = cfg["grid_mode"],
+            fee_rate    = cfg.get("fee_rate", DEFAULT_FEE_RATE),
         )
 
-        self.state = TradingState(
-            config        = asdict(self.config),
-            mode          = self.config.mode,
-            position      = dict(self.bot.position),
-            initial_price = initial_price,
-            last_price    = initial_price,
-            start_time    = _now_utc().isoformat(),
-            last_update   = _now_utc().isoformat(),
-            is_running    = True,
+        # GridBot erstellen
+        self._grid_bot = GridBot(
+            grid_config       = grid_config,
+            total_investment  = cfg["total_investment"],
+            fee_rate          = cfg.get("fee_rate", DEFAULT_FEE_RATE),
+            reserve_pct       = cfg.get("reserve_pct", 0.03),
+            stop_loss_pct     = cfg.get("stop_loss_pct"),
         )
-        self._save_state()
-        self._running = True
-        print(f"Trading [{self.config.mode}]: Gestartet @ {initial_price}")
-        return {
-            "status":        "started",
-            "mode":          self.config.mode,
-            "coin":          self.config.coin,
-            "initial_price": initial_price,
-            "grid_lines":    self.bot.grid_lines,
-            "position":      dict(self.bot.position),
-        }
 
-    def _resume_session(self) -> dict:
-        print(f"Trading [{self.config.mode}]: Session wird fortgesetzt...")
-        if not self._load_state():
-            return self._start_new_session()
-        self._running = True
-        self.state.is_running = True
-        self._save_state()
-        return {
-            "status":   "resumed",
-            "mode":     self.state.mode,
-            "coin":     self.state.config.get("coin"),
-            "trades":   len(self.state.trade_log),
-            "position": self.state.position,
-        }
+        # Bestehenden State laden falls vorhanden
+        saved_state = self._bot.get("state", {})
+        if saved_state:
+            try:
+                self._grid_bot.load_state(saved_state)
+            except Exception:
+                pass  # Frischer Start wenn State nicht kompatibel
 
-    def process_latest_candle(self) -> dict:
-        if not self._running or self.bot is None:
-            return {"error": "Engine nicht gestartet."}
-        if self.state and self.state.stop_loss_hit:
-            return {"error": "Stop-Loss ausgeloest."}
+        return True, ""
 
-        # FIX 2: UTC + nur relevante Stunden laden statt 2 Tage
-        hours = _INTERVAL_HOURS.get(self.config.interval, 3)
-        df, meta, err = fetch_klines_df(
-            self.config.coin, self.config.interval,
-            _now_utc() - timedelta(hours=hours),
-            _now_utc()
-        )
-        if err or df is None or df.empty:
-            return {"error": f"API-Fehler: {err}"}
+    # ── Eine Kerze verarbeiten ───────────────────────────────────────────────
 
-        # Vorletzte Kerze = letzte abgeschlossene Kerze
-        candle        = df.iloc[-2]
-        trades_before = len(self.bot.trade_log)
-        self.bot.process_candle(candle)
-        new_trades    = self.bot.trade_log[trades_before:]
-        broker_orders = []
-        ts = _now_utc().isoformat()  # Timestamp = jetzt, nicht historische Kerze
+    def step(self, candle: dict) -> list[dict]:
+        """
+        Verarbeitet eine einzelne Kerze.
+        
+        Args:
+            candle: {"open": x, "high": x, "low": x, "close": x, "timestamp": x}
+        
+        Returns:
+            Liste der neuen Trades in diesem Schritt
+        """
+        if self._grid_bot is None:
+            return []
 
-        for trade in new_trades:
-            trade_type = trade["type"].upper()
-            if "BUY" in trade_type:
-                order = self.broker.execute_buy(
-                    grid_price  = trade["price"],
-                    amount_usdt = trade["amount"] * trade["price"],
-                    timestamp   = ts,
-                )
-                broker_orders.append(order)
-            elif "SELL" in trade_type:
-                order = self.broker.execute_sell(
-                    grid_price  = trade["price"],
-                    amount_coin = trade["amount"],
-                    timestamp   = ts,
-                )
-                broker_orders.append(order)
+        row = pd.Series(candle)
+        trades_before = len(self._grid_bot.trade_log)
+        self._grid_bot.process_candle(row)
+        trades_after  = len(self._grid_bot.trade_log)
 
-        current_price = float(candle["close"])
-        portfolio_val = self.broker.get_portfolio_value(current_price)
-        date_str      = _now_utc().strftime("%Y-%m-%d")
+        new_trades = self._grid_bot.trade_log[trades_before:trades_after]
 
-        if self.state:
-            self.state.position               = dict(self.bot.position)
-            self.state.trade_log              = self.bot.trade_log
-            self.state.daily_values[date_str] = portfolio_val
-            self.state.last_price             = current_price
-            self.state.last_update            = _now_utc().isoformat()
-            self.state.num_candles           += 1
-            self.state.stop_loss_hit          = self.bot.stop_loss_triggered
-            self.state.recentering_count      = self.bot.recentering_count
-            self._save_state()
+        # State sofort speichern
+        self._save_state(candle.get("close", 0))
 
-        roi = calculate_roi(self.config.total_investment, portfolio_val)
-        dd  = calculate_drawdown(self.state.daily_values if self.state else {})
-        return {
-            "current_price":   current_price,
-            "portfolio_value": portfolio_val,
-            "roi_pct":         round(roi, 4),
-            "max_dd_pct":      dd.max_drawdown_pct,
-            "num_trades":      len(self.bot.trade_log),
-            "new_trades":      new_trades,
-            "broker_orders":   broker_orders,
-            "position":        dict(self.bot.position),
-            "stop_loss_hit":   self.bot.stop_loss_triggered,
-            "timestamp":       _now_utc().isoformat(),
-        }
+        return new_trades
 
-    def stop(self) -> dict:
-        self._running = False
-        if self.state:
-            self.state.is_running = False
-            self._save_state()
-        if self.bot is None:
-            return {"status": "stopped"}
-        final_price    = self.state.last_price if self.state else 0
-        final_value    = self.broker.get_portfolio_value(final_price)
-        roi            = calculate_roi(self.config.total_investment, final_value)
-        sharpe         = calculate_sharpe_ratio(self.state.daily_values if self.state else {})
-        dd             = calculate_drawdown(self.state.daily_values if self.state else {})
-        broker_summary = self.broker.get_summary(final_price)
-        print(f"Trading [{self.config.mode}] gestoppt. ROI: {roi:.2f}% | Trades: {len(self.bot.trade_log)}")
-        return {
-            "status":          "stopped",
-            "mode":            self.config.mode,
-            "final_value":     round(final_value, 2),
-            "roi_pct":         round(roi, 4),
-            "sharpe":          sharpe,
-            "max_dd_pct":      dd.max_drawdown_pct,
-            "num_trades":      len(self.bot.trade_log),
-            "trade_log":       self.bot.trade_log,
-            "recentering":     self.bot.recentering_count,
-            "fees_paid":       broker_summary["total_fees"],
-            "total_slippage":  broker_summary["total_slippage"],
-            "filled_orders":   broker_summary["filled_orders"],
-            "rejected_orders": broker_summary["rejected_orders"],
-        }
+    # ── State speichern ──────────────────────────────────────────────────────
 
-    def get_live_metrics(self) -> dict:
-        if self.bot is None or self.state is None:
-            return {}
-        final_price    = self.state.last_price
-        portfolio_val  = self.broker.get_portfolio_value(final_price)
-        roi            = calculate_roi(self.config.total_investment, portfolio_val)
-        sharpe         = calculate_sharpe_ratio(self.state.daily_values)
-        dd             = calculate_drawdown(self.state.daily_values)
-        broker_summary = self.broker.get_summary(final_price)
-        bh_roi = ((final_price - self.state.initial_price) / self.state.initial_price * 100
-                  if self.state.initial_price > 0 else 0)
-        return {
-            "coin":            self.config.coin,
-            "mode":            self.config.mode,
-            "current_price":   final_price,
-            "portfolio_value": portfolio_val,
-            "roi_pct":         round(roi, 4),
-            "bh_roi_pct":      round(bh_roi, 4),
-            "outperformance":  round(roi - bh_roi, 4),
-            "sharpe":          sharpe,
-            "max_dd_pct":      dd.max_drawdown_pct,
-            "num_trades":      len(self.bot.trade_log),
-            "position":        dict(self.bot.position),
-            "is_running":      self._running,
-            "last_update":     self.state.last_update,
-            "num_candles":     self.state.num_candles,
-            "recentering":     self.bot.recentering_count,
-            "stop_loss_hit":   self.bot.stop_loss_triggered,
-            "daily_values":    self.state.daily_values,
-            "grid_lines":      self.bot.grid_lines,
-            "trade_log":       self.bot.trade_log,
-            "fees_paid":       broker_summary["total_fees"],
-            "total_slippage":  broker_summary["total_slippage"],
-            "rejected_orders": broker_summary["rejected_orders"],
-        }
-
-    def _save_state(self) -> None:
-        if self.state is None:
+    def _save_state(self, current_price: float) -> None:
+        """Speichert aktuellen Bot-State und Metriken in den BotStore."""
+        if self._grid_bot is None:
             return
+
+        trade_log = self._grid_bot.trade_log
+        cfg       = self._bot["config"]
+
+        # Metriken berechnen
+        daily_values = self._grid_bot.daily_values or {}
+        initial_val  = cfg["total_investment"]
+        final_val    = self._grid_bot.get_portfolio_value(current_price)
+
+        open_buys = [
+            t for t in trade_log
+            if t.get("type") == "BUY" and not t.get("matched", False)
+        ]
+
+        metrics = {}
         try:
-            STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-            with open(STATE_FILE, "w") as f:
-                json.dump(asdict(self.state), f, indent=2, default=str)
-        except Exception as e:
-            print(f"State-Fehler: {e}")
-
-    def _load_state(self) -> bool:
-        try:
-            with open(STATE_FILE, "r") as f:
-                data = json.load(f)
-            self.state = TradingState(**data)
-
-            cfg        = self.state.config
-            last_price = self.state.last_price or self.state.initial_price
-
-            # GridBot erstellen – initialisiert intern Position + coin_inventory
-            self.bot = GridBot(
-                total_investment   = cfg.get("total_investment", 10000),
-                lower_price        = cfg.get("lower_price", 0),
-                upper_price        = cfg.get("upper_price", 0),
-                num_grids          = cfg.get("num_grids", DEFAULT_NUM_GRIDS),
-                grid_mode          = cfg.get("grid_mode", DEFAULT_GRID_MODE),
-                fee_rate           = cfg.get("fee_rate", DEFAULT_FEE_RATE),
-                initial_price      = last_price,
-                reserve_pct        = cfg.get("reserve_pct", DEFAULT_RESERVE_PCT),
-                stop_loss_pct      = cfg.get("stop_loss_pct"),
-                enable_recentering = cfg.get("enable_recentering", False),
+            metrics = calculate_all_metrics(
+                trade_log     = trade_log,
+                daily_values  = daily_values,
+                initial_value = initial_val,
+                final_value   = final_val,
+                initial_price = self._grid_bot.initial_price or current_price,
+                final_price   = current_price,
+                fees_paid     = sum(t.get("fee", 0) for t in trade_log),
+                num_days      = max(1, len(daily_values)),
             )
-
-            # Gespeicherten State wiederherstellen (überschreibt GridBot-Init)
-            self.bot.trade_log = self.state.trade_log or []
-            self.bot.position  = self.state.position  or {"usdt": 0.0, "coin": 0.0}
-
-            # coin_inventory aus trade_log rekonstruieren (FIFO)
-            self.bot.coin_inventory = []
-            for trade in self.bot.trade_log:
-                trade_type = str(trade.get("type", "")).upper()
-                amount     = float(trade.get("amount", 0))
-                price      = float(trade.get("price", last_price))
-
-                if "BUY" in trade_type:
-                    self.bot.coin_inventory.append(
-                        (amount, price, pd.Timestamp.now())
-                    )
-                elif "SELL" in trade_type:
-                    # FIFO: älteste Käufe zuerst abbauen
-                    remaining = amount
-                    while remaining > 0 and self.bot.coin_inventory:
-                        amt, bp, ts = self.bot.coin_inventory[0]
-                        if amt <= remaining:
-                            remaining -= amt
-                            self.bot.coin_inventory.pop(0)
-                        else:
-                            self.bot.coin_inventory[0] = (amt - remaining, bp, ts)
-                            remaining = 0
-
-            return True
+            metrics["grid_efficiency"]      = calculate_grid_efficiency(trade_log, cfg["num_grids"])
+            metrics["avg_profit_per_trade"] = calculate_avg_profit_per_trade(trade_log)
+            metrics["runtime"]              = calculate_runtime(self._bot["created_at"])
+            metrics["unrealized_pnl"]       = calculate_unrealized_pnl(open_buys, current_price)
+            metrics["current_price"]        = current_price
+            metrics["final_value"]          = final_val
         except Exception as e:
-            print(f"State laden fehlgeschlagen: {e}")
-            return False
+            print(f"BotRunner: Metrik-Fehler: {e}")
 
+        self.store.update_bot(self.bot_id, {
+            "state":     self._grid_bot.get_state() if hasattr(self._grid_bot, "get_state") else {},
+            "trade_log": trade_log,
+            "metrics":   metrics,
+            "status":    "stopped" if self._grid_bot.stop_loss_hit else "running",
+        })
+
+    # ── Aktuellen Stand abrufen ──────────────────────────────────────────────
+
+    def get_summary(self, current_price: float) -> dict:
+        """Gibt eine Zusammenfassung des Bot-Zustands zurück."""
+        bot = self.store.get_bot(self.bot_id)
+        if bot is None:
+            return {}
+        metrics = bot.get("metrics", {})
+        cfg     = bot["config"]
+        return {
+            "bot_id":           self.bot_id,
+            "coin":             bot["coin"],
+            "interval":         bot["interval"],
+            "mode":             bot["mode"],
+            "status":           bot["status"],
+            "created_at":       bot["created_at"],
+            "current_price":    current_price,
+            "roi_pct":          metrics.get("roi_pct", 0),
+            "num_trades":       len(bot.get("trade_log", [])),
+            "runtime":          metrics.get("runtime", {}),
+            "unrealized_pnl":   metrics.get("unrealized_pnl", {}),
+            "lower_price":      cfg["lower_price"],
+            "upper_price":      cfg["upper_price"],
+            "num_grids":        cfg["num_grids"],
+            "total_investment": cfg["total_investment"],
+        }
+
+
+# ---------------------------------------------------------------------------
+# Backward-Compatibility: alte Funktionen die noch genutzt werden könnten
+# ---------------------------------------------------------------------------
 
 def load_existing_state() -> Optional[dict]:
-    if not STATE_FILE.exists():
-        return None
-    try:
-        with open(STATE_FILE) as f:
-            return json.load(f)
-    except Exception:
-        return None
-
+    """Deprecated: Wird nicht mehr verwendet."""
+    return None
 
 def clear_state() -> None:
-    if STATE_FILE.exists():
-        STATE_FILE.unlink()
-        print("Trading: State geloescht.")
+    """Deprecated: Wird nicht mehr verwendet."""
+    pass
