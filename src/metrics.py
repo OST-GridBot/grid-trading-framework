@@ -303,3 +303,124 @@ def format_metrics_summary(metrics: dict) -> str:
         f"  Max Drawdown     : {metrics.get('max_drawdown_pct', 0):>10.2f} %",
         sep,
     ])
+
+
+# ---------------------------------------------------------------------------
+# Zusätzliche Grid-Bot Metriken
+# ---------------------------------------------------------------------------
+
+def calculate_grid_efficiency(trade_log: list, num_grids: int) -> Optional[float]:
+    """
+    Grid Efficiency = Anzahl aktiv gekreuzter Grid-Levels / Total Grid-Levels * 100
+    Zeigt ob die Grid-Grenzen gut gesetzt sind. Gut >= 50%
+    """
+    if num_grids <= 0:
+        return None
+    sells = [t for t in trade_log if t.get("type") == "SELL"]
+    if not sells:
+        return None
+    # Einzigartige Preise der Trades = aktive Grid-Levels
+    unique_prices = set(round(t.get("price", 0), 2) for t in trade_log if t.get("price", 0) > 0)
+    active_levels = len(unique_prices)
+    efficiency = min(active_levels / num_grids * 100, 100.0)
+    return round(efficiency, 2)
+
+
+def calculate_avg_profit_per_trade(trade_log: list) -> Optional[float]:
+    """
+    Durchschnittlicher Gewinn pro abgeschlossenem SELL-Trade in USDT.
+    Zeigt ob einzelne Trades lohnenswert sind.
+    """
+    sells = [t for t in trade_log if t.get("type") == "SELL"]
+    if not sells:
+        return None
+    total_profit = sum(t.get("profit", 0) for t in sells)
+    return round(total_profit / len(sells), 4)
+
+
+def calculate_runtime(start_time) -> dict:
+    """
+    Berechnet Laufzeit des Bots seit Start.
+    
+    Args:
+        start_time: datetime oder ISO-String des Bot-Starts
+    
+    Returns:
+        dict mit hours, days, formatted string
+    """
+    import pandas as pd
+    from datetime import datetime, timezone
+    try:
+        if isinstance(start_time, str):
+            start_dt = pd.to_datetime(start_time).to_pydatetime()
+        else:
+            start_dt = start_time
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=timezone.utc)
+        now = datetime.now(tz=timezone.utc)
+        delta = now - start_dt
+        total_hours = delta.total_seconds() / 3600
+        days  = int(total_hours // 24)
+        hours = int(total_hours % 24)
+        mins  = int((delta.total_seconds() % 3600) / 60)
+        if days > 0:
+            formatted = f"{days}d {hours}h {mins}m"
+        elif hours > 0:
+            formatted = f"{hours}h {mins}m"
+        else:
+            formatted = f"{mins}m"
+        return {
+            "total_hours": round(total_hours, 2),
+            "days":        days,
+            "hours":       hours,
+            "minutes":     mins,
+            "formatted":   formatted,
+        }
+    except Exception:
+        return {"total_hours": 0, "days": 0, "hours": 0, "minutes": 0, "formatted": "–"}
+
+
+def calculate_unrealized_pnl(
+    open_buys:     list,
+    current_price: float,
+    fee_rate:      float = 0.001,
+) -> dict:
+    """
+    Unrealisierter Gewinn/Verlust der offenen BUY-Positionen.
+    
+    Args:
+        open_buys     : Liste offener BUY-Trades [{"price": x, "amount": y, "fee": z}]
+        current_price : Aktueller Marktpreis
+        fee_rate      : Gebührenrate für hypothetischen Verkauf
+    
+    Returns:
+        dict mit usdt, pct, num_positions
+    """
+    if not open_buys or current_price <= 0:
+        return {"usdt": 0.0, "pct": 0.0, "num_positions": 0}
+    
+    total_cost   = 0.0
+    total_value  = 0.0
+    
+    for buy in open_buys:
+        buy_price = buy.get("price", 0)
+        amount    = buy.get("amount", 0)
+        buy_fee   = buy.get("fee", 0)
+        if buy_price <= 0 or amount <= 0:
+            continue
+        cost         = buy_price * amount + buy_fee
+        sell_value   = current_price * amount * (1 - fee_rate)
+        total_cost  += cost
+        total_value += sell_value
+    
+    if total_cost <= 0:
+        return {"usdt": 0.0, "pct": 0.0, "num_positions": 0}
+    
+    pnl_usdt = total_value - total_cost
+    pnl_pct  = pnl_usdt / total_cost * 100
+    
+    return {
+        "usdt":          round(pnl_usdt, 4),
+        "pct":           round(pnl_pct,  4),
+        "num_positions": len(open_buys),
+    }

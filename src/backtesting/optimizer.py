@@ -44,7 +44,7 @@ from src.metrics import calculate_drawdown
 from src.metrics import (
     calculate_roi, calculate_cagr, calculate_sharpe_ratio,
     calculate_calmar_ratio, calculate_profit_factor,
-    calculate_win_rate, _get_num_days,
+    calculate_win_rate, get_num_days,
 )
 from src.analysis.regime import detect_regime
 
@@ -105,7 +105,7 @@ def optimize_num_grids(
         OptimizationResult mit bester Grid-Anzahl und allen Resultaten
     """
     results = []
-    num_days = _get_num_days(df, "1h")
+    num_days = get_num_days(df, "1h")
 
     for num_grids in grid_range:
         sim = simulate_grid_bot(
@@ -170,7 +170,7 @@ def optimize_grid_range(
         range_pcts = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50]
 
     results  = []
-    num_days = _get_num_days(df, "1h")
+    num_days = get_num_days(df, "1h")
 
     for pct in range_pcts:
         lower = current_price * (1 - pct)
@@ -231,7 +231,7 @@ def compare_grid_modes(
     Returns:
         Dictionary mit Ergebnissen beider Modi und Empfehlung
     """
-    num_days = _get_num_days(df, "1h")
+    num_days = get_num_days(df, "1h")
     results  = {}
 
     for mode in ["arithmetic", "geometric"]:
@@ -319,7 +319,7 @@ def grid_search(
     ][:max_combinations]
 
     results  = []
-    num_days = _get_num_days(df, "1h")
+    num_days = get_num_days(df, "1h")
 
     print(f"Grid-Search: {len(combinations)} Kombinationen werden getestet...")
 
