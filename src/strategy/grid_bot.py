@@ -468,6 +468,74 @@ class GridBot:
     # Validierung
     # -----------------------------------------------------------------------
 
+    def get_state(self) -> dict:
+        """Serialisiert den aktuellen Bot-State für Persistenz."""
+        return {
+            "position":            self.position,
+            "coin_inventory":      [(a, p, str(ts)) for a, p, ts in self.coin_inventory],
+            "trade_log":           self.trade_log,
+            "daily_values":        self.daily_values,
+            "last_price":          self.last_price,
+            "last_traded_price":   self.last_traded_price,
+            "recentering_count":   self.recentering_count,
+            "stop_loss_triggered": self.stop_loss_triggered,
+            "grids": {
+                str(price): {
+                    "price":        g.price,
+                    "side":         g.side,
+                    "trade_amount": g.trade_amount,
+                    "trade_count":  g.trade_count,
+                }
+                for price, g in self.grids.items()
+            },
+        }
+
+    def load_state(self, state: dict) -> None:
+        """Lädt einen gespeicherten Bot-State."""
+        if not state:
+            return
+        try:
+            self.position          = state.get("position", self.position)
+            self.daily_values      = state.get("daily_values", {})
+            self.last_price        = state.get("last_price", self.last_price)
+            self.last_traded_price = state.get("last_traded_price")
+            self.recentering_count = state.get("recentering_count", 0)
+            self.stop_loss_triggered = state.get("stop_loss_triggered", False)
+            self.trade_log         = state.get("trade_log", [])
+
+            # FIFO-Inventar wiederherstellen
+            inv = state.get("coin_inventory", [])
+            self.coin_inventory = [
+                (float(a), float(p), pd.Timestamp(ts))
+                for a, p, ts in inv
+            ]
+
+            # Grid-States wiederherstellen
+            grids_data = state.get("grids", {})
+            for price_str, g in grids_data.items():
+                price = float(price_str)
+                if price in self.grids:
+                    self.grids[price].side        = g.get("side", "buy")
+                    self.grids[price].trade_count = g.get("trade_count", 0)
+        except Exception as e:
+            print(f"GridBot.load_state Fehler: {e}")
+
+    @property
+    def stop_loss_hit(self) -> bool:
+        """Alias für stop_loss_triggered."""
+        return self.stop_loss_triggered
+
+    def get_portfolio_value(self, current_price: float) -> float:
+        """Gibt aktuellen Portfolio-Wert zurück."""
+        return self.position["usdt"] + self.position["coin"] * current_price
+
+    @property
+    def initial_price(self) -> Optional[float]:
+        """Erster Preis aus Trade-Log oder last_price."""
+        if self.trade_log:
+            return self.trade_log[0].get("price", self.last_price)
+        return self.last_price
+
     def _validate_inputs(
         self,
         total_investment: float,

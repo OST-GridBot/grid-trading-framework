@@ -429,9 +429,28 @@ def _show_bot_detail(bot: dict):
             st.rerun()
 
     # Status + Aktionen
-    col_s, col_stop, col_del = st.columns([3, 1, 1])
+    col_s, col_upd, col_stop, col_del = st.columns([2, 2, 1, 1])
     with col_s:
         st.markdown(_status_badge(bot["status"]), unsafe_allow_html=True)
+    with col_upd:
+        if st.button("🔄 Preis aktualisieren", key="pt_det_update",
+                      disabled=bot["status"] != "running",
+                      use_container_width=True):
+            from src.trading.engine import BotRunner
+            with st.spinner("Verarbeite neue Kerzen..."):
+                try:
+                    runner = BotRunner(bot["bot_id"])
+                    result = runner.run_update()
+                    if result.get("error"):
+                        st.error(f"Fehler: {result['error']}")
+                    else:
+                        n = len(result.get("new_trades", []))
+                        c = result.get("candles_processed", 0)
+                        p = result.get("current_price", 0)
+                        st.success(f"✅ Kurs: ${p:,.2f} · {c} Kerzen · {n} neue Trades")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Runner-Fehler: {e}")
     with col_stop:
         if st.button("⏹ Stoppen", key="pt_det_stop",
                       disabled=bot["status"] != "running",

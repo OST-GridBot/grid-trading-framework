@@ -19,7 +19,6 @@ from typing import Optional
 from config.settings import DEFAULT_FEE_RATE
 from src.data.binance_api import fetch_klines_df
 from src.strategy.grid_bot import GridBot
-from src.strategy.grid_builder import build_grid_config
 from src.trading.bot_store import BotStore, store as default_store
 from src.metrics import (
     calculate_all_metrics, calculate_grid_efficiency,
@@ -75,19 +74,13 @@ class BotRunner:
         if df is None or df.empty:
             return False, f"Keine Preisdaten für {coin} verfügbar"
 
-        # Grid konfigurieren
-        grid_config = build_grid_config(
-            lower_price = cfg["lower_price"],
-            upper_price = cfg["upper_price"],
-            num_grids   = cfg["num_grids"],
-            mode        = cfg["grid_mode"],
-            fee_rate    = cfg.get("fee_rate", DEFAULT_FEE_RATE),
-        )
-
-        # GridBot erstellen
+        # GridBot erstellen — direkt mit Parametern (kein grid_config Objekt)
         self._grid_bot = GridBot(
-            grid_config       = grid_config,
             total_investment  = cfg["total_investment"],
+            lower_price       = cfg["lower_price"],
+            upper_price       = cfg["upper_price"],
+            num_grids         = cfg["num_grids"],
+            grid_mode         = cfg["grid_mode"],
             fee_rate          = cfg.get("fee_rate", DEFAULT_FEE_RATE),
             reserve_pct       = cfg.get("reserve_pct", 0.03),
             stop_loss_pct     = cfg.get("stop_loss_pct"),
@@ -171,12 +164,118 @@ class BotRunner:
         except Exception as e:
             print(f"BotRunner: Metrik-Fehler: {e}")
 
+        # Timestamps serialisierbar machen (pd.Timestamp → str)
+        def _serialize(obj):
+            if hasattr(obj, "isoformat"):
+                return obj.isoformat()
+            if isinstance(obj, dict):
+                return {k: _serialize(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [_serialize(i) for i in obj]
+            return obj
+
+        trade_log_serialized = _serialize(trade_log)
+        state_serialized     = _serialize(
+            self._grid_bot.get_state() if hasattr(self._grid_bot, "get_state") else {}
+        )
+
         self.store.update_bot(self.bot_id, {
-            "state":     self._grid_bot.get_state() if hasattr(self._grid_bot, "get_state") else {},
-            "trade_log": trade_log,
+            "state":     state_serialized,
+            "trade_log": trade_log_serialized,
             "metrics":   metrics,
             "status":    "stopped" if self._grid_bot.stop_loss_hit else "running",
         })
+
+    # ── Update: neue Kerzen verarbeiten ─────────────────────────────────────
+
+    def run_update(self) -> dict:
+        """
+        Holt die neuesten Kerzen und verarbeitet sie.
+        Wird vom "Preis aktualisieren" Button in der Page aufgerufen.
+
+        Returns:
+            dict mit: current_price, new_trades, error
+        """
+        self._bot = self.store.get_bot(self.bot_id)
+        if self._bot is None:
+            return {"error": "Bot nicht gefunden"}
+        if self._bot.get("status") != "running":
+            return {"error": "Bot ist gestoppt"}
+
+        cfg      = self._bot["config"]
+        coin     = self._bot["coin"]
+        interval = self._bot["interval"]
+
+        # Aktuelle Kerzen laden
+        from src.data.cache_manager import get_price_data
+        n_days = {"1m":1,"5m":1,"15m":1,"1h":2,"4h":5,"1d":14}.get(interval, 2)
+        df, _ = get_price_data(coin, days=n_days, interval=interval)
+        if df is None or df.empty:
+            return {"error": f"Keine Preisdaten für {coin}"}
+
+        # GridBot initialisieren falls nötig
+        # initialize() lädt den State bereits intern
+        if self._grid_bot is None:
+            ok, err = self.initialize()
+            if not ok:
+                return {"error": err}
+
+        # Letzten verarbeiteten Timestamp ermitteln
+        # Minimum: Bot-Erstellungszeit → niemals Kerzen vor Bot-Start verarbeiten
+        created_at = pd.to_datetime(self._bot.get("created_at", "")).tz_localize(None)             if pd.to_datetime(self._bot.get("created_at","")).tzinfo is not None             else pd.to_datetime(self._bot.get("created_at",""))
+        try:
+            created_at = pd.to_datetime(self._bot.get("created_at","")).replace(tzinfo=None)
+        except Exception:
+            created_at = None
+
+        last_ts = created_at  # Standard: nichts vor Bot-Start verarbeiten
+
+        # Wenn bereits Trades vorhanden: letzten Trade-Timestamp nutzen
+        saved_trade_log = self._bot.get("trade_log", [])
+        if saved_trade_log:
+            try:
+                last_trade_ts = pd.to_datetime(saved_trade_log[-1].get("timestamp"))
+                if last_trade_ts.tzinfo is not None:
+                    last_trade_ts = last_trade_ts.tz_localize(None)
+                if last_ts is None or last_trade_ts > last_ts:
+                    last_ts = last_trade_ts
+            except Exception:
+                pass
+
+        # Wenn State vorhanden aber keine Trades: letzten bekannten Preis-Timestamp nutzen
+        elif self._grid_bot.last_price is not None:
+            matching = df[abs(df["close"] - self._grid_bot.last_price) < 0.01]
+            if not matching.empty:
+                match_ts = pd.to_datetime(matching["timestamp"].iloc[-1])
+                if match_ts.tzinfo is not None:
+                    match_ts = match_ts.tz_localize(None)
+                if last_ts is None or match_ts > last_ts:
+                    last_ts = match_ts
+
+        # Nur neue Kerzen verarbeiten
+        new_trades = []
+        candles_processed = 0
+        for _, row in df.iterrows():
+            candle_ts = pd.to_datetime(row["timestamp"])
+            if last_ts is not None and candle_ts <= last_ts:
+                continue
+            trades = self.step(row.to_dict())
+            new_trades.extend(trades)
+            candles_processed += 1
+
+        # Wenn gar keine neuen Kerzen: letzte Kerze verarbeiten
+        if candles_processed == 0 and not df.empty:
+            trades = self.step(df.iloc[-1].to_dict())
+            new_trades.extend(trades)
+            candles_processed = 1
+
+        current_price = float(df["close"].iloc[-1])
+        return {
+            "error":             None,
+            "current_price":     current_price,
+            "new_trades":        new_trades,
+            "candles_processed": candles_processed,
+        }
 
     # ── Aktuellen Stand abrufen ──────────────────────────────────────────────
 
