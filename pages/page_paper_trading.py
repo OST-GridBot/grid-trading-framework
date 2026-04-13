@@ -80,6 +80,8 @@ def show_paper_trading():
     bot_count   = len(bots)
     can_create  = bot_count < MAX_BOTS_PER_MODE
 
+    running_bots = [b for b in bots if b.get("status") == "running"]
+
     # ── Sidebar ──────────────────────────────────────────────────────────────
     st.sidebar.markdown(_label("Ansicht"), unsafe_allow_html=True)
     if st.sidebar.button("＋ Neuen Bot starten",
@@ -106,8 +108,12 @@ def show_paper_trading():
         st.session_state.pt_selected_bot  = None
 
     # ── Header ───────────────────────────────────────────────────────────────
-    st.markdown("# 📄 Paper Trading")
-    st.caption(f"{bot_count}/{MAX_BOTS_PER_MODE} Bots aktiv")
+    col_h1, col_h2 = st.columns([4, 1])
+    with col_h1:
+        st.markdown("# 📄 Paper Trading")
+        st.caption(f"{bot_count}/{MAX_BOTS_PER_MODE} Bots aktiv")
+    with col_h2:
+        pass
     st.divider()
 
     # ── Neuen Bot konfigurieren ──────────────────────────────────────────────
@@ -325,7 +331,30 @@ def _show_new_bot_form():
 # ---------------------------------------------------------------------------
 
 def _show_bots_overview(bots: list):
-    st.markdown("### Übersicht aktive Bots")
+    col_ov1, col_ov2 = st.columns([3, 1])
+    with col_ov1:
+        st.markdown("### Übersicht aktive Bots")
+    with col_ov2:
+        running = [b for b in bots if b.get("status") == "running"]
+        if st.button(
+            f"🔄 Alle aktualisieren ({len(running)})",
+            use_container_width=True,
+            disabled=len(running) == 0,
+            key="pt_update_all"
+        ):
+            from src.trading.engine import BotRunner
+            errors = []
+            for bot in running:
+                try:
+                    runner = BotRunner(bot["bot_id"])
+                    runner.run_update()
+                except Exception as e:
+                    errors.append(f"{bot['bot_id']}: {e}")
+            if errors:
+                st.error("Fehler: " + ", ".join(errors))
+            else:
+                st.success(f"✅ {len(running)} Bots aktualisiert")
+            st.rerun()
 
     for bot in bots:
         cfg     = bot.get("config", {})
@@ -415,25 +444,23 @@ def _show_bot_detail(bot: dict):
     roi     = metrics.get("roi_pct", 0) or 0
     color   = "#34D399" if roi >= 0 else "#F87171"
 
-    # Header
-    col_title, col_back = st.columns([4, 1])
-    with col_title:
-        st.markdown(
-            f"### {bot['coin']}/USDT · {bot['interval']} "
-            f"<span style='font-size:0.85rem; color:#64748B;'>ID: {bot['bot_id']}</span>",
-            unsafe_allow_html=True
-        )
-    with col_back:
-        if st.button("← Zurück", use_container_width=True, key="pt_back"):
-            st.session_state.pt_selected_bot = None
-            st.rerun()
 
-    # Status + Aktionen
-    col_s, col_upd, col_stop, col_del = st.columns([2, 2, 1, 1])
-    with col_s:
-        st.markdown(_status_badge(bot["status"]), unsafe_allow_html=True)
-    with col_upd:
-        if st.button("🔄 Preis aktualisieren", key="pt_det_update",
+    # Header: Bot-Name + Status in einer Zeile, Buttons darunter
+    name = bot.get("name", f"{bot['coin']}/USDT")
+    st.markdown(
+        f"<div style='margin-bottom:8px;'>"
+        f"<span style='font-size:1.6rem; font-weight:700; color:#E2E8F0;'>{name}</span>"
+        f"<span style='font-size:0.85rem; color:#64748B; margin-left:10px;'>"
+        f"{bot['coin']}/USDT · {bot['interval']} · ID: {bot['bot_id']}</span>"
+        f" &nbsp;&nbsp; {_status_badge(bot['status'])}"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+
+    # Buttons: 3 links + Zurück rechts
+    col_b1, col_b2, col_b3, col_spacer, col_back = st.columns([2, 2, 2, 1, 2])
+    with col_b1:
+        if st.button("Preis aktualisieren", key="pt_det_update",
                       disabled=bot["status"] != "running",
                       use_container_width=True):
             from src.trading.engine import BotRunner
@@ -447,44 +474,63 @@ def _show_bot_detail(bot: dict):
                         n = len(result.get("new_trades", []))
                         c = result.get("candles_processed", 0)
                         p = result.get("current_price", 0)
-                        st.success(f"✅ Kurs: ${p:,.2f} · {c} Kerzen · {n} neue Trades")
+                        st.success(f"Kurs: ${p:,.2f} · {c} Kerzen · {n} neue Trades")
+                        import time; time.sleep(4)
                         st.rerun()
                 except Exception as e:
-                    st.error(f"Runner-Fehler: {e}")
-    with col_stop:
-        if st.button("⏹ Stoppen", key="pt_det_stop",
+                    st.error(f"Fehler: {e}")
+    with col_b2:
+        if st.button("Stoppen", key="pt_det_stop",
                       disabled=bot["status"] != "running",
                       use_container_width=True):
             bot_store.set_status(bot["bot_id"], "stopped")
             st.rerun()
-    with col_del:
-        if st.button("🗑 Löschen", key="pt_det_del",
+    with col_b3:
+        if st.button("Löschen", key="pt_det_del",
                       use_container_width=True):
             bot_store.delete_bot(bot["bot_id"])
             st.session_state.pt_selected_bot = None
             st.rerun()
+    with col_back:
+        if st.button("← Zurück", key="pt_det_back",
+                      use_container_width=True):
+            st.session_state.pt_selected_bot = None
+            st.rerun()
+
 
     st.divider()
 
-    # Metriken
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("ROI", f"{roi:+.2f}%")
-    col2.metric("Trades", len(trade_log))
-    col3.metric("Startkapital", f"${cfg.get('total_investment',0):,.2f}")
-    runtime = metrics.get("runtime", {})
-    col4.metric("Laufzeit",
-                runtime.get("formatted","–") if isinstance(runtime, dict) else "–")
-
-    col5, col6, col7, col8 = st.columns(4)
-    col5.metric("Win-Rate",
-                f"{metrics.get('win_rate_pct',0) or 0:.1f}%")
-    col6.metric("Profit-Faktor",
-                f"{metrics.get('profit_factor',0) or 0:.2f}")
-    col7.metric("Max Drawdown",
-                f"{metrics.get('max_drawdown_pct',0) or 0:.2f}%")
+    # Metriken — gleich wie Backtesting via render_metrics_row
+    from components.metrics_display import render_metrics_row
     upnl = metrics.get("unrealized_pnl", {})
     upnl_usdt = upnl.get("usdt", 0) if isinstance(upnl, dict) else 0
-    col8.metric("Unrealisiert", f"${upnl_usdt:+.2f}")
+    upnl_pct  = upnl.get("pct",  0) if isinstance(upnl, dict) else 0
+    runtime   = metrics.get("runtime", {})
+    if not isinstance(runtime, dict) or not runtime.get("formatted"):
+        from src.metrics import calculate_runtime
+        runtime = calculate_runtime(bot.get("created_at", ""))
+
+    metrics_dict = {
+        "roi_pct":              roi,
+        "sharpe":               metrics.get("sharpe_ratio", 0),
+        "max_dd_pct":           metrics.get("max_drawdown_pct", 0),
+        "num_trades":           len(trade_log),
+        "bh_roi_pct":           metrics.get("benchmark_roi_pct", 0),
+        "outperformance":       metrics.get("outperformance_pct", 0),
+        "cagr_pct":             metrics.get("cagr_pct", 0),
+        "calmar":               metrics.get("calmar_ratio", 0),
+        "win_rate":             metrics.get("win_rate_pct", 0),
+        "profit_factor":        metrics.get("profit_factor", 0),
+        "fees_paid":            sum(t.get("fee",0) for t in trade_log),
+        "initial_investment":   cfg.get("total_investment", 0),
+        "final_value":          metrics.get("final_value", cfg.get("total_investment", 0)),
+        "grid_efficiency":      metrics.get("grid_efficiency"),
+        "avg_profit_per_trade": metrics.get("avg_profit_per_trade"),
+        "runtime":              runtime,
+        "unrealized_pnl":       upnl,
+        "_trade_log":           trade_log,
+    }
+    render_metrics_row(metrics_dict, mode="backtest")
 
     st.divider()
 
@@ -525,6 +571,12 @@ def _show_bot_detail(bot: dict):
                     show_grid_bg = True,
                     chart_type   = "Candlestick",
                 )
+                # Zoom: letzte 2 Tage anzeigen
+                if len(df_display) > 0:
+                    import pandas as pd
+                    x_end   = df_display["timestamp"].iloc[-1] + pd.Timedelta(hours=2)
+                    x_start = df_display["timestamp"].iloc[-1] - pd.Timedelta(days=2)
+                    fig.update_layout(xaxis_range=[x_start, x_end])
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.info("Keine Chart-Daten verfügbar.")
@@ -565,7 +617,8 @@ def _show_bot_detail(bot: dict):
             st.markdown(f"- **Untere Grenze:** ${cfg.get('lower_price',0):,.2f}")
             st.markdown(f"- **Obere Grenze:** ${cfg.get('upper_price',0):,.2f}")
             st.markdown(f"- **Gebührenrate:** {cfg.get('fee_rate',0)*100:.3f}%")
-            st.markdown(f"- **Erstellt:** {bot.get('created_at','')[:16].replace('T',' ')}")
+            _created_mez = _format_ts(bot.get("created_at",""))
+            st.markdown(f"- **Erstellt:** {_created_mez}")
 
 
 # ---------------------------------------------------------------------------

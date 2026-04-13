@@ -127,10 +127,15 @@ def render_metrics_row(metrics: dict, mode: str = "backtest") -> None:
             color   = "#F87171" if max_dd > 20 else "#FBBF24" if max_dd > 10 else "#34D399",
         )
     with cols[3]:
+        trade_log = metrics.get("_trade_log", [])
+        buys  = sum(1 for t in trade_log if "BUY"  in str(t.get("type","")).upper())
+        sells = sum(1 for t in trade_log if "SELL" in str(t.get("type","")).upper())
+        buy_sell_str = f"B:{buys} / S:{sells}" if trade_log else None
         _metric_card(
             "Trades",
             str(num_trades),
-            color   = "#E2E8F0",
+            delta = buy_sell_str,
+            color = "#E2E8F0",
         )
 
     # Zeile 2: Erweiterte Kennzahlen (nur Backtest)
