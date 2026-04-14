@@ -49,6 +49,9 @@ def run_backtest(
     stop_loss_pct:      Optional[float] = None,
     enable_recentering: bool    = False,
     recenter_threshold: float   = 0.05,
+    enable_dd_throttle: bool    = False,
+    dd_threshold_1:     float   = 0.10,
+    dd_threshold_2:     float   = 0.20,
     force_reload:       bool    = False,
 ) -> dict:
     """
@@ -106,6 +109,9 @@ def run_backtest(
         stop_loss_pct      = stop_loss_pct,
         enable_recentering = enable_recentering,
         recenter_threshold = recenter_threshold,
+        enable_dd_throttle = enable_dd_throttle,
+        dd_threshold_1     = dd_threshold_1,
+        dd_threshold_2     = dd_threshold_2,
     )
 
     if sim.get("error"):

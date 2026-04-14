@@ -288,16 +288,28 @@ def _show_new_bot_form():
 
     st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
 
-    with st.expander("Erweiterte Einstellungen"):
-        st.markdown(_caption("Kapitalreserve (%)"), unsafe_allow_html=True)
-        reserve_pct = st.slider("", 0.0, 20.0, DEFAULT_RESERVE_PCT * 100, 1.0,
-                                 key="pt_new_reserve", label_visibility="collapsed") / 100
-        sl_enabled = st.checkbox("Stop-Loss aktivieren", key="pt_new_sl")
-        stop_loss_pct = None
-        if sl_enabled:
-            st.markdown(_caption("Stop-Loss (%)"), unsafe_allow_html=True)
-            stop_loss_pct = st.slider("", 5.0, 50.0, 20.0, 5.0,
-                                       key="pt_new_sl_pct", label_visibility="collapsed") / 100
+    st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
+    st.markdown(_label("Risiko & Kapital"), unsafe_allow_html=True)
+    st.markdown(_caption("Kapitalreserve (%)"), unsafe_allow_html=True)
+    reserve_pct = st.slider("", 0.0, 20.0, DEFAULT_RESERVE_PCT * 100, 1.0,
+                             key="pt_new_reserve", label_visibility="collapsed") / 100
+    sl_enabled = st.checkbox("Stop-Loss aktivieren", key="pt_new_sl")
+    stop_loss_pct = None
+    if sl_enabled:
+        st.markdown(_caption("Stop-Loss (%)"), unsafe_allow_html=True)
+        stop_loss_pct = st.slider("", 5.0, 50.0, 20.0, 5.0,
+                                   key="pt_new_sl_pct", label_visibility="collapsed") / 100
+    dd_enabled = st.checkbox("Drawdown-Drosselung aktivieren", key="pt_new_dd")
+    enable_dd_throttle = dd_enabled
+    dd_threshold_1 = 0.10
+    dd_threshold_2 = 0.20
+    if dd_enabled:
+        st.markdown(_caption("Schwelle 1 (%) → 50% Ordergrösse"), unsafe_allow_html=True)
+        dd_threshold_1 = st.slider("", 5.0, 30.0, 10.0, 1.0,
+                                    key="pt_new_dd_thr1", label_visibility="collapsed") / 100
+        st.markdown(_caption("Schwelle 2 (%) → 25% Ordergrösse"), unsafe_allow_html=True)
+        dd_threshold_2 = st.slider("", 10.0, 50.0, 20.0, 1.0,
+                                    key="pt_new_dd_thr2", label_visibility="collapsed") / 100
 
     st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
     col_btn1, col_btn2 = st.columns([2, 1])
@@ -311,17 +323,20 @@ def _show_new_bot_form():
             else:
                 name = bot_name.strip() if bot_name.strip() else f"{coin}/USDT"
                 bot_id, err = bot_store.create_bot(
-                    mode             = "paper",
-                    coin             = coin,
-                    interval         = interval,
-                    lower_price      = lower_price,
-                    upper_price      = upper_price,
-                    total_investment = total_investment,
-                    num_grids        = int(num_grids),
-                    grid_mode        = grid_mode,
-                    fee_rate         = fee_rate,
-                    reserve_pct      = reserve_pct,
-                    stop_loss_pct    = stop_loss_pct,
+                    mode               = "paper",
+                    coin               = coin,
+                    interval           = interval,
+                    lower_price        = lower_price,
+                    upper_price        = upper_price,
+                    total_investment   = total_investment,
+                    num_grids          = int(num_grids),
+                    grid_mode          = grid_mode,
+                    fee_rate           = fee_rate,
+                    reserve_pct        = reserve_pct,
+                    stop_loss_pct      = stop_loss_pct,
+                    enable_dd_throttle = enable_dd_throttle,
+                    dd_threshold_1     = dd_threshold_1,
+                    dd_threshold_2     = dd_threshold_2,
                 )
                 if err:
                     st.error(err)

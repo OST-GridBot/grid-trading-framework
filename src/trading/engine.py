@@ -76,14 +76,17 @@ class BotRunner:
 
         # GridBot erstellen — direkt mit Parametern (kein grid_config Objekt)
         self._grid_bot = GridBot(
-            total_investment  = cfg["total_investment"],
-            lower_price       = cfg["lower_price"],
-            upper_price       = cfg["upper_price"],
-            num_grids         = cfg["num_grids"],
-            grid_mode         = cfg["grid_mode"],
-            fee_rate          = cfg.get("fee_rate", DEFAULT_FEE_RATE),
-            reserve_pct       = cfg.get("reserve_pct", 0.03),
-            stop_loss_pct     = cfg.get("stop_loss_pct"),
+            total_investment   = cfg["total_investment"],
+            lower_price        = cfg["lower_price"],
+            upper_price        = cfg["upper_price"],
+            num_grids          = cfg["num_grids"],
+            grid_mode          = cfg["grid_mode"],
+            fee_rate           = cfg.get("fee_rate", DEFAULT_FEE_RATE),
+            reserve_pct        = cfg.get("reserve_pct", 0.03),
+            stop_loss_pct      = cfg.get("stop_loss_pct"),
+            enable_dd_throttle = cfg.get("enable_dd_throttle", False),
+            dd_threshold_1     = cfg.get("dd_threshold_1", 0.10),
+            dd_threshold_2     = cfg.get("dd_threshold_2", 0.20),
         )
 
         # Bestehenden State laden falls vorhanden

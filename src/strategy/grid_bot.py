@@ -136,6 +136,10 @@ class GridBot:
         stop_loss_pct:       Optional[float] = None,
         enable_recentering:  bool  = False,
         recenter_threshold:  float = 0.05,
+        # Drawdown-Drosselung
+        enable_dd_throttle:  bool  = False,
+        dd_threshold_1:      float = 0.10,   # -10% → 50% Ordergrösse
+        dd_threshold_2:      float = 0.20,   # -20% → 25% Ordergrösse
     ):
         self._validate_inputs(total_investment, lower_price, upper_price,
                               num_grids, fee_rate)
@@ -151,6 +155,10 @@ class GridBot:
         self.stop_loss_pct      = stop_loss_pct
         self.enable_recentering = enable_recentering
         self.recenter_threshold = recenter_threshold
+        self.enable_dd_throttle = enable_dd_throttle
+        self.dd_threshold_1     = dd_threshold_1
+        self.dd_threshold_2     = dd_threshold_2
+        self.dd_throttle_factor = 1.0  # aktueller Drosselfaktor
 
         # Grid-Linien berechnen
         self.grid_lines = calculate_grid_lines(
@@ -269,6 +277,10 @@ class GridBot:
             )
             self.daily_values[date_str] = portfolio_value
 
+            # Drawdown-Drosselung aktualisieren
+            if self.enable_dd_throttle:
+                self._update_dd_throttle(portfolio_value)
+
             # Stop-Loss pruefen
             if self._check_stop_loss(portfolio_value):
                 self.stop_loss_triggered = True
@@ -350,16 +362,19 @@ class GridBot:
                 grid.trade_amount = actual_sell_amt
 
             else:  # buy
-                required_usdt = grid.trade_amount * grid.price * (1 + self.fee_rate)
+                # Drawdown-Drosselung: Ordergrösse reduzieren
+                throttled_amount = grid.trade_amount * self.dd_throttle_factor
+                required_usdt = throttled_amount * grid.price * (1 + self.fee_rate)
                 if self.position["usdt"] < required_usdt:
                     return  # Nicht genuegend USDT
 
-                fee = grid.trade_amount * grid.price * self.fee_rate
+                fee = throttled_amount * grid.price * self.fee_rate
                 self.position["usdt"] -= required_usdt
-                self.position["coin"] += grid.trade_amount
+                self.position["coin"] += throttled_amount
                 self.coin_inventory.append(
-                    (grid.trade_amount, grid.price, timestamp)
+                    (throttled_amount, grid.price, timestamp)
                 )
+                grid.trade_amount = throttled_amount
 
             # Trade loggen
             self.trade_log.append({
@@ -469,6 +484,22 @@ class GridBot:
     # Validierung
     # -----------------------------------------------------------------------
 
+    def _update_dd_throttle(self, portfolio_value: float) -> None:
+        """
+        Aktualisiert den Drawdown-Drosselfaktor basierend auf aktuellem Verlust.
+        
+        Schwelle 1 (default -10%): Ordergrösse auf 50%
+        Schwelle 2 (default -20%): Ordergrösse auf 25%
+        Kein Drawdown:             Ordergrösse 100%
+        """
+        loss_pct = (self.total_investment - portfolio_value) / self.total_investment
+        if loss_pct >= self.dd_threshold_2:
+            self.dd_throttle_factor = 0.25
+        elif loss_pct >= self.dd_threshold_1:
+            self.dd_throttle_factor = 0.50
+        else:
+            self.dd_throttle_factor = 1.0
+
     def get_state(self) -> dict:
         """Serialisiert den aktuellen Bot-State für Persistenz."""
         return {
@@ -480,6 +511,7 @@ class GridBot:
             "last_traded_price":   self.last_traded_price,
             "recentering_count":   self.recentering_count,
             "stop_loss_triggered": self.stop_loss_triggered,
+            "dd_throttle_factor":  self.dd_throttle_factor,
             "grids": {
                 str(price): {
                     "price":        g.price,
@@ -502,6 +534,7 @@ class GridBot:
             self.last_traded_price = state.get("last_traded_price")
             self.recentering_count = state.get("recentering_count", 0)
             self.stop_loss_triggered = state.get("stop_loss_triggered", False)
+            self.dd_throttle_factor  = state.get("dd_throttle_factor", 1.0)
             self.trade_log         = state.get("trade_log", [])
 
             # FIFO-Inventar wiederherstellen
@@ -572,6 +605,9 @@ def simulate_grid_bot(
     stop_loss_pct:       Optional[float] = None,
     enable_recentering:  bool  = False,
     recenter_threshold:  float = 0.05,
+    enable_dd_throttle:  bool  = False,
+    dd_threshold_1:      float = 0.10,
+    dd_threshold_2:      float = 0.20,
 ) -> dict:
     """
     Simuliert den Grid-Bot ueber einen historischen Datensatz (Backtesting).
@@ -624,6 +660,9 @@ def simulate_grid_bot(
             stop_loss_pct      = stop_loss_pct,
             enable_recentering = enable_recentering,
             recenter_threshold = recenter_threshold,
+            enable_dd_throttle = enable_dd_throttle,
+            dd_threshold_1     = dd_threshold_1,
+            dd_threshold_2     = dd_threshold_2,
         )
 
         # Timestamp fuer Initial-Trade setzen
