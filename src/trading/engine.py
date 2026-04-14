@@ -90,6 +90,10 @@ class BotRunner:
             enable_variable_orders = cfg.get("enable_variable_orders", False),
             weight_bottom          = cfg.get("weight_bottom", 2.0),
             weight_top             = cfg.get("weight_top", 0.5),
+            enable_trailing_up     = cfg.get("enable_trailing_up", False),
+            enable_trailing_down   = cfg.get("enable_trailing_down", False),
+            trailing_up_stop       = cfg.get("trailing_up_stop"),
+            trailing_down_stop     = cfg.get("trailing_down_stop"),
         )
 
         # Bestehenden State laden falls vorhanden

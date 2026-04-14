@@ -55,7 +55,11 @@ def run_backtest(
     enable_variable_orders: bool  = False,
     weight_bottom:          float = 2.0,
     weight_top:             float = 0.5,
-    force_reload:        bool   = False,
+    enable_trailing_up:     bool  = False,
+    enable_trailing_down:   bool  = False,
+    trailing_up_stop:       Optional[float] = None,
+    trailing_down_stop:     Optional[float] = None,
+    force_reload:           bool  = False,
 ) -> dict:
     """
     Fuehrt einen vollstaendigen Backtest durch.
@@ -118,6 +122,10 @@ def run_backtest(
         enable_variable_orders = enable_variable_orders,
         weight_bottom          = weight_bottom,
         weight_top             = weight_top,
+        enable_trailing_up     = enable_trailing_up,
+        enable_trailing_down   = enable_trailing_down,
+        trailing_up_stop       = trailing_up_stop,
+        trailing_down_stop     = trailing_down_stop,
     )
 
     if sim.get("error"):

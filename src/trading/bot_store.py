@@ -141,6 +141,10 @@ class BotStore:
         enable_variable_orders: bool  = False,
         weight_bottom:          float = 2.0,
         weight_top:             float = 0.5,
+        enable_trailing_up:     bool  = False,
+        enable_trailing_down:   bool  = False,
+        trailing_up_stop:       float = None,
+        trailing_down_stop:     float = None,
     ) -> tuple[Optional[str], str]:
         """
         Erstellt einen neuen Bot und speichert ihn.
@@ -179,6 +183,10 @@ class BotStore:
                 "enable_variable_orders": enable_variable_orders,
                 "weight_bottom":          weight_bottom,
                 "weight_top":             weight_top,
+                "enable_trailing_up":     enable_trailing_up,
+                "enable_trailing_down":   enable_trailing_down,
+                "trailing_up_stop":       trailing_up_stop,
+                "trailing_down_stop":     trailing_down_stop,
             },
             "state":     {},
             "trade_log": [],

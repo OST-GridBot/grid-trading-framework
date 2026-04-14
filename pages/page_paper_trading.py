@@ -311,6 +311,24 @@ def _show_new_bot_form():
         st.markdown(_caption("Stop-Loss (%)"), unsafe_allow_html=True)
         stop_loss_pct = st.slider("", 5.0, 50.0, 20.0, 5.0,
                                    key="pt_new_sl_pct", label_visibility="collapsed") / 100
+    trailing_enabled_pt = st.checkbox("Grid Trailing aktivieren", key="pt_trailing")
+    enable_trailing_up   = False
+    enable_trailing_down = False
+    trailing_up_stop     = None
+    trailing_down_stop   = None
+    if trailing_enabled_pt:
+        enable_trailing_up = st.checkbox("Trailing Up", value=True, key="pt_trailing_up")
+        if enable_trailing_up:
+            st.markdown(_caption("Trailing Up Stop-Preis ($)"), unsafe_allow_html=True)
+            _tus = st.number_input("", min_value=0.0, value=0.0, step=100.0,
+                                    key="pt_trailing_up_stop", label_visibility="collapsed")
+            trailing_up_stop = _tus if _tus > 0 else None
+        enable_trailing_down = st.checkbox("Trailing Down", value=True, key="pt_trailing_down")
+        if enable_trailing_down:
+            st.markdown(_caption("Trailing Down Stop-Preis ($)"), unsafe_allow_html=True)
+            _tds = st.number_input("", min_value=0.0, value=0.0, step=100.0,
+                                    key="pt_trailing_down_stop", label_visibility="collapsed")
+            trailing_down_stop = _tds if _tds > 0 else None
     dd_enabled = st.checkbox("Drawdown-Drosselung aktivieren", key="pt_new_dd")
     enable_dd_throttle = dd_enabled
     dd_threshold_1 = 0.10
@@ -352,6 +370,10 @@ def _show_new_bot_form():
                     enable_variable_orders = enable_variable_orders,
                     weight_bottom          = weight_bottom,
                     weight_top             = weight_top,
+                    enable_trailing_up     = enable_trailing_up,
+                    enable_trailing_down   = enable_trailing_down,
+                    trailing_up_stop       = trailing_up_stop,
+                    trailing_down_stop     = trailing_down_stop,
                 )
                 if err:
                     st.error(err)

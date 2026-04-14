@@ -142,8 +142,13 @@ class GridBot:
         dd_threshold_2:      float = 0.20,   # -20% → 25% Ordergrösse
         # Variable Ordergrössen
         enable_variable_orders: bool  = False,
-        weight_bottom:          float = 2.0,  # Gewichtung unterste Grid-Linie
-        weight_top:             float = 0.5,  # Gewichtung oberste Grid-Linie
+        weight_bottom:          float = 2.0,
+        weight_top:             float = 0.5,
+        # Grid Trailing
+        enable_trailing_up:     bool  = False,
+        enable_trailing_down:   bool  = False,
+        trailing_up_stop:       Optional[float] = None,
+        trailing_down_stop:     Optional[float] = None,
     ):
         self._validate_inputs(total_investment, lower_price, upper_price,
                               num_grids, fee_rate)
@@ -166,6 +171,11 @@ class GridBot:
         self.enable_variable_orders = enable_variable_orders
         self.weight_bottom           = weight_bottom
         self.weight_top              = weight_top
+        self.enable_trailing_up      = enable_trailing_up
+        self.enable_trailing_down    = enable_trailing_down
+        self.trailing_up_stop        = trailing_up_stop
+        self.trailing_down_stop      = trailing_down_stop
+        self.trailing_count          = 0
 
         # Grid-Linien berechnen
         self.grid_lines = calculate_grid_lines(
@@ -329,6 +339,10 @@ class GridBot:
             # Recentering pruefen
             if self.enable_recentering:
                 self._check_recentering(current_price)
+
+            # Grid Trailing pruefen
+            if self.enable_trailing_up or self.enable_trailing_down:
+                self._check_trailing(current_price)
 
         except Exception as e:
             raise RuntimeError(f"Fehler bei Kerzenverarbeitung: {e}")
@@ -506,6 +520,67 @@ class GridBot:
     # Validierung
     # -----------------------------------------------------------------------
 
+    def _check_trailing(self, current_price: float) -> None:
+        """
+        Prueft ob das Grid trailing ausgeloest werden soll.
+
+        Trailing UP:  Preis >= upper_price → Grid 1 Schritt nach oben
+        Trailing DOWN: Preis <= lower_price → Grid 1 Schritt nach unten
+
+        Stop-Preise verhindern unkontrolliertes Verschieben.
+        """
+        grid_step = (self.upper_price - self.lower_price) / self.num_grids
+
+        # Trailing UP
+        if self.enable_trailing_up and current_price >= self.upper_price:
+            new_upper = self.upper_price + grid_step
+            new_lower = self.lower_price + grid_step
+            # Stop-Preis pruefen
+            if self.trailing_up_stop is not None and new_upper > self.trailing_up_stop:
+                return
+            self._shift_grid(new_lower, new_upper, current_price)
+            self.trailing_count += 1
+
+        # Trailing DOWN
+        elif self.enable_trailing_down and current_price <= self.lower_price:
+            new_lower = self.lower_price - grid_step
+            new_upper = self.upper_price - grid_step
+            # Stop-Preis pruefen
+            if self.trailing_down_stop is not None and new_lower < self.trailing_down_stop:
+                return
+            self._shift_grid(new_lower, new_upper, current_price)
+            self.trailing_count += 1
+
+    def _shift_grid(self, new_lower: float, new_upper: float, current_price: float) -> None:
+        """
+        Verschiebt das Grid auf neue Grenzen.
+        Erhält Grid-Breite und Anzahl Grids.
+        """
+        self.lower_price = max(new_lower, current_price * 0.01)
+        self.upper_price = new_upper
+
+        self.grid_lines = calculate_grid_lines(
+            self.lower_price, self.upper_price,
+            self.num_grids, self.grid_mode
+        )
+
+        # Grid-States neu aufbauen
+        self.grids = {}
+        for price in self.grid_lines:
+            coin_amount = self.base_amount_usdt / (price * (1 + self.fee_rate))
+            if price > current_price:
+                side = "sell"
+            elif price < current_price:
+                side = "buy"
+            else:
+                side = "blocked"
+            self.grids[price] = GridState(
+                price=round(price, 8),
+                side=side,
+                trade_amount=coin_amount,
+            )
+        self.last_traded_price = None
+
     def _update_dd_throttle(self, portfolio_value: float) -> None:
         """
         Aktualisiert den Drawdown-Drosselfaktor basierend auf aktuellem Verlust.
@@ -534,6 +609,11 @@ class GridBot:
             "recentering_count":   self.recentering_count,
             "stop_loss_triggered": self.stop_loss_triggered,
             "dd_throttle_factor":  self.dd_throttle_factor,
+            "enable_trailing_up":  self.enable_trailing_up,
+            "enable_trailing_down": self.enable_trailing_down,
+            "trailing_up_stop":    self.trailing_up_stop,
+            "trailing_down_stop":  self.trailing_down_stop,
+            "trailing_count":      self.trailing_count,
             "enable_variable_orders": self.enable_variable_orders,
             "weight_bottom":          self.weight_bottom,
             "weight_top":             self.weight_top,
@@ -559,7 +639,12 @@ class GridBot:
             self.last_traded_price = state.get("last_traded_price")
             self.recentering_count = state.get("recentering_count", 0)
             self.stop_loss_triggered = state.get("stop_loss_triggered", False)
-            self.dd_throttle_factor  = state.get("dd_throttle_factor", 1.0)
+            self.dd_throttle_factor   = state.get("dd_throttle_factor", 1.0)
+            self.enable_trailing_up   = state.get("enable_trailing_up", False)
+            self.enable_trailing_down = state.get("enable_trailing_down", False)
+            self.trailing_up_stop     = state.get("trailing_up_stop", None)
+            self.trailing_down_stop   = state.get("trailing_down_stop", None)
+            self.trailing_count       = state.get("trailing_count", 0)
             self.enable_variable_orders = state.get("enable_variable_orders", False)
             self.weight_bottom           = state.get("weight_bottom", 2.0)
             self.weight_top              = state.get("weight_top", 0.5)
@@ -639,6 +724,10 @@ def simulate_grid_bot(
     enable_variable_orders: bool  = False,
     weight_bottom:          float = 2.0,
     weight_top:             float = 0.5,
+    enable_trailing_up:     bool  = False,
+    enable_trailing_down:   bool  = False,
+    trailing_up_stop:       Optional[float] = None,
+    trailing_down_stop:     Optional[float] = None,
 ) -> dict:
     """
     Simuliert den Grid-Bot ueber einen historischen Datensatz (Backtesting).
@@ -697,6 +786,10 @@ def simulate_grid_bot(
             enable_variable_orders = enable_variable_orders,
             weight_bottom          = weight_bottom,
             weight_top             = weight_top,
+            enable_trailing_up     = enable_trailing_up,
+            enable_trailing_down   = enable_trailing_down,
+            trailing_up_stop       = trailing_up_stop,
+            trailing_down_stop     = trailing_down_stop,
         )
 
         # Timestamp fuer Initial-Trade setzen
@@ -740,6 +833,7 @@ def simulate_grid_bot(
             "price_change_pct":    ((final_price - initial_price) / initial_price) * 100,
             "daily_values":        filled_daily,
             "recentering_count":   bot.recentering_count,
+            "trailing_count":      bot.trailing_count,
             "stop_loss_triggered": bot.stop_loss_triggered,
             "bot_version":         BOT_VERSION,
             "error":               None,

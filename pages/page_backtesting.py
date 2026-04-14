@@ -287,6 +287,27 @@ def show_backtesting():
         recenter_threshold = st.sidebar.slider("", 1.0, 20.0, 5.0, 1.0, key="bt_recenter_thr",
                                             label_visibility="collapsed") / 100
 
+    trailing_enabled = st.sidebar.checkbox("Grid Trailing aktivieren", value=False, key="bt_trailing")
+    enable_trailing_up   = False
+    enable_trailing_down = False
+    trailing_up_stop     = None
+    trailing_down_stop   = None
+    if trailing_enabled:
+        enable_trailing_up = st.sidebar.checkbox("Trailing Up", value=True, key="bt_trailing_up")
+        if enable_trailing_up:
+            st.sidebar.markdown(_caption("Trailing Up Stop-Preis ($)"), unsafe_allow_html=True)
+            trailing_up_stop = st.sidebar.number_input("", min_value=0.0,
+                value=0.0, step=100.0, key="bt_trailing_up_stop",
+                label_visibility="collapsed")
+            trailing_up_stop = trailing_up_stop if trailing_up_stop > 0 else None
+        enable_trailing_down = st.sidebar.checkbox("Trailing Down", value=True, key="bt_trailing_down")
+        if enable_trailing_down:
+            st.sidebar.markdown(_caption("Trailing Down Stop-Preis ($)"), unsafe_allow_html=True)
+            trailing_down_stop = st.sidebar.number_input("", min_value=0.0,
+                value=0.0, step=100.0, key="bt_trailing_down_stop",
+                label_visibility="collapsed")
+            trailing_down_stop = trailing_down_stop if trailing_down_stop > 0 else None
+
     # CHART EINSTELLUNGEN (ganz unten)
     st.sidebar.divider()
     st.sidebar.markdown(_label("Chart Einstellungen"), unsafe_allow_html=True)
@@ -348,6 +369,10 @@ def show_backtesting():
                     enable_variable_orders = enable_variable_orders,
                     weight_bottom          = weight_bottom,
                     weight_top             = weight_top,
+                    enable_trailing_up     = enable_trailing_up,
+                    enable_trailing_down   = enable_trailing_down,
+                    trailing_up_stop       = trailing_up_stop,
+                    trailing_down_stop     = trailing_down_stop,
                 )
             st.session_state.bt_result = result
             if result.get("error"):
