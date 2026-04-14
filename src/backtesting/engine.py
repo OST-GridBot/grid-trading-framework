@@ -49,10 +49,13 @@ def run_backtest(
     stop_loss_pct:      Optional[float] = None,
     enable_recentering: bool    = False,
     recenter_threshold: float   = 0.05,
-    enable_dd_throttle: bool    = False,
-    dd_threshold_1:     float   = 0.10,
-    dd_threshold_2:     float   = 0.20,
-    force_reload:       bool    = False,
+    enable_dd_throttle:  bool   = False,
+    dd_threshold_1:      float  = 0.10,
+    dd_threshold_2:      float  = 0.20,
+    enable_variable_orders: bool  = False,
+    weight_bottom:          float = 2.0,
+    weight_top:             float = 0.5,
+    force_reload:        bool   = False,
 ) -> dict:
     """
     Fuehrt einen vollstaendigen Backtest durch.
@@ -109,9 +112,12 @@ def run_backtest(
         stop_loss_pct      = stop_loss_pct,
         enable_recentering = enable_recentering,
         recenter_threshold = recenter_threshold,
-        enable_dd_throttle = enable_dd_throttle,
-        dd_threshold_1     = dd_threshold_1,
-        dd_threshold_2     = dd_threshold_2,
+        enable_dd_throttle  = enable_dd_throttle,
+        dd_threshold_1      = dd_threshold_1,
+        dd_threshold_2      = dd_threshold_2,
+        enable_variable_orders = enable_variable_orders,
+        weight_bottom          = weight_bottom,
+        weight_top             = weight_top,
     )
 
     if sim.get("error"):

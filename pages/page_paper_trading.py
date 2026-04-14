@@ -293,6 +293,18 @@ def _show_new_bot_form():
     st.markdown(_caption("Kapitalreserve (%)"), unsafe_allow_html=True)
     reserve_pct = st.slider("", 0.0, 20.0, DEFAULT_RESERVE_PCT * 100, 1.0,
                              key="pt_new_reserve", label_visibility="collapsed") / 100
+    vo_enabled_pt = st.checkbox("Variable Ordergrössen aktivieren", key="pt_vo")
+    enable_variable_orders = vo_enabled_pt
+    weight_bottom = 2.0
+    weight_top    = 0.5
+    if vo_enabled_pt:
+        st.markdown(_caption("Gewichtung unten (x)"), unsafe_allow_html=True)
+        weight_bottom = st.slider("", 1.0, 5.0, 2.0, 0.1,
+                                   key="pt_vo_bottom", label_visibility="collapsed")
+        st.markdown(_caption("Gewichtung oben (x)"), unsafe_allow_html=True)
+        weight_top = st.slider("", 0.0, 1.0, 0.5, 0.1,
+                                key="pt_vo_top", label_visibility="collapsed")
+        st.caption(f"Unten: {weight_bottom}x · Oben: {weight_top}x")
     sl_enabled = st.checkbox("Stop-Loss aktivieren", key="pt_new_sl")
     stop_loss_pct = None
     if sl_enabled:
@@ -334,9 +346,12 @@ def _show_new_bot_form():
                     fee_rate           = fee_rate,
                     reserve_pct        = reserve_pct,
                     stop_loss_pct      = stop_loss_pct,
-                    enable_dd_throttle = enable_dd_throttle,
-                    dd_threshold_1     = dd_threshold_1,
-                    dd_threshold_2     = dd_threshold_2,
+                    enable_dd_throttle  = enable_dd_throttle,
+                    dd_threshold_1      = dd_threshold_1,
+                    dd_threshold_2      = dd_threshold_2,
+                    enable_variable_orders = enable_variable_orders,
+                    weight_bottom          = weight_bottom,
+                    weight_top             = weight_top,
                 )
                 if err:
                     st.error(err)

@@ -247,6 +247,18 @@ def show_backtesting():
     st.sidebar.markdown(_caption("Kapitalreserve (%)"), unsafe_allow_html=True)
     reserve_pct = st.sidebar.slider("", 0.0, 20.0, DEFAULT_RESERVE_PCT * 100, 1.0,
                          key="bt_reserve", label_visibility="collapsed") / 100
+    vo_enabled = st.sidebar.checkbox("Variable Ordergrössen aktivieren", value=False, key="bt_vo")
+    enable_variable_orders = vo_enabled
+    weight_bottom = 2.0
+    weight_top    = 0.5
+    if vo_enabled:
+        st.sidebar.markdown(_caption("Gewichtung unten (x)"), unsafe_allow_html=True)
+        weight_bottom = st.sidebar.slider("", 1.0, 5.0, 2.0, 0.1,
+                                          key="bt_vo_bottom", label_visibility="collapsed")
+        st.sidebar.markdown(_caption("Gewichtung oben (x)"), unsafe_allow_html=True)
+        weight_top = st.sidebar.slider("", 0.0, 1.0, 0.5, 0.1,
+                                        key="bt_vo_top", label_visibility="collapsed")
+        st.sidebar.caption(f"Unten: {weight_bottom}x · Oben: {weight_top}x")
     sl_enabled = st.sidebar.checkbox("Stop-Loss aktivieren", value=False, key="bt_sl")
     stop_loss_pct = None
     if sl_enabled:
@@ -330,9 +342,12 @@ def show_backtesting():
                     stop_loss_pct      = stop_loss_pct,
                     enable_recentering = enable_recentering,
                     recenter_threshold = recenter_threshold,
-                    enable_dd_throttle = enable_dd_throttle,
-                    dd_threshold_1     = dd_threshold_1,
-                    dd_threshold_2     = dd_threshold_2,
+                    enable_dd_throttle  = enable_dd_throttle,
+                    dd_threshold_1      = dd_threshold_1,
+                    dd_threshold_2      = dd_threshold_2,
+                    enable_variable_orders = enable_variable_orders,
+                    weight_bottom          = weight_bottom,
+                    weight_top             = weight_top,
                 )
             st.session_state.bt_result = result
             if result.get("error"):

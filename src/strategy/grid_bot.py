@@ -140,6 +140,10 @@ class GridBot:
         enable_dd_throttle:  bool  = False,
         dd_threshold_1:      float = 0.10,   # -10% → 50% Ordergrösse
         dd_threshold_2:      float = 0.20,   # -20% → 25% Ordergrösse
+        # Variable Ordergrössen
+        enable_variable_orders: bool  = False,
+        weight_bottom:          float = 2.0,  # Gewichtung unterste Grid-Linie
+        weight_top:             float = 0.5,  # Gewichtung oberste Grid-Linie
     ):
         self._validate_inputs(total_investment, lower_price, upper_price,
                               num_grids, fee_rate)
@@ -155,10 +159,13 @@ class GridBot:
         self.stop_loss_pct      = stop_loss_pct
         self.enable_recentering = enable_recentering
         self.recenter_threshold = recenter_threshold
-        self.enable_dd_throttle = enable_dd_throttle
-        self.dd_threshold_1     = dd_threshold_1
-        self.dd_threshold_2     = dd_threshold_2
-        self.dd_throttle_factor = 1.0  # aktueller Drosselfaktor
+        self.enable_dd_throttle  = enable_dd_throttle
+        self.dd_threshold_1      = dd_threshold_1
+        self.dd_threshold_2      = dd_threshold_2
+        self.dd_throttle_factor  = 1.0  # aktueller Drosselfaktor
+        self.enable_variable_orders = enable_variable_orders
+        self.weight_bottom           = weight_bottom
+        self.weight_top              = weight_top
 
         # Grid-Linien berechnen
         self.grid_lines = calculate_grid_lines(
@@ -212,9 +219,24 @@ class GridBot:
         base_amount_usdt      = effective_investment / self.num_grids
         self.base_amount_usdt = base_amount_usdt
 
+        # Variable Ordergrössen: Gewichte berechnen
+        n = len(self.grid_lines)
+        if self.enable_variable_orders and n > 1:
+            # Linear interpoliert von weight_bottom (unten) bis weight_top (oben)
+            weights = [
+                self.weight_bottom + (self.weight_top - self.weight_bottom) * (i / (n - 1))
+                for i in range(n)
+            ]
+        else:
+            weights = [1.0] * n
+        # Normalisieren damit Gesamtkapital gleich bleibt
+        weight_sum = sum(weights) or n
+        weights = [w / weight_sum * n for w in weights]
+
         # Grid-States initialisieren – kein Initial BUY
-        for price in self.grid_lines:
-            coin_amount = base_amount_usdt / (price * (1 + self.fee_rate))
+        for idx, price in enumerate(self.grid_lines):
+            amount_usdt = base_amount_usdt * weights[idx]
+            coin_amount = amount_usdt / (price * (1 + self.fee_rate))
             if price >= initial_price:
                 side = "sell"
             else:
@@ -512,6 +534,9 @@ class GridBot:
             "recentering_count":   self.recentering_count,
             "stop_loss_triggered": self.stop_loss_triggered,
             "dd_throttle_factor":  self.dd_throttle_factor,
+            "enable_variable_orders": self.enable_variable_orders,
+            "weight_bottom":          self.weight_bottom,
+            "weight_top":             self.weight_top,
             "grids": {
                 str(price): {
                     "price":        g.price,
@@ -535,6 +560,9 @@ class GridBot:
             self.recentering_count = state.get("recentering_count", 0)
             self.stop_loss_triggered = state.get("stop_loss_triggered", False)
             self.dd_throttle_factor  = state.get("dd_throttle_factor", 1.0)
+            self.enable_variable_orders = state.get("enable_variable_orders", False)
+            self.weight_bottom           = state.get("weight_bottom", 2.0)
+            self.weight_top              = state.get("weight_top", 0.5)
             self.trade_log         = state.get("trade_log", [])
 
             # FIFO-Inventar wiederherstellen
@@ -608,6 +636,9 @@ def simulate_grid_bot(
     enable_dd_throttle:  bool  = False,
     dd_threshold_1:      float = 0.10,
     dd_threshold_2:      float = 0.20,
+    enable_variable_orders: bool  = False,
+    weight_bottom:          float = 2.0,
+    weight_top:             float = 0.5,
 ) -> dict:
     """
     Simuliert den Grid-Bot ueber einen historischen Datensatz (Backtesting).
@@ -660,9 +691,12 @@ def simulate_grid_bot(
             stop_loss_pct      = stop_loss_pct,
             enable_recentering = enable_recentering,
             recenter_threshold = recenter_threshold,
-            enable_dd_throttle = enable_dd_throttle,
-            dd_threshold_1     = dd_threshold_1,
-            dd_threshold_2     = dd_threshold_2,
+            enable_dd_throttle  = enable_dd_throttle,
+            dd_threshold_1      = dd_threshold_1,
+            dd_threshold_2      = dd_threshold_2,
+            enable_variable_orders = enable_variable_orders,
+            weight_bottom          = weight_bottom,
+            weight_top             = weight_top,
         )
 
         # Timestamp fuer Initial-Trade setzen
