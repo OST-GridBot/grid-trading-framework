@@ -418,8 +418,9 @@ class GridBot:
         Args:
             current_price: Aktueller Marktpreis
         """
-        near_upper = current_price >= self.upper_price * (1 - self.recenter_threshold)
-        near_lower = current_price <= self.lower_price * (1 + self.recenter_threshold)
+        # Recentering wenn Preis AUSSERHALB der Grid-Grenzen (+ Schwellenwert)
+        near_upper = current_price >= self.upper_price * (1 + self.recenter_threshold)
+        near_lower = current_price <= self.lower_price * (1 - self.recenter_threshold)
 
         if near_upper or near_lower:
             self._recenter_grid(current_price)
