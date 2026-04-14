@@ -204,12 +204,22 @@ def show_backtesting():
     )
 
     # Grid-Modus
-    st.sidebar.markdown(_caption("Grid-Modus"), unsafe_allow_html=True)
-    st.sidebar.caption("Arithmetic: gleiche Abstände | Geometric: gleiche % Abstände")
-    grid_mode = st.sidebar.radio("", ["arithmetic","geometric"],
-                                  horizontal=True, key="bt_mode",
-                                  label_visibility="collapsed")
-
+    st.sidebar.markdown(
+        "<div style='display:flex;align-items:center;gap:5px;margin-bottom:2px;'>"
+        "<span style='font-size:0.75rem;color:#94A3B8;'>Grid-Modus</span>"
+        "<span title='Arithmetisch: gleiche Abst\u00e4nde\nGeometrisch: gleiche % Abst\u00e4nde\nBottom heavy: enger unten\nTop heavy: enger oben' style='cursor:help;color:#94A3B8;'>&#9432;</span></div>",
+        unsafe_allow_html=True
+    )
+    _bt_gm_active = st.sidebar.radio("", ["Symmetrisch", "Asymmetrisch"], horizontal=True, key="bt_gm_active", label_visibility="collapsed")
+    st.sidebar.markdown(_caption("Symmetrisch"), unsafe_allow_html=True)
+    _bt_gm_sym = st.sidebar.radio("", ["Arithmetisch", "Geometrisch"], horizontal=True, key="bt_gm_sym", disabled=(_bt_gm_active != "Symmetrisch"), label_visibility="collapsed")
+    st.sidebar.markdown(_caption("Asymmetrisch"), unsafe_allow_html=True)
+    _bt_gm_asym = st.sidebar.radio("", ["Bottom heavy", "Top heavy"], horizontal=True, key="bt_gm_asym", disabled=(_bt_gm_active != "Asymmetrisch"), label_visibility="collapsed")
+    if _bt_gm_active == "Symmetrisch":
+        grid_mode = "arithmetic" if _bt_gm_sym == "Arithmetisch" else "geometric"
+    else:
+        grid_mode = "asymmetric_bottom" if _bt_gm_asym == "Bottom heavy" else "asymmetric_top"
+    
     # Gebührenrate
     st.sidebar.markdown(_caption("Gebührenrate"), unsafe_allow_html=True)
     fee_rate = st.sidebar.number_input(

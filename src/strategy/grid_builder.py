@@ -125,8 +125,25 @@ def calculate_grid_lines(
         ratio = (upper_price / lower_price) ** (1 / num_grids)
         lines = [round(lower_price * (ratio ** i), 8) for i in range(num_grids + 1)]
 
+    elif mode in ("asymmetric_bottom", "asymmetric_top"):
+        # Asymmetrische Grids: engere Abstände unten (bottom_heavy)
+        # oder engere Abstände oben (top_heavy)
+        # Implementierung via quadratische Verteilung der Punkte
+        n = num_grids + 1
+        t = np.linspace(0, 1, n)
+        if mode == "asymmetric_bottom":
+            # Quadratisch: mehr Punkte nahe 0 (unten)
+            t_skewed = t ** 2
+        else:
+            # Quadratisch: mehr Punkte nahe 1 (oben)
+            t_skewed = 1 - (1 - t) ** 2
+        lines = [lower_price + (upper_price - lower_price) * ti for ti in t_skewed]
+
     else:
-        raise ValueError(f"Unbekannter Grid-Modus: '{mode}'. Erlaubt: arithmetic, geometric")
+        raise ValueError(
+            f"Unbekannter Grid-Modus: '{mode}'. "
+            f"Erlaubt: arithmetic, geometric, asymmetric_bottom, asymmetric_top"
+        )
 
     return sorted(lines)
 

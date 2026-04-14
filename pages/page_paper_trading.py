@@ -247,11 +247,22 @@ def _show_new_bot_form():
         step=1, key="pt_new_grids", label_visibility="collapsed"
     )
 
-    st.markdown(_caption("Grid-Modus"), unsafe_allow_html=True)
-    st.caption("Arithmetic: gleiche Abstaende | Geometric: gleiche % Abstaende")
-    grid_mode = st.radio("", ["arithmetic","geometric"],
-                          horizontal=True, key="pt_new_mode",
-                          label_visibility="collapsed")
+    # Grid-Modus
+    st.markdown(
+        "<div style='display:flex;align-items:center;gap:5px;margin-bottom:2px;'>"
+        "<span style='font-size:0.75rem;color:#94A3B8;'>Grid-Modus</span>"
+        "<span title='Arithmetisch: gleiche Abst\u00e4nde\nGeometrisch: gleiche % Abst\u00e4nde\nBottom heavy: enger unten\nTop heavy: enger oben' style='cursor:help;color:#94A3B8;'>&#9432;</span></div>",
+        unsafe_allow_html=True
+    )
+    _pt_gm_active = st.radio("", ["Symmetrisch", "Asymmetrisch"], horizontal=True, key="pt_gm_active", label_visibility="collapsed")
+    st.markdown(_caption("Symmetrisch"), unsafe_allow_html=True)
+    _pt_gm_sym = st.radio("", ["Arithmetisch", "Geometrisch"], horizontal=True, key="pt_gm_sym", disabled=(_pt_gm_active != "Symmetrisch"), label_visibility="collapsed")
+    st.markdown(_caption("Asymmetrisch"), unsafe_allow_html=True)
+    _pt_gm_asym = st.radio("", ["Bottom heavy", "Top heavy"], horizontal=True, key="pt_gm_asym", disabled=(_pt_gm_active != "Asymmetrisch"), label_visibility="collapsed")
+    if _pt_gm_active == "Symmetrisch":
+        grid_mode = "arithmetic" if _pt_gm_sym == "Arithmetisch" else "geometric"
+    else:
+        grid_mode = "asymmetric_bottom" if _pt_gm_asym == "Bottom heavy" else "asymmetric_top"
 
     st.markdown(_caption("Handelsgebuehr (%)"), unsafe_allow_html=True)
     fee_rate = st.number_input(
