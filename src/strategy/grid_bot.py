@@ -209,6 +209,43 @@ class GridBot:
     # Initialisierung
     # -----------------------------------------------------------------------
 
+    def _build_grids(self, current_price: float) -> None:
+        """
+        Zentrale Methode zum Aufbau der Grid-States.
+        Beruecksichtigt grid_mode (asymmetrisch) und variable_order_size.
+        Wird von _initialize_grids, _shift_grid und _recenter_grid verwendet.
+        """
+        n = len(self.grid_lines)
+
+        # Variable Ordergrössen: Gewichte berechnen
+        if self.enable_variable_orders and n > 1:
+            weights = [
+                self.weight_bottom + (self.weight_top - self.weight_bottom) * (i / (n - 1))
+                for i in range(n)
+            ]
+        else:
+            weights = [1.0] * n
+
+        # Normalisieren
+        weight_sum = sum(weights) or n
+        weights = [w / weight_sum * n for w in weights]
+
+        self.grids = {}
+        for idx, price in enumerate(self.grid_lines):
+            amount_usdt = self.base_amount_usdt * weights[idx]
+            coin_amount = amount_usdt / (price * (1 + self.fee_rate))
+            if price > current_price:
+                side = "sell"
+            elif price < current_price:
+                side = "buy"
+            else:
+                side = "blocked"
+            self.grids[price] = GridState(
+                price=round(price, 8),
+                side=side,
+                trade_amount=coin_amount,
+            )
+
     def _initialize_grids(
         self,
         total_investment: float,
@@ -226,36 +263,17 @@ class GridBot:
 
         # Effektives Kapital gleichmaessig auf alle Grids verteilen
         effective_investment  = total_investment * (1 - self.reserve_pct)
-        base_amount_usdt      = effective_investment / self.num_grids
-        self.base_amount_usdt = base_amount_usdt
+        self.base_amount_usdt = effective_investment / self.num_grids
 
-        # Variable Ordergrössen: Gewichte berechnen
-        n = len(self.grid_lines)
-        if self.enable_variable_orders and n > 1:
-            # Linear interpoliert von weight_bottom (unten) bis weight_top (oben)
-            weights = [
-                self.weight_bottom + (self.weight_top - self.weight_bottom) * (i / (n - 1))
-                for i in range(n)
-            ]
-        else:
-            weights = [1.0] * n
-        # Normalisieren damit Gesamtkapital gleich bleibt
-        weight_sum = sum(weights) or n
-        weights = [w / weight_sum * n for w in weights]
+        # Grid-States aufbauen (inkl. asymm. + variable orders)
+        self._build_grids(initial_price)
 
-        # Grid-States initialisieren – kein Initial BUY
-        for idx, price in enumerate(self.grid_lines):
-            amount_usdt = base_amount_usdt * weights[idx]
-            coin_amount = amount_usdt / (price * (1 + self.fee_rate))
-            if price >= initial_price:
-                side = "sell"
-            else:
-                side = "buy"
-            self.grids[price] = GridState(
-                price=round(price, 8),
-                side=side,
-                trade_amount=coin_amount,
-            )
+        # Grids unterhalb initial_price sind buy (nicht sell)
+        for price, g in self.grids.items():
+            if price < initial_price:
+                g.side = "buy"
+            elif price >= initial_price:
+                g.side = "sell"
 
     # -----------------------------------------------------------------------
     # Grid-Zustände aktualisieren
@@ -496,23 +514,8 @@ class GridBot:
             self.num_grids, self.grid_mode
         )
 
-        # Grid-States neu aufbauen
-        self.grids = {}
-        for price in self.grid_lines:
-            coin_amount = self.base_amount_usdt / (price * (1 + self.fee_rate))
-            if price > current_price:
-                side = "sell"
-            elif price < current_price:
-                side = "buy"
-            else:
-                side = "blocked"
-
-            self.grids[price] = GridState(
-                price=round(price, 8),
-                side=side,
-                trade_amount=coin_amount,
-            )
-
+        # Grid-States neu aufbauen (inkl. asymm. + variable orders)
+        self._build_grids(current_price)
         self.last_traded_price = None
         self.recentering_count += 1
 
@@ -564,21 +567,8 @@ class GridBot:
             self.num_grids, self.grid_mode
         )
 
-        # Grid-States neu aufbauen
-        self.grids = {}
-        for price in self.grid_lines:
-            coin_amount = self.base_amount_usdt / (price * (1 + self.fee_rate))
-            if price > current_price:
-                side = "sell"
-            elif price < current_price:
-                side = "buy"
-            else:
-                side = "blocked"
-            self.grids[price] = GridState(
-                price=round(price, 8),
-                side=side,
-                trade_amount=coin_amount,
-            )
+        # Grid-States neu aufbauen (inkl. asymm. + variable orders)
+        self._build_grids(current_price)
         self.last_traded_price = None
 
     def _update_dd_throttle(self, portfolio_value: float) -> None:
