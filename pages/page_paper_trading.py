@@ -311,6 +311,15 @@ def _show_new_bot_form():
         st.markdown(_caption("Stop-Loss (%)"), unsafe_allow_html=True)
         stop_loss_pct = st.slider("", 5.0, 50.0, 20.0, 5.0,
                                    key="pt_new_sl_pct", label_visibility="collapsed") / 100
+    atr_enabled_pt = st.checkbox("Volatilitätsbasierte Anpassung", key="pt_atr")
+    enable_atr_adjust = atr_enabled_pt
+    atr_multiplier = 1.0
+    if atr_enabled_pt:
+        st.markdown(_caption("ATR-Multiplikator"), unsafe_allow_html=True)
+        st.caption("Grid-Abstand = ATR × Multiplikator")
+        atr_multiplier = st.slider("", 0.5, 5.0, 1.0, 0.1,
+                                    key="pt_atr_mult",
+                                    label_visibility="collapsed")
     trailing_enabled_pt = st.checkbox("Grid Trailing aktivieren", key="pt_trailing")
     enable_trailing_up   = False
     enable_trailing_down = False
@@ -329,6 +338,20 @@ def _show_new_bot_form():
             _tds = st.number_input("", min_value=0.0, value=0.0, step=100.0,
                                     key="pt_trailing_down_stop", label_visibility="collapsed")
             trailing_down_stop = _tds if _tds > 0 else None
+    trailing_active_pt = st.session_state.get("pt_trailing", False)
+    recenter_enabled = st.checkbox(
+        "Recentering aktivieren",
+        key="pt_new_recenter",
+        disabled=trailing_active_pt,
+        help="Nicht kombinierbar mit Grid Trailing"
+    )
+    enable_recentering = recenter_enabled and not trailing_active_pt
+    recenter_threshold = 0.05
+    if enable_recentering:
+        st.markdown(_caption("Recentering-Schwelle (%)"), unsafe_allow_html=True)
+        recenter_threshold = st.slider("", 1.0, 20.0, 5.0, 1.0,
+                                        key="pt_recenter_thr",
+                                        label_visibility="collapsed") / 100
     dd_enabled = st.checkbox("Drawdown-Drosselung aktivieren", key="pt_new_dd")
     enable_dd_throttle = dd_enabled
     dd_threshold_1 = 0.10
@@ -370,6 +393,10 @@ def _show_new_bot_form():
                     enable_variable_orders = enable_variable_orders,
                     weight_bottom          = weight_bottom,
                     weight_top             = weight_top,
+                    enable_recentering     = enable_recentering,
+                    recenter_threshold     = recenter_threshold,
+                    enable_atr_adjust      = enable_atr_adjust,
+                    atr_multiplier         = atr_multiplier,
                     enable_trailing_up     = enable_trailing_up,
                     enable_trailing_down   = enable_trailing_down,
                     trailing_up_stop       = trailing_up_stop,

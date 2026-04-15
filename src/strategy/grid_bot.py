@@ -144,6 +144,9 @@ class GridBot:
         enable_variable_orders: bool  = False,
         weight_bottom:          float = 2.0,
         weight_top:             float = 0.5,
+        # Volatilitaetsbasierte Anpassung
+        enable_atr_adjust:      bool  = False,
+        atr_multiplier:         float = 1.0,
         # Grid Trailing
         enable_trailing_up:     bool  = False,
         enable_trailing_down:   bool  = False,
@@ -171,6 +174,8 @@ class GridBot:
         self.enable_variable_orders = enable_variable_orders
         self.weight_bottom           = weight_bottom
         self.weight_top              = weight_top
+        self.enable_atr_adjust       = enable_atr_adjust
+        self.atr_multiplier          = atr_multiplier
         self.enable_trailing_up      = enable_trailing_up
         self.enable_trailing_down    = enable_trailing_down
         self.trailing_up_stop        = trailing_up_stop
@@ -599,6 +604,8 @@ class GridBot:
             "recentering_count":   self.recentering_count,
             "stop_loss_triggered": self.stop_loss_triggered,
             "dd_throttle_factor":  self.dd_throttle_factor,
+            "enable_atr_adjust":   self.enable_atr_adjust,
+            "atr_multiplier":      self.atr_multiplier,
             "enable_trailing_up":  self.enable_trailing_up,
             "enable_trailing_down": self.enable_trailing_down,
             "trailing_up_stop":    self.trailing_up_stop,
@@ -630,6 +637,8 @@ class GridBot:
             self.recentering_count = state.get("recentering_count", 0)
             self.stop_loss_triggered = state.get("stop_loss_triggered", False)
             self.dd_throttle_factor   = state.get("dd_throttle_factor", 1.0)
+            self.enable_atr_adjust    = state.get("enable_atr_adjust", False)
+            self.atr_multiplier       = state.get("atr_multiplier", 1.0)
             self.enable_trailing_up   = state.get("enable_trailing_up", False)
             self.enable_trailing_down = state.get("enable_trailing_down", False)
             self.trailing_up_stop     = state.get("trailing_up_stop", None)
@@ -714,6 +723,8 @@ def simulate_grid_bot(
     enable_variable_orders: bool  = False,
     weight_bottom:          float = 2.0,
     weight_top:             float = 0.5,
+    enable_atr_adjust:      bool  = False,
+    atr_multiplier:         float = 1.0,
     enable_trailing_up:     bool  = False,
     enable_trailing_down:   bool  = False,
     trailing_up_stop:       Optional[float] = None,
@@ -776,6 +787,8 @@ def simulate_grid_bot(
             enable_variable_orders = enable_variable_orders,
             weight_bottom          = weight_bottom,
             weight_top             = weight_top,
+            enable_atr_adjust      = enable_atr_adjust,
+            atr_multiplier         = atr_multiplier,
             enable_trailing_up     = enable_trailing_up,
             enable_trailing_down   = enable_trailing_down,
             trailing_up_stop       = trailing_up_stop,

@@ -55,6 +55,8 @@ def run_backtest(
     enable_variable_orders: bool  = False,
     weight_bottom:          float = 2.0,
     weight_top:             float = 0.5,
+    enable_atr_adjust:      bool  = False,
+    atr_multiplier:         float = 1.0,
     enable_trailing_up:     bool  = False,
     enable_trailing_down:   bool  = False,
     trailing_up_stop:       Optional[float] = None,
@@ -103,6 +105,18 @@ def run_backtest(
     if not is_valid:
         return _error_result(f"Ungueltige Parameter: {warnings}")
 
+    # --- ATR-basierte Grid-Anpassung ---
+    if enable_atr_adjust:
+        try:
+            atr_usdt, atr_pct = get_atr_stats(df)
+            grid_step = atr_usdt * atr_multiplier
+            center_price = float(df["close"].iloc[-1])
+            half_range = grid_step * num_grids / 2
+            lower_price = max(center_price - half_range, center_price * 0.5)
+            upper_price = center_price + half_range
+        except Exception as e:
+            print(f"ATR-Anpassung Fehler: {e}")
+
     # --- Simulation ---
     sim = simulate_grid_bot(
         df                 = df,
@@ -122,6 +136,8 @@ def run_backtest(
         enable_variable_orders = enable_variable_orders,
         weight_bottom          = weight_bottom,
         weight_top             = weight_top,
+        enable_atr_adjust      = enable_atr_adjust,
+        atr_multiplier         = atr_multiplier,
         enable_trailing_up     = enable_trailing_up,
         enable_trailing_down   = enable_trailing_down,
         trailing_up_stop       = trailing_up_stop,

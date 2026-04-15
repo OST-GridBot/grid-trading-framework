@@ -280,13 +280,30 @@ def show_backtesting():
     # DYNAMISCHE GRID-MECHANISMEN
     st.sidebar.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
     st.sidebar.markdown(_label("Dynamische Grid-Mechanismen"), unsafe_allow_html=True)
-    enable_recentering = st.sidebar.checkbox("Recentering aktivieren", value=False, key="bt_recenter")
+    trailing_active = st.session_state.get("bt_trailing", False)
+    enable_recentering = st.sidebar.checkbox(
+        "Recentering aktivieren",
+        value=False, key="bt_recenter",
+        disabled=trailing_active,
+        help="Nicht kombinierbar mit Grid Trailing"
+    )
+    if trailing_active and enable_recentering:
+        enable_recentering = False
     recenter_threshold = 0.05
     if enable_recentering:
         st.sidebar.markdown(_caption("Recentering-Schwelle (%)"), unsafe_allow_html=True)
         recenter_threshold = st.sidebar.slider("", 1.0, 20.0, 5.0, 1.0, key="bt_recenter_thr",
                                             label_visibility="collapsed") / 100
 
+    atr_enabled = st.sidebar.checkbox("Volatilitätsbasierte Anpassung", value=False, key="bt_atr")
+    enable_atr_adjust = atr_enabled
+    atr_multiplier = 1.0
+    if atr_enabled:
+        st.sidebar.markdown(_caption("ATR-Multiplikator"), unsafe_allow_html=True)
+        st.sidebar.caption("Grid-Abstand = ATR × Multiplikator")
+        atr_multiplier = st.sidebar.slider("", 0.5, 5.0, 1.0, 0.1,
+                                            key="bt_atr_mult",
+                                            label_visibility="collapsed")
     trailing_enabled = st.sidebar.checkbox("Grid Trailing aktivieren", value=False, key="bt_trailing")
     enable_trailing_up   = False
     enable_trailing_down = False
@@ -369,6 +386,8 @@ def show_backtesting():
                     enable_variable_orders = enable_variable_orders,
                     weight_bottom          = weight_bottom,
                     weight_top             = weight_top,
+                    enable_atr_adjust      = enable_atr_adjust,
+                    atr_multiplier         = atr_multiplier,
                     enable_trailing_up     = enable_trailing_up,
                     enable_trailing_down   = enable_trailing_down,
                     trailing_up_stop       = trailing_up_stop,

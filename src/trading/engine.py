@@ -90,6 +90,8 @@ class BotRunner:
             enable_variable_orders = cfg.get("enable_variable_orders", False),
             weight_bottom          = cfg.get("weight_bottom", 2.0),
             weight_top             = cfg.get("weight_top", 0.5),
+            enable_atr_adjust      = cfg.get("enable_atr_adjust", False),
+            atr_multiplier         = cfg.get("atr_multiplier", 1.0),
             enable_trailing_up     = cfg.get("enable_trailing_up", False),
             enable_trailing_down   = cfg.get("enable_trailing_down", False),
             trailing_up_stop       = cfg.get("trailing_up_stop"),
