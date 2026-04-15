@@ -533,7 +533,32 @@ def _show_bot_detail(bot: dict):
                         c = result.get("candles_processed", 0)
                         p = result.get("current_price", 0)
                         st.success(f"Kurs: ${p:,.2f} · {c} Kerzen · {n} neue Trades")
-                        import time; time.sleep(4)
+                        # Regime-Warnung
+                        try:
+                            from src.analysis.regime import detect_regime
+                            from src.data.cache_manager import get_price_data as _gp
+                            df_r, _ = _gp(bot["coin"], days=7, interval=bot["interval"])
+                            if df_r is not None and not df_r.empty:
+                                rg = detect_regime(df_r, bot["interval"])
+                                r_colors = {"range": "#34D399", "trend_up": "#F87171", "trend_down": "#F87171", "neutral": "#FBBF24"}
+                                r_labels = {"range": "Range-Markt — Grid-Bot geeignet",
+                                            "trend_up": "Trend aufwärts — Grid-Bot weniger geeignet",
+                                            "trend_down": "Trend abwärts — Grid-Bot weniger geeignet",
+                                            "neutral": "Unklare Marktlage"}
+                                rc = r_colors.get(rg.regime, "#FBBF24")
+                                rl = r_labels.get(rg.regime, rg.regime)
+                                st.markdown(
+                                    f"<div style='padding:6px 10px; border-left:3px solid {rc}; "
+                                    f"background:rgba(255,255,255,0.03); border-radius:4px;'>"
+                                    f"<span style='color:{rc}; font-weight:600;'>Regime:</span> "
+                                    f"<span style='color:#E2E8F0; font-size:0.85rem;'>{rl}</span> "
+                                    f"<span style='color:#64748B; font-size:0.75rem;'>(ADX14: {rg.adx14:.1f} · {rg.confidence:.0f}%)</span>"
+                                    f"</div>",
+                                    unsafe_allow_html=True
+                                )
+                        except Exception:
+                            pass
+                        import time; time.sleep(8)
                         st.rerun()
                 except Exception as e:
                     st.error(f"Fehler: {e}")

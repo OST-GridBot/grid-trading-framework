@@ -402,6 +402,25 @@ def show_backtesting():
                     f"{result.get('num_trades', 0)} Trades · "
                     f"ROI: {result.get('profit_pct', 0):+.2f}%"
                 )
+                # Regime-Warnung
+                regime = result.get("regime")
+                if regime:
+                    r_colors = {"range": "#34D399", "trend_up": "#F87171", "trend_down": "#F87171", "neutral": "#FBBF24"}
+                    r_labels = {"range": "Range-Markt (Seitwärts) — Grid-Bot geeignet",
+                                "trend_up":   "Trend-Markt (Aufwärts) — Grid-Bot weniger geeignet",
+                                "trend_down": "Trend-Markt (Abwärts) — Grid-Bot weniger geeignet",
+                                "neutral":    "Unklare Marktlage"}
+                    rc = r_colors.get(regime.regime, "#FBBF24")
+                    rl = r_labels.get(regime.regime, regime.regime)
+                    st.markdown(
+                        f"<div style='padding:8px 12px; border-left:3px solid {rc}; "
+                        f"background:rgba(255,255,255,0.03); border-radius:4px; margin-top:8px; margin-bottom:16px;'>"
+                        f"<span style='color:{rc}; font-weight:600;'>Marktregime:</span> "
+                        f"<span style='color:#E2E8F0;'>{rl}</span> "
+                        f"<span style='color:#64748B; font-size:0.8rem;'>(Konfidenz: {regime.confidence:.0f}% · ADX14: {regime.adx14:.1f})</span>"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
 
     # -----------------------------------------------------------------------
     # Ergebnisse
