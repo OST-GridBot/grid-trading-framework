@@ -364,6 +364,78 @@ def _show_new_bot_form():
         dd_threshold_2 = st.slider("", 10.0, 50.0, 20.0, 1.0,
                                     key="pt_new_dd_thr2", label_visibility="collapsed") / 100
 
+    # Parametrisierungsvorschlag
+    st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
+    st.divider()
+    st.markdown("**💡 Parametrisierungsvorschlag**")
+    col_opt1, col_opt2, col_opt3 = st.columns([2, 2, 1])
+    with col_opt1:
+        opt_objective = st.selectbox(
+            "Optimierungsziel",
+            ["maximize_sharpe", "maximize_roi", "maximize_calmar", "minimize_drawdown"],
+            format_func=lambda x: {
+                "maximize_sharpe":   "Bestes Risiko/Rendite (Sharpe)",
+                "maximize_roi":      "Höchster ROI",
+                "maximize_calmar":   "Calmar Ratio",
+                "minimize_drawdown": "Geringstes Risiko",
+            }.get(x, x),
+            key="pt_opt_objective",
+        )
+    with col_opt2:
+        opt_days = st.selectbox(
+            "Historischer Zeitraum",
+            [7, 14, 30],
+            index=1,
+            format_func=lambda x: f"Letzte {x} Tage",
+            key="pt_opt_days",
+        )
+    with col_opt3:
+        st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
+        opt_btn = st.button("🔍 Vorschlag", use_container_width=True, key="pt_opt_btn")
+
+    if opt_btn:
+        with st.spinner(f"Analysiere {coin}/USDT der letzten {opt_days} Tage..."):
+            try:
+                from src.trading.optimizer import suggest_parameters
+                s = suggest_parameters(
+                    coin             = coin,
+                    total_investment = total_investment,
+                    lookback_days    = opt_days,
+                    interval         = interval,
+                    objective        = opt_objective,
+                )
+                regime_colors = {
+                    "range":      "#34D399",
+                    "trend_up":   "#FBBF24",
+                    "trend_down": "#F87171",
+                    "neutral":    "#94A3B8",
+                }
+                rc = regime_colors.get(s.regime, "#94A3B8")
+                st.markdown(
+                    f"<div style='padding:12px 16px; background:rgba(255,255,255,0.04); "
+                    f"border-left:3px solid {rc}; border-radius:6px; margin-top:8px;'>"
+                    f"<div style='color:{rc}; font-weight:700; margin-bottom:8px;'>"
+                    f"Parametrisierungsvorschlag für {coin}/USDT</div>"
+                    f"<div style='color:#E2E8F0; font-size:0.9rem; line-height:1.8;'>"
+                    f"<b>Grid-Modus:</b> {'Arithmetisch' if s.grid_mode == 'arithmetic' else 'Geometrisch'}<br>"
+                    f"<b>Anzahl Grids:</b> {s.num_grids}<br>"
+                    f"<b>Untere Grenze:</b> ${s.lower_price:,.2f}<br>"
+                    f"<b>Obere Grenze:</b> ${s.upper_price:,.2f}<br>"
+                    f"<b>ROI (hist.):</b> {s.roi_pct:+.2f}% | "
+                    f"<b>Sharpe:</b> {s.sharpe:.2f} | "
+                    f"<b>Max DD:</b> {s.max_dd_pct:.2f}%"
+                    f"</div>"
+                    f"<div style='color:#94A3B8; font-size:0.8rem; margin-top:8px;'>"
+                    f"{s.reasoning.split(chr(10))[0]}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+                if s.warning:
+                    st.warning(s.warning)
+            except Exception as e:
+                st.error(f"Fehler beim Erstellen des Vorschlags: {e}")
+
+    st.divider()
     st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
     col_btn1, col_btn2 = st.columns([2, 1])
     with col_btn1:
