@@ -24,7 +24,7 @@ from components.chart import plot_grid_chart
 from config.settings import (
     DEFAULT_NUM_GRIDS, DEFAULT_GRID_MODE,
     DEFAULT_FEE_RATE, DEFAULT_RESERVE_PCT,
-    MAX_BOTS_PER_MODE,
+    MAX_BOTS_PER_MODE, BINANCE_API_KEY, BINANCE_SECRET_KEY,
 )
 
 COINS = ["BTC","ETH","BNB","SOL","XRP","ADA","DOGE","AVAX","DOT","MATIC",
@@ -66,6 +66,91 @@ def _format_ts(ts_str: str) -> str:
         return str(ts_str)[:16].replace("T", " ")
 
 
+# ---------------------------------------------------------------------------
+# Binance API Hilfsfunktionen
+# ---------------------------------------------------------------------------
+
+def _get_binance_balance() -> dict:
+    """Holt aktuelles Binance-Guthaben."""
+    try:
+        import hmac, time, hashlib, requests as req
+        api_key    = BINANCE_API_KEY
+        api_secret = BINANCE_SECRET_KEY
+        if not api_key or not api_secret:
+            return {"error": "API-Key nicht konfiguriert"}
+        ts        = int(time.time() * 1000)
+        query     = f"timestamp={ts}"
+        signature = hmac.new(api_secret.encode(), query.encode(), hashlib.sha256).hexdigest()
+        url       = f"https://api.binance.com/api/v3/account?{query}&signature={signature}"
+        headers   = {"X-MBX-APIKEY": api_key}
+        resp      = req.get(url, headers=headers, timeout=8)
+        data      = resp.json()
+        if "code" in data:
+            return {"error": data.get("msg", "Binance API Fehler")}
+        balances = {}
+        for asset in data.get("balances", []):
+            free = float(asset["free"])
+            if free > 0:
+                balances[asset["asset"]] = round(free, 8)
+        return {"balances": balances, "usdt": balances.get("USDT", 0.0)}
+    except Exception as e:
+        return {"error": str(e)}
+
+def _check_binance_connection() -> tuple:
+    """Prüft Binance API Verbindung."""
+    try:
+        import requests as req
+        resp = req.get("https://api.binance.com/api/v3/ping", timeout=5)
+        return (True, "Verbunden") if resp.status_code == 200 else (False, f"HTTP {resp.status_code}")
+    except Exception as e:
+        return False, str(e)
+
+def _show_connection_status():
+    """Zeigt Verbindungsstatus und Binance-Guthaben."""
+    col_conn, col_bal = st.columns([1, 2])
+    with col_conn:
+        connected, msg = _check_binance_connection()
+        color = "#34D399" if connected else "#F87171"
+        icon  = "●" if connected else "✗"
+        st.markdown(
+            f"<div style='padding:10px 14px; background:rgba(255,255,255,0.03); "
+            f"border:1px solid rgba(255,255,255,0.08); border-radius:8px;'>"
+            f"<div style='font-size:0.75rem; color:#94A3B8; margin-bottom:4px;'>BINANCE API</div>"
+            f"<div style='color:{color}; font-weight:700;'>{icon} {msg}</div>"
+            f"</div>", unsafe_allow_html=True
+        )
+    with col_bal:
+        col_b1, col_b2 = st.columns([3, 1])
+        with col_b2:
+            if st.button("🔄 Guthaben", use_container_width=True, key="lt_refresh_bal"):
+                st.session_state.lt_balance = _get_binance_balance()
+        bal = st.session_state.get("lt_balance")
+        if bal is None:
+            st.markdown(
+                "<div style='padding:10px 14px; background:rgba(255,255,255,0.03); "
+                "border:1px solid rgba(255,255,255,0.08); border-radius:8px; color:#64748B;'>"
+                "Klicke 🔄 um Guthaben zu laden</div>", unsafe_allow_html=True
+            )
+        elif "error" in bal:
+            st.error(f"Guthaben-Fehler: {bal['error']}")
+        else:
+            usdt  = bal.get("usdt", 0)
+            color = "#34D399" if usdt > 100 else "#FBBF24" if usdt > 10 else "#F87171"
+            other = {k: v for k, v in bal.get("balances", {}).items() if k != "USDT"}
+            other_str = " · ".join(f"{v:.4f} {k}" for k, v in list(other.items())[:4])
+            st.markdown(
+                f"<div style='padding:10px 14px; background:rgba(255,255,255,0.03); "
+                f"border:1px solid rgba(255,255,255,0.08); border-radius:8px;'>"
+                f"<div style='font-size:0.75rem; color:#94A3B8; margin-bottom:4px;'>VERFÜGBARES GUTHABEN</div>"
+                f"<div style='color:{color}; font-weight:700; font-size:1.1rem;'>${usdt:,.2f} USDT</div>"
+                f"<div style='color:#64748B; font-size:0.75rem; margin-top:2px;'>{other_str}</div>"
+                f"</div>", unsafe_allow_html=True
+            )
+            if usdt < 50:
+                st.warning("⚠️ Guthaben unter $50 USDT — zu wenig für sinnvolles Grid Trading.")
+    st.markdown("<div style='margin-bottom:16px'></div>", unsafe_allow_html=True)
+
+
 def show_live_trading():
 
     # ── Session State ────────────────────────────────────────────────────────
@@ -75,6 +160,12 @@ def show_live_trading():
         st.session_state.lt_show_new_bot = False
     if "lt_show_overview" not in st.session_state:
         st.session_state.lt_show_overview = False
+    if "lt_confirmed" not in st.session_state:
+        st.session_state.lt_confirmed = False
+    if "lt_balance" not in st.session_state:
+        st.session_state.lt_balance = None
+
+    has_api_keys = bool(BINANCE_API_KEY and BINANCE_SECRET_KEY)
 
     bots        = sorted(bot_store.get_all_bots(mode="live"), key=lambda b: b.get("created_at",""), reverse=True)
     bot_count   = len(bots)
@@ -91,6 +182,7 @@ def show_live_trading():
         st.session_state.lt_show_new_bot  = True
         st.session_state.lt_selected_bot  = None
         st.session_state.lt_show_overview = False
+        st.session_state.lt_confirmed     = False
 
     if not can_create:
         st.sidebar.caption(f"Maximum {MAX_BOTS_PER_MODE} Bots erreicht.")
@@ -112,9 +204,16 @@ def show_live_trading():
     with col_h1:
         st.markdown("# 🔴 Live Trading")
         st.caption(f"{bot_count}/{MAX_BOTS_PER_MODE} Bots aktiv")
-    with col_h2:
-        pass
     st.divider()
+
+    if not has_api_keys:
+        st.error(
+            "⚠️ **Binance API-Key nicht konfiguriert.** "
+            "Bitte BINANCE_API_KEY und BINANCE_SECRET_KEY in der .env Datei hinterlegen."
+        )
+        return
+
+    _show_connection_status()
 
     # ── Neuen Bot konfigurieren ──────────────────────────────────────────────
     if st.session_state.lt_show_new_bot or (not bots and not st.session_state.lt_selected_bot):
@@ -142,7 +241,25 @@ def show_live_trading():
 # ---------------------------------------------------------------------------
 
 def _show_new_bot_form():
-    st.markdown("### Neuen Bot konfigurieren")
+    # Sicherheitswarnung + Bestätigung
+    if not st.session_state.get("lt_confirmed", False):
+        st.warning(
+            "⚠️ **Live Trading verwendet echtes Kapital auf Binance.** "
+            "Orders werden direkt ausgeführt und können nicht rückgängig gemacht werden."
+        )
+        col_c1, col_c2 = st.columns([2, 1])
+        with col_c1:
+            if st.button("✅ Ich verstehe die Risiken — Weiter", type="primary",
+                          use_container_width=True, key="lt_confirm_risk"):
+                st.session_state.lt_confirmed = True
+                st.rerun()
+        with col_c2:
+            if st.button("Abbrechen", use_container_width=True, key="lt_cancel_risk"):
+                st.session_state.lt_show_new_bot = False
+                st.rerun()
+        return
+
+    st.markdown("### Neuen Live-Bot konfigurieren")
     st.markdown("<div style='margin-bottom:16px'></div>", unsafe_allow_html=True)
 
     st.markdown(_label("Bot-Name"), unsafe_allow_html=True)
@@ -531,6 +648,9 @@ def _show_bots_overview(bots: list):
         color   = "#34D399" if roi >= 0 else "#F87171"
 
         # Klickbare Bot-Karte
+        if roi < -10:
+            st.warning(f"⚠️ Bot **{bot.get('name', bot['coin'])}**: ROI {roi:+.2f}% — starker Verlust!")
+
         st.markdown(f"""
         <div style="background:rgba(255,255,255,0.03);
                     border:1px solid rgba(255,255,255,0.08);
@@ -576,7 +696,9 @@ def _show_bot_detail(bot: dict):
 
 
     # Header: Bot-Name + Status in einer Zeile, Buttons darunter
-    name = bot.get("name", f"{bot['coin']}/USDT")
+    name = bot.get("name", f"{bot['coin']}/USDT Live")
+    if roi < -10:
+        st.error(f"⚠️ **Starker Verlust:** ROI {roi:+.2f}% — Überprüfe die Marktlage und erwäge Stop-Loss.")
     st.markdown(
         f"<div style='margin-bottom:8px;'>"
         f"<span style='font-size:1.6rem; font-weight:700; color:#E2E8F0;'>{name}</span>"
