@@ -105,50 +105,129 @@ def _check_binance_connection() -> tuple:
     except Exception as e:
         return False, str(e)
 
+def _get_asset_prices(symbols: list) -> dict:
+    """Holt aktuelle Preise fuer mehrere Assets von Binance."""
+    prices = {}
+    try:
+        import requests as req
+        resp = req.get("https://api.binance.com/api/v3/ticker/price", timeout=5)
+        all_prices = {p["symbol"]: float(p["price"]) for p in resp.json()}
+        for symbol in symbols:
+            if symbol == "USDT":
+                prices[symbol] = 1.0
+            else:
+                key = f"{symbol}USDT"
+                if key in all_prices:
+                    prices[symbol] = all_prices[key]
+    except Exception:
+        pass
+    return prices
+
+
 def _show_connection_status():
-    """Zeigt Verbindungsstatus und Binance-Guthaben."""
-    col_conn, col_bal = st.columns([1, 2])
-    with col_conn:
-        connected, msg = _check_binance_connection()
-        color = "#34D399" if connected else "#F87171"
-        icon  = "●" if connected else "✗"
+    """Zeigt Verbindungsstatus und vollstaendiges Binance-Portfolio."""
+    connected, msg = _check_binance_connection()
+    bal            = st.session_state.get("lt_balance")
+
+    # ── Zeile 1: API-Status + Laden-Button ───────────────────────────────────
+    col_api, col_spacer, col_btn = st.columns([3, 2, 2])
+
+    with col_api:
+        color_api = "#34D399" if connected else "#F87171"
+        icon      = "●" if connected else "✗"
         st.markdown(
-            f"<div style='padding:10px 14px; background:rgba(255,255,255,0.03); "
-            f"border:1px solid rgba(255,255,255,0.08); border-radius:8px;'>"
-            f"<div style='font-size:0.75rem; color:#94A3B8; margin-bottom:4px;'>BINANCE API</div>"
-            f"<div style='color:{color}; font-weight:700;'>{icon} {msg}</div>"
-            f"</div>", unsafe_allow_html=True
+            "<div style='padding:10px 14px; background:rgba(255,255,255,0.03); "
+            "border:1px solid rgba(255,255,255,0.08); border-radius:8px; display:inline-block;'>"
+            "<span style='font-size:0.7rem; color:#64748B; text-transform:uppercase; "
+            "letter-spacing:0.05em; margin-right:8px;'>Binance API</span>"
+            "<span style='color:" + color_api + "; font-weight:700;'>" + icon + " " + msg + "</span>"
+            "</div>",
+            unsafe_allow_html=True
         )
-    with col_bal:
-        col_b1, col_b2 = st.columns([3, 1])
-        with col_b2:
-            if st.button("🔄 Guthaben", use_container_width=True, key="lt_refresh_bal"):
-                st.session_state.lt_balance = _get_binance_balance()
-        bal = st.session_state.get("lt_balance")
-        if bal is None:
+
+    with col_btn:
+        st.markdown("<style>div[data-testid='stButton'] button {white-space:nowrap;}</style>", unsafe_allow_html=True)
+        if st.button("Portfolio aktualisieren", use_container_width=True, key="lt_refresh_bal"):
+            st.session_state.lt_balance = _get_binance_balance()
+            st.rerun()
+
+    # ── Zeile 2: Portfolio-Tabelle ────────────────────────────────────────────
+    if bal is None:
+        st.caption("Klicke **Portfolio aktualisieren** um dein Binance-Portfolio zu laden.")
+
+    elif "error" in bal:
+        st.error(f"Wallet-Fehler: {bal['error']}")
+
+    else:
+        balances = bal.get("balances", {})
+        usdt_val = bal.get("usdt", 0)
+
+        if not balances:
+            st.info("Keine Assets mit Guthaben > 0 gefunden.")
+        else:
+            # Preise laden
+            symbols = list(balances.keys())
+            prices  = _get_asset_prices(symbols)
+
+            # Portfolio berechnen
+            rows        = []
+            total_usdt  = 0.0
+            for asset, amount in balances.items():
+                price      = prices.get(asset, 0)
+                value_usdt = round(amount * price, 2)
+                total_usdt += value_usdt
+                rows.append({
+                    "asset":       asset,
+                    "amount":      amount,
+                    "price":       price,
+                    "value_usdt":  value_usdt,
+                })
+            rows.sort(key=lambda x: x["value_usdt"], reverse=True)
+
+            # Portfolio-Karten
+            st.markdown(
+                "<div style='font-size:0.7rem; color:#64748B; text-transform:uppercase; "
+                "margin-bottom:12px; margin-top:12px;'>Portfolio</div>",
+                unsafe_allow_html=True
+            )
+
+            cols = st.columns(min(len(rows), 4))
+            for i, row in enumerate(rows):
+                col_idx = i % 4
+                with cols[col_idx]:
+                    color = "#34D399" if row["asset"] == "USDT" else "#60A5FA"
+                    pct   = round(row["value_usdt"] / total_usdt * 100, 1) if total_usdt > 0 else 0
+                    price_str = f"${row['price']:,.4f}" if row['price'] < 10 else f"${row['price']:,.2f}"
+                    st.markdown(
+                        "<div style='padding:10px 12px; background:rgba(255,255,255,0.03); "
+                        "border:1px solid rgba(255,255,255,0.08); border-radius:8px; margin-bottom:8px;'>"
+                        "<div style='font-size:0.7rem; color:#64748B; margin-bottom:4px;'>"
+                        + row["asset"] +
+                        "<span style='color:#374151; margin-left:6px;'>" + str(pct) + "%</span></div>"
+                        "<div style='color:" + color + "; font-weight:700; font-size:1rem;'>"
+                        "$" + f"{row['value_usdt']:,.2f}" + "</div>"
+                        "<div style='color:#64748B; font-size:0.72rem; margin-top:2px;'>"
+                        + f"{row['amount']:.6f}".rstrip("0").rstrip(".") + " · " + price_str +
+                        "</div></div>",
+                        unsafe_allow_html=True
+                    )
+
+            # Gesamtwert
+            color_total = "#34D399" if total_usdt > 100 else "#FBBF24" if total_usdt > 10 else "#F87171"
             st.markdown(
                 "<div style='padding:10px 14px; background:rgba(255,255,255,0.03); "
-                "border:1px solid rgba(255,255,255,0.08); border-radius:8px; color:#64748B;'>"
-                "Klicke 🔄 um Guthaben zu laden</div>", unsafe_allow_html=True
+                "border:1px solid rgba(255,255,255,0.08); border-radius:8px; "
+                "display:flex; justify-content:space-between; align-items:center;'>"
+                "<span style='color:#94A3B8; font-size:0.85rem;'>Gesamtportfolio</span>"
+                "<span style='color:" + color_total + "; font-weight:700; font-size:1.1rem;'>"
+                "$" + f"{total_usdt:,.2f}" + " USDT</span>"
+                "</div>",
+                unsafe_allow_html=True
             )
-        elif "error" in bal:
-            st.error(f"Guthaben-Fehler: {bal['error']}")
-        else:
-            usdt  = bal.get("usdt", 0)
-            color = "#34D399" if usdt > 100 else "#FBBF24" if usdt > 10 else "#F87171"
-            other = {k: v for k, v in bal.get("balances", {}).items() if k != "USDT"}
-            other_str = " · ".join(f"{v:.4f} {k}" for k, v in list(other.items())[:4])
-            st.markdown(
-                f"<div style='padding:10px 14px; background:rgba(255,255,255,0.03); "
-                f"border:1px solid rgba(255,255,255,0.08); border-radius:8px;'>"
-                f"<div style='font-size:0.75rem; color:#94A3B8; margin-bottom:4px;'>VERFÜGBARES GUTHABEN</div>"
-                f"<div style='color:{color}; font-weight:700; font-size:1.1rem;'>${usdt:,.2f} USDT</div>"
-                f"<div style='color:#64748B; font-size:0.75rem; margin-top:2px;'>{other_str}</div>"
-                f"</div>", unsafe_allow_html=True
-            )
-            if usdt < 50:
-                st.warning("⚠️ Guthaben unter $50 USDT — zu wenig für sinnvolles Grid Trading.")
-    st.markdown("<div style='margin-bottom:16px'></div>", unsafe_allow_html=True)
+
+
+
+    st.divider()
 
 
 def show_live_trading():
@@ -175,6 +254,14 @@ def show_live_trading():
 
     # ── Sidebar ──────────────────────────────────────────────────────────────
     st.sidebar.markdown(_label("Ansicht"), unsafe_allow_html=True)
+    if st.sidebar.button("📊 Portfolio",
+                          use_container_width=True,
+                          key="lt_btn_portfolio"):
+        st.session_state.lt_show_new_bot  = False
+        st.session_state.lt_selected_bot  = None
+        st.session_state.lt_show_overview = False
+        st.rerun()
+
     if st.sidebar.button("＋ Neuen Bot starten",
                           use_container_width=True,
                           disabled=not can_create,
@@ -200,10 +287,18 @@ def show_live_trading():
         st.session_state.lt_selected_bot  = None
 
     # ── Header ───────────────────────────────────────────────────────────────
-    col_h1, col_h2 = st.columns([4, 1])
-    with col_h1:
+    col_titel, col_info = st.columns([8, 1])
+    with col_titel:
         st.markdown("# 🔴 Live Trading")
         st.caption(f"{bot_count}/{MAX_BOTS_PER_MODE} Bots aktiv")
+    with col_info:
+        st.markdown(
+            "<div style='margin-top:22px; text-align:right;'>"
+            "<span style='color:#64748B; font-size:0.85rem; cursor:default;' "
+            "title='Live Trading verwendet echtes Kapital auf Binance. Orders werden direkt ausgeführt.'>ℹ️ Info</span>"
+            "</div>",
+            unsafe_allow_html=True
+        )
     st.divider()
 
     if not has_api_keys:
@@ -213,14 +308,7 @@ def show_live_trading():
         )
         return
 
-    _show_connection_status()
-
-    # ── Neuen Bot konfigurieren ──────────────────────────────────────────────
-    if st.session_state.lt_show_new_bot or (not bots and not st.session_state.lt_selected_bot):
-        _show_new_bot_form()
-        return
-
-    # ── Bot-Detailansicht ────────────────────────────────────────────────────
+    # ── Ansicht: Bot-Detailansicht ───────────────────────────────────────────
     if st.session_state.lt_selected_bot:
         bot = bot_store.get_bot(st.session_state.lt_selected_bot)
         if bot:
@@ -229,36 +317,68 @@ def show_live_trading():
         else:
             st.session_state.lt_selected_bot = None
 
-    # ── Übersicht aktive Bots ────────────────────────────────────────────────
-    if st.session_state.lt_show_overview or bots:
+    # ── Ansicht: Neuen Bot konfigurieren ─────────────────────────────────────
+    if st.session_state.lt_show_new_bot:
+        _show_new_bot_form()
+        return
+
+    # ── Ansicht: Bot-Übersicht ────────────────────────────────────────────────
+    if st.session_state.lt_show_overview:
         _show_bots_overview(bots)
-    else:
-        _show_empty_state()
+        return
+
+    # ── Standard-Ansicht: Portfolio + zwei Aktions-Buttons ───────────────────
+    _show_connection_status()
+
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+    col_act1, col_act2 = st.columns(2)
+    with col_act1:
+        if st.button("＋ Neuen Bot starten",
+                      use_container_width=True,
+                      disabled=not can_create,
+                      type="primary",
+                      key="lt_main_new"):
+            st.session_state.lt_show_new_bot = True
+            st.rerun()
+        if not can_create:
+            st.caption(f"Maximum {MAX_BOTS_PER_MODE} Bots erreicht.")
+    with col_act2:
+        if st.button(f"Übersicht aktive Bots ({bot_count})",
+                      use_container_width=True,
+                      key="lt_main_overview"):
+            st.session_state.lt_show_overview = True
+            st.rerun()
 
 
 # ---------------------------------------------------------------------------
 # Neuen Bot erstellen
 # ---------------------------------------------------------------------------
 
-def _show_new_bot_form():
-    # Sicherheitswarnung + Bestätigung
-    if not st.session_state.get("lt_confirmed", False):
-        st.warning(
-            "⚠️ **Live Trading verwendet echtes Kapital auf Binance.** "
-            "Orders werden direkt ausgeführt und können nicht rückgängig gemacht werden."
-        )
-        col_c1, col_c2 = st.columns([2, 1])
-        with col_c1:
-            if st.button("✅ Ich verstehe die Risiken — Weiter", type="primary",
-                          use_container_width=True, key="lt_confirm_risk"):
-                st.session_state.lt_confirmed = True
-                st.rerun()
-        with col_c2:
-            if st.button("Abbrechen", use_container_width=True, key="lt_cancel_risk"):
-                st.session_state.lt_show_new_bot = False
-                st.rerun()
-        return
+def _show_form_chart(coin: str = "BTC", interval: str = "1h"):
+    """Zeigt Chart des gewählten Coins mit gewähltem Intervall."""
+    days_map = {"1m": 1, "5m": 1, "15m": 2, "1h": 7, "4h": 14}
+    days  = days_map.get(interval, 7)
+    force = interval in ("1m", "5m")  # kurze Intervalle immer frisch laden
+    try:
+        df_chart, _ = get_price_data(coin, days=days, interval=interval, force=force)
+        if df_chart is not None and not df_chart.empty:
+            df_display = convert_df_timestamps(df_chart)
+            fig = plot_grid_chart(
+                df           = df_display,
+                grid_lines   = [],
+                trade_log    = [],
+                coin         = coin,
+                title        = f"{coin}/USDT · {interval} · letzte {days}d",
+                show_volume  = True,
+                show_grid_bg = False,
+                chart_type   = "Candlestick",
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.caption(f"Chart nicht verfügbar: {e}")
 
+
+def _show_new_bot_form():
     st.markdown("### Neuen Live-Bot konfigurieren")
     st.markdown("<div style='margin-bottom:16px'></div>", unsafe_allow_html=True)
 
@@ -278,12 +398,17 @@ def _show_new_bot_form():
     else:
         coin = st.text_input("", value="BTC", label_visibility="collapsed",
                               key="lt_new_coin_input").upper().strip()
+
     st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
 
     st.markdown(_label("Intervall"), unsafe_allow_html=True)
     interval = st.radio("", ["1m","5m","15m","1h","4h"],
                          index=3, horizontal=True, key="lt_new_interval",
                          label_visibility="collapsed")
+
+    # Chart nach Coin + Intervall-Auswahl
+    _show_form_chart(coin, interval)
+
     st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
 
     st.markdown(_label("Startkapital"), unsafe_allow_html=True)
