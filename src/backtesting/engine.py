@@ -175,6 +175,7 @@ def run_backtest(
         "price_change_pct":    sim["price_change_pct"],
         "daily_values":        sim["daily_values"],
         "recentering_count":   sim["recentering_count"],
+        "trailing_count":      sim.get("trailing_count", 0),
         "stop_loss_triggered": sim["stop_loss_triggered"],
         # Kennzahlen
         "cagr":                metrics["cagr"],
