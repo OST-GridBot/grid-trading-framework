@@ -136,6 +136,7 @@ class GridBot:
         stop_loss_pct:       Optional[float] = None,
         enable_recentering:  bool  = False,
         recenter_threshold:  float = 0.05,
+        df:                  Optional[object] = None,
         # Drawdown-Drosselung
         enable_dd_throttle:  bool  = False,
         dd_threshold_1:      float = 0.10,   # -10% → 50% Ordergrösse
@@ -147,6 +148,8 @@ class GridBot:
         # Volatilitaetsbasierte Anpassung
         enable_atr_adjust:      bool  = False,
         atr_multiplier:         float = 1.0,
+        enable_atr_dynamic:     bool  = False,
+        atr_dynamic_threshold:  float = 0.15,
         # Grid Trailing
         enable_trailing_up:     bool  = False,
         enable_trailing_down:   bool  = False,
@@ -176,6 +179,10 @@ class GridBot:
         self.weight_top              = weight_top
         self.enable_atr_adjust       = enable_atr_adjust
         self.atr_multiplier          = atr_multiplier
+        self.enable_atr_dynamic      = enable_atr_dynamic
+        self.atr_dynamic_threshold   = atr_dynamic_threshold
+        self._df                     = df
+        self._candle_buffer: list    = []
         self.enable_trailing_up      = enable_trailing_up
         self.enable_trailing_down    = enable_trailing_down
         self.trailing_up_stop        = trailing_up_stop
@@ -265,6 +272,23 @@ class GridBot:
         """
         if initial_price is None:
             initial_price = self.grid_lines[len(self.grid_lines) // 2]
+
+        # ATR-basierte Anpassung der Grid-Range (zentral in GridBot)
+        if self.enable_atr_adjust and self._df is not None:
+            try:
+                from src.analysis.indicators import get_atr_stats
+                atr_usdt, _ = get_atr_stats(self._df)
+                grid_step   = atr_usdt * self.atr_multiplier
+                center      = initial_price or float(self._df["close"].iloc[-1])
+                half_range  = grid_step * self.num_grids / 2
+                self.lower_price = max(center - half_range, center * 0.5)
+                self.upper_price = center + half_range
+                self.grid_lines  = calculate_grid_lines(
+                    self.lower_price, self.upper_price,
+                    self.num_grids, self.grid_mode
+                )
+            except Exception as e:
+                print(f"GridBot ATR-Anpassung Fehler: {e}")
 
         # Effektives Kapital gleichmaessig auf alle Grids verteilen
         effective_investment  = total_investment * (1 - self.reserve_pct)
@@ -358,6 +382,10 @@ class GridBot:
                         grid.side = "blocked"
 
             self.last_price = current_price
+
+            # ATR dynamische Neuberechnung pro Kerze
+            if self.enable_atr_dynamic:
+                self._update_atr_dynamic(candle, current_price)
 
             # Recentering pruefen
             if self.enable_recentering:
@@ -475,6 +503,43 @@ class GridBot:
     # -----------------------------------------------------------------------
     # Recentering
     # -----------------------------------------------------------------------
+
+    def _update_atr_dynamic(self, candle: pd.Series, current_price: float) -> None:
+        """
+        Berechnet ATR bei jeder neuen Kerze neu.
+        Passt Grid-Abstände an wenn ATR sich um mehr als atr_dynamic_threshold ändert.
+        """
+        # Kerze zum Buffer hinzufügen (max. 50 Kerzen)
+        self._candle_buffer.append(candle)
+        if len(self._candle_buffer) > 50:
+            self._candle_buffer.pop(0)
+
+        # Mindestens 14 Kerzen nötig
+        if len(self._candle_buffer) < 14:
+            return
+
+        try:
+            from src.analysis.indicators import get_atr_stats
+            df_buf = pd.DataFrame(self._candle_buffer)
+            atr_usdt, _ = get_atr_stats(df_buf)
+            new_spacing  = atr_usdt * self.atr_multiplier
+            curr_spacing = (self.upper_price - self.lower_price) / self.num_grids
+
+            # Nur anpassen wenn Abweichung > Schwelle (default 15%)
+            if curr_spacing > 0:
+                deviation = abs(new_spacing - curr_spacing) / curr_spacing
+                if deviation > self.atr_dynamic_threshold:
+                    half_range       = new_spacing * self.num_grids / 2
+                    self.lower_price = max(current_price - half_range, current_price * 0.5)
+                    self.upper_price = current_price + half_range
+                    self.grid_lines  = calculate_grid_lines(
+                        self.lower_price, self.upper_price,
+                        self.num_grids, self.grid_mode
+                    )
+                    self._build_grids(current_price)
+                    self.last_traded_price = None
+        except Exception as e:
+            pass
 
     def _check_recentering(self, current_price: float) -> None:
         """
@@ -606,6 +671,8 @@ class GridBot:
             "dd_throttle_factor":  self.dd_throttle_factor,
             "enable_atr_adjust":   self.enable_atr_adjust,
             "atr_multiplier":      self.atr_multiplier,
+            "enable_atr_dynamic":  self.enable_atr_dynamic,
+            "atr_dynamic_threshold": self.atr_dynamic_threshold,
             "enable_trailing_up":  self.enable_trailing_up,
             "enable_trailing_down": self.enable_trailing_down,
             "trailing_up_stop":    self.trailing_up_stop,
@@ -637,8 +704,10 @@ class GridBot:
             self.recentering_count = state.get("recentering_count", 0)
             self.stop_loss_triggered = state.get("stop_loss_triggered", False)
             self.dd_throttle_factor   = state.get("dd_throttle_factor", 1.0)
-            self.enable_atr_adjust    = state.get("enable_atr_adjust", False)
-            self.atr_multiplier       = state.get("atr_multiplier", 1.0)
+            self.enable_atr_adjust      = state.get("enable_atr_adjust", False)
+            self.atr_multiplier         = state.get("atr_multiplier", 1.0)
+            self.enable_atr_dynamic     = state.get("enable_atr_dynamic", False)
+            self.atr_dynamic_threshold  = state.get("atr_dynamic_threshold", 0.15)
             self.enable_trailing_up   = state.get("enable_trailing_up", False)
             self.enable_trailing_down = state.get("enable_trailing_down", False)
             self.trailing_up_stop     = state.get("trailing_up_stop", None)
@@ -725,10 +794,13 @@ def simulate_grid_bot(
     weight_top:             float = 0.5,
     enable_atr_adjust:      bool  = False,
     atr_multiplier:         float = 1.0,
+    enable_atr_dynamic:     bool  = False,
+    atr_dynamic_threshold:  float = 0.15,
     enable_trailing_up:     bool  = False,
     enable_trailing_down:   bool  = False,
     trailing_up_stop:       Optional[float] = None,
     trailing_down_stop:     Optional[float] = None,
+    df_for_atr:             Optional[object] = None,
 ) -> dict:
     """
     Simuliert den Grid-Bot ueber einen historischen Datensatz (Backtesting).
@@ -789,10 +861,13 @@ def simulate_grid_bot(
             weight_top             = weight_top,
             enable_atr_adjust      = enable_atr_adjust,
             atr_multiplier         = atr_multiplier,
+            enable_atr_dynamic     = enable_atr_dynamic,
+            atr_dynamic_threshold  = atr_dynamic_threshold,
             enable_trailing_up     = enable_trailing_up,
             enable_trailing_down   = enable_trailing_down,
             trailing_up_stop       = trailing_up_stop,
             trailing_down_stop     = trailing_down_stop,
+            df                     = df_for_atr,
         )
 
         # Timestamp fuer Initial-Trade setzen

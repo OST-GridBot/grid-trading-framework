@@ -57,6 +57,8 @@ def run_backtest(
     weight_top:             float = 0.5,
     enable_atr_adjust:      bool  = False,
     atr_multiplier:         float = 1.0,
+    enable_atr_dynamic:     bool  = False,
+    atr_dynamic_threshold:  float = 0.15,
     enable_trailing_up:     bool  = False,
     enable_trailing_down:   bool  = False,
     trailing_up_stop:       Optional[float] = None,
@@ -105,24 +107,13 @@ def run_backtest(
     if not is_valid:
         return _error_result(f"Ungueltige Parameter: {warnings}")
 
-    # --- ATR-basierte Grid-Anpassung ---
-    if enable_atr_adjust:
-        try:
-            atr_usdt, atr_pct = get_atr_stats(df)
-            grid_step = atr_usdt * atr_multiplier
-            center_price = float(df["close"].iloc[-1])
-            half_range = grid_step * num_grids / 2
-            lower_price = max(center_price - half_range, center_price * 0.5)
-            upper_price = center_price + half_range
-        except Exception as e:
-            print(f"ATR-Anpassung Fehler: {e}")
-
     # --- Simulation ---
     sim = simulate_grid_bot(
         df                 = df,
         total_investment   = total_investment,
         lower_price        = lower_price,
         upper_price        = upper_price,
+        df_for_atr         = df,
         num_grids          = num_grids,
         grid_mode          = grid_mode,
         fee_rate           = fee_rate,
@@ -138,6 +129,8 @@ def run_backtest(
         weight_top             = weight_top,
         enable_atr_adjust      = enable_atr_adjust,
         atr_multiplier         = atr_multiplier,
+        enable_atr_dynamic     = enable_atr_dynamic,
+        atr_dynamic_threshold  = atr_dynamic_threshold,
         enable_trailing_up     = enable_trailing_up,
         enable_trailing_down   = enable_trailing_down,
         trailing_up_stop       = trailing_up_stop,

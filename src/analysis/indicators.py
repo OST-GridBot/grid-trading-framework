@@ -189,9 +189,10 @@ def get_atr_stats(df: pd.DataFrame) -> tuple:
         (df["low"]  - df["close"].shift()).abs(),
     ], axis=1).max(axis=1)
 
-    atr_usdt     = tr.mean()
-    average_close = df["close"].mean()
-    atr_pct      = (atr_usdt / average_close) * 100 if average_close > 0 else 0.0
+    # Standard 14-Perioden ATR (Wilder EWM) statt einfachem Durchschnitt
+    atr_usdt      = float(tr.ewm(span=14, adjust=False).mean().iloc[-1])
+    current_close = float(df["close"].iloc[-1])
+    atr_pct       = (atr_usdt / current_close) * 100 if current_close > 0 else 0.0
 
     return float(atr_usdt), float(atr_pct)
 

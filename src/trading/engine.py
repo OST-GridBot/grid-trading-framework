@@ -74,6 +74,9 @@ class BotRunner:
         if df is None or df.empty:
             return False, f"Keine Preisdaten für {coin} verfügbar"
 
+        # Aktuellen Preis als initial_price für GridBot bestimmen
+        initial_price = float(df["close"].iloc[-1]) if df is not None and not df.empty else None
+
         # GridBot erstellen — direkt mit Parametern (kein grid_config Objekt)
         self._grid_bot = GridBot(
             total_investment   = cfg["total_investment"],
@@ -92,10 +95,16 @@ class BotRunner:
             weight_top             = cfg.get("weight_top", 0.5),
             enable_atr_adjust      = cfg.get("enable_atr_adjust", False),
             atr_multiplier         = cfg.get("atr_multiplier", 1.0),
+            enable_atr_dynamic     = cfg.get("enable_atr_dynamic", False),
+            atr_dynamic_threshold  = cfg.get("atr_dynamic_threshold", 0.15),
             enable_trailing_up     = cfg.get("enable_trailing_up", False),
             enable_trailing_down   = cfg.get("enable_trailing_down", False),
             trailing_up_stop       = cfg.get("trailing_up_stop"),
             trailing_down_stop     = cfg.get("trailing_down_stop"),
+            enable_recentering     = cfg.get("enable_recentering", False),
+            recenter_threshold     = cfg.get("recenter_threshold", 0.05),
+            df                     = df,
+            initial_price          = initial_price,
         )
 
         # Bestehenden State laden falls vorhanden

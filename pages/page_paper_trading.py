@@ -313,8 +313,25 @@ def _show_new_bot_form():
                                    key="pt_new_sl_pct", label_visibility="collapsed") / 100
     atr_enabled_pt = st.checkbox("Volatilitätsbasierte Anpassung", key="pt_atr")
     enable_atr_adjust = atr_enabled_pt
-    atr_multiplier = 1.0
+    atr_multiplier    = 1.0
+    enable_atr_dynamic    = False
+    atr_dynamic_threshold = 0.15
     if atr_enabled_pt:
+        st.markdown(_caption("ATR-Modus"), unsafe_allow_html=True)
+        atr_mode = st.radio(
+            "", ["Statisch (einmalig beim Start)", "Dynamisch (pro Kerze)"],
+            horizontal=True, key="pt_atr_mode",
+            label_visibility="collapsed"
+        )
+        enable_atr_dynamic = (atr_mode == "Dynamisch (pro Kerze)")
+        if enable_atr_dynamic:
+            st.markdown(_caption("Anpassungsschwelle (%)"), unsafe_allow_html=True)
+            st.caption("Grid nur anpassen wenn ATR um mehr als X% abweicht")
+            atr_dynamic_threshold = st.slider(
+                "", 5.0, 30.0, 15.0, 1.0,
+                key="pt_atr_threshold",
+                label_visibility="collapsed"
+            ) / 100
         st.markdown(_caption("ATR-Multiplikator"), unsafe_allow_html=True)
         st.caption("Grid-Abstand = ATR × Multiplikator")
         atr_multiplier = st.slider("", 0.5, 5.0, 1.0, 0.1,
@@ -469,6 +486,8 @@ def _show_new_bot_form():
                     recenter_threshold     = recenter_threshold,
                     enable_atr_adjust      = enable_atr_adjust,
                     atr_multiplier         = atr_multiplier,
+                    enable_atr_dynamic     = enable_atr_dynamic,
+                    atr_dynamic_threshold  = atr_dynamic_threshold,
                     enable_trailing_up     = enable_trailing_up,
                     enable_trailing_down   = enable_trailing_down,
                     trailing_up_stop       = trailing_up_stop,
