@@ -424,24 +424,50 @@ class GridBot:
 
         try:
             if grid.side == "sell":
-                # Tatsaechlich verkaufte Menge aus FIFO ermitteln
-                # (eine FIFO-Position = ein BUY, exakt diese Menge verkaufen)
+                # Grid-spezifisches Matching:
+                # SELL bei Grid X verkauft die Position die bei Grid X-1 (darunter) gekauft wurde.
+                # Grund: Jedes Grid-Paar (Buy@X-1, Sell@X) bildet einen abgeschlossenen Trade.
                 if not self.coin_inventory:
                     return  # Kein Inventar vorhanden
 
-                # Genau eine FIFO-Position verkaufen (aelteste zuerst)
-                oldest_amt, oldest_price, oldest_time = self.coin_inventory[0]
-                actual_sell_amt = oldest_amt  # exakte Menge aus dem BUY
+                # Naechst-tieferes Grid-Level finden (= korrekter Buy-Level)
+                grid_lines_sorted = sorted(self.grids.keys())
+                sell_idx = None
+                for idx, gl in enumerate(grid_lines_sorted):
+                    if abs(gl - grid.price) < 1e-8:
+                        sell_idx = idx
+                        break
+
+                # Buy-Level = Grid direkt darunter
+                if sell_idx is not None and sell_idx > 0:
+                    expected_buy_price = grid_lines_sorted[sell_idx - 1]
+                else:
+                    expected_buy_price = None
+
+                # Position suchen die am korrekten Buy-Level gekauft wurde
+                matched_idx = None
+                if expected_buy_price is not None:
+                    for inv_idx, (amt, bp, ts) in enumerate(self.coin_inventory):
+                        if abs(bp - expected_buy_price) < 1e-8:
+                            matched_idx = inv_idx
+                            break
+
+                # Fallback: naechstbeste Position (FIFO) wenn kein exakter Match
+                if matched_idx is None:
+                    matched_idx = 0
+
+                actual_amt, buy_price, buy_time = self.coin_inventory[matched_idx]
+                actual_sell_amt = actual_amt
 
                 # Genuegend Coins vorhanden?
                 if self.position["coin"] < actual_sell_amt - 1e-10:
                     return
 
-                profit = (grid.price - oldest_price) * actual_sell_amt
+                profit = (grid.price - buy_price) * actual_sell_amt
                 fee    = actual_sell_amt * grid.price * self.fee_rate
                 profit -= fee
 
-                self.coin_inventory.pop(0)
+                self.coin_inventory.pop(matched_idx)
                 self.position["coin"] -= actual_sell_amt
                 self.position["usdt"] += (actual_sell_amt * grid.price) - fee
 
