@@ -188,6 +188,7 @@ class GridBot:
         self.trailing_up_stop        = trailing_up_stop
         self.trailing_down_stop      = trailing_down_stop
         self.trailing_count          = 0
+        self._candle_lowest_buy: Optional[float] = None
 
         # Grid-Linien berechnen
         self.grid_lines = calculate_grid_lines(
@@ -365,6 +366,9 @@ class GridBot:
                 self.stop_loss_triggered = True
                 return
 
+            # Reset des Intra-Candle BUY-Trackers
+            self._candle_lowest_buy = None
+
             prev_price         = self.last_price if self.last_price else float(candle["open"])
             last_traded_price  = self.last_traded_price or prev_price
 
@@ -452,9 +456,13 @@ class GridBot:
                             matched_idx = inv_idx
                             break
 
-                # Fallback: naechstbeste Position (FIFO) wenn kein exakter Match
+                # Fallback: FIFO nur wenn älteste Position UNTER dem Verkaufspreis liegt
                 if matched_idx is None:
-                    matched_idx = 0
+                    if (self.coin_inventory and
+                            self.coin_inventory[0][1] < grid.price - 1e-8):
+                        matched_idx = 0
+                    else:
+                        return  # Kein sinnvoller Match → kein Sell (verhindert Verlust)
 
                 actual_amt, buy_price, buy_time = self.coin_inventory[matched_idx]
                 actual_sell_amt = actual_amt
@@ -500,7 +508,18 @@ class GridBot:
                 "profit":    float(profit),
             })
 
-            self.last_traded_price = grid.price
+            # last_traded_price:
+            # SELL → immer auf dieses Grid setzen
+            # BUY  → tiefsten Grid dieser Kerze merken (per _candle_lowest_buy)
+            #        damit alle BUY-Grids einer Kerze geblockt bleiben
+            if grid.side == "sell":
+                self.last_traded_price  = grid.price
+                self._candle_lowest_buy = None  # nach Sell zurücksetzen
+            else:
+                if (self._candle_lowest_buy is None or
+                        grid.price < self._candle_lowest_buy):
+                    self._candle_lowest_buy = grid.price
+                self.last_traded_price = self._candle_lowest_buy
             grid.trade_count += 1
 
         except Exception as e:
