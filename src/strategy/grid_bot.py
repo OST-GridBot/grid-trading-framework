@@ -274,20 +274,22 @@ class GridBot:
         if initial_price is None:
             initial_price = self.grid_lines[len(self.grid_lines) // 2]
 
-        # ATR-basierte Anpassung der Grid-Range (zentral in GridBot)
+        # ATR-basierte Anpassung der Grid-Abstände (Range bleibt fix)
+        # ATR bestimmt den optimalen Grid-Abstand innerhalb lower/upper
         if self.enable_atr_adjust and self._df is not None:
             try:
                 from src.analysis.indicators import get_atr_stats
                 atr_usdt, _ = get_atr_stats(self._df)
                 grid_step   = atr_usdt * self.atr_multiplier
-                center      = initial_price or float(self._df["close"].iloc[-1])
-                half_range  = grid_step * self.num_grids / 2
-                self.lower_price = max(center - half_range, center * 0.5)
-                self.upper_price = center + half_range
-                self.grid_lines  = calculate_grid_lines(
-                    self.lower_price, self.upper_price,
-                    self.num_grids, self.grid_mode
-                )
+                if grid_step > 0:
+                    # Anzahl Grids aus ATR-Abstand berechnen
+                    range_width     = self.upper_price - self.lower_price
+                    atr_num_grids   = max(2, round(range_width / grid_step))
+                    self.num_grids  = atr_num_grids
+                    self.grid_lines = calculate_grid_lines(
+                        self.lower_price, self.upper_price,
+                        self.num_grids, self.grid_mode
+                    )
             except Exception as e:
                 print(f"GridBot ATR-Anpassung Fehler: {e}")
 

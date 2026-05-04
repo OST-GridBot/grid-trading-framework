@@ -47,6 +47,9 @@ def _label(text):
 def _caption(text):
     return f"<div style='{CAPTION_STYLE}'>{text}</div>"
 
+def _divider():
+    return "<hr style='border:none; border-top:1px solid rgba(255,255,255,0.08); margin:8px 0;'>"
+
 def _status_badge(status: str) -> str:
     colors = {"running": "#34D399", "stopped": "#F87171", "error": "#FBBF24"}
     labels = {"running": "● LÄUFT", "stopped": "■ GESTOPPT", "error": "⚠ FEHLER"}
@@ -57,7 +60,6 @@ def _status_badge(status: str) -> str:
 
 
 def _format_ts(ts_str: str) -> str:
-    """UTC-Timestamp nach MEZ (Europe/Zurich) formatieren."""
     try:
         from src.utils.timezone import utc_to_zurich
         import pandas as pd
@@ -69,7 +71,6 @@ def _format_ts(ts_str: str) -> str:
 
 def show_paper_trading():
 
-    # ── Session State ────────────────────────────────────────────────────────
     if "pt_selected_bot" not in st.session_state:
         st.session_state.pt_selected_bot = None
     if "pt_show_new_bot" not in st.session_state:
@@ -80,10 +81,8 @@ def show_paper_trading():
     bots        = sorted(bot_store.get_all_bots(mode="paper"), key=lambda b: b.get("created_at",""), reverse=True)
     bot_count   = len(bots)
     can_create  = bot_count < MAX_BOTS_PER_MODE
-
     running_bots = [b for b in bots if b.get("status") == "running"]
 
-    # ── Sidebar ──────────────────────────────────────────────────────────────
     st.sidebar.markdown(_label("Ansicht"), unsafe_allow_html=True)
     if st.sidebar.button("＋ Neuen Bot starten",
                           use_container_width=True,
@@ -96,8 +95,6 @@ def show_paper_trading():
     if not can_create:
         st.sidebar.caption(f"Maximum {MAX_BOTS_PER_MODE} Bots erreicht.")
 
-    
-
     running_count = sum(1 for b in bots if b["status"] == "running")
     if st.sidebar.button(
         f"Übersicht aktive Bots ({bot_count})",
@@ -108,7 +105,6 @@ def show_paper_trading():
         st.session_state.pt_show_new_bot  = False
         st.session_state.pt_selected_bot  = None
 
-    # ── Header ───────────────────────────────────────────────────────────────
     col_h1, col_h2 = st.columns([4, 1])
     with col_h1:
         st.markdown("# 📄 Paper Trading")
@@ -117,12 +113,10 @@ def show_paper_trading():
         pass
     st.divider()
 
-    # ── Neuen Bot konfigurieren ──────────────────────────────────────────────
     if st.session_state.pt_show_new_bot or (not bots and not st.session_state.pt_selected_bot):
         _show_new_bot_form()
         return
 
-    # ── Bot-Detailansicht ────────────────────────────────────────────────────
     if st.session_state.pt_selected_bot:
         bot = bot_store.get_bot(st.session_state.pt_selected_bot)
         if bot:
@@ -131,7 +125,6 @@ def show_paper_trading():
         else:
             st.session_state.pt_selected_bot = None
 
-    # ── Übersicht aktive Bots ────────────────────────────────────────────────
     if st.session_state.pt_show_overview or bots:
         _show_bots_overview(bots)
     else:
@@ -145,13 +138,16 @@ def show_paper_trading():
 def _show_new_bot_form():
     st.markdown("### Neuen Bot konfigurieren")
     st.markdown("<div style='margin-bottom:16px'></div>", unsafe_allow_html=True)
+    st.markdown("""
+    <style>details summary p { font-size: 0.72rem !important; }</style>
+    """, unsafe_allow_html=True)
 
     st.markdown(_label("Bot-Name"), unsafe_allow_html=True)
     bot_name = st.text_input(
         "", placeholder="z.B. BTC Range Bot, ETH Swing...",
         label_visibility="collapsed", key="pt_new_name"
     )
-    st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
+    st.markdown(_divider(), unsafe_allow_html=True)
 
     st.markdown(_label("Coin"), unsafe_allow_html=True)
     coin_mode = st.radio("", ["Aus Liste", "Eigene Eingabe"],
@@ -162,13 +158,13 @@ def _show_new_bot_form():
     else:
         coin = st.text_input("", value="BTC", label_visibility="collapsed",
                               key="pt_new_coin_input").upper().strip()
-    st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
+    st.markdown(_divider(), unsafe_allow_html=True)
 
     st.markdown(_label("Intervall"), unsafe_allow_html=True)
     interval = st.radio("", ["1m","5m","15m","1h","4h"],
                          index=3, horizontal=True, key="pt_new_interval",
                          label_visibility="collapsed")
-    st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
+    st.markdown(_divider(), unsafe_allow_html=True)
 
     st.markdown(_label("Startkapital"), unsafe_allow_html=True)
     total_investment = st.number_input(
@@ -176,31 +172,33 @@ def _show_new_bot_form():
         value=10000.0, step=500.0,
         label_visibility="collapsed", key="pt_new_capital"
     )
-    st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
+    st.markdown(_divider(), unsafe_allow_html=True)
 
+    # ── Grid-Parameter ────────────────────────────────────────
     st.markdown(_label("Grid-Parameter"), unsafe_allow_html=True)
-    current_price, lower_s, upper_s = None, None, None
+    current_price, df_tmp_atr = None, None
     try:
-        df_tmp, _ = get_price_data(coin, days=14, interval="1h")
+        df_tmp, _ = get_price_data(coin, days=14, interval=interval)
         if df_tmp is not None and not df_tmp.empty:
             current_price = float(df_tmp["close"].iloc[-1])
-            suggestion    = suggest_grid_range(df_tmp, current_price)
-            lower_s       = suggestion.lower_price
-            upper_s       = suggestion.upper_price
+            df_tmp_atr    = df_tmp
     except Exception:
         pass
     current_price = current_price or 68000.0
-    lower_s       = lower_s  or current_price * 0.80
-    upper_s       = upper_s  or current_price * 1.20
-    step_val      = float(round(current_price * 0.01, 2))
-    pct_ld = round((current_price - lower_s) / current_price * 100, 1)
-    pct_ud = round((upper_s - current_price) / current_price * 100, 1)
+    lower_s  = round(current_price * 0.90, 2)
+    upper_s  = round(current_price * 1.10, 2)
+    step_val = float(round(current_price * 0.01, 2))
 
+    # Grid-Grenzen
     st.markdown(
-        f"<div style='font-size:0.75rem; color:#94A3B8; margin-bottom:6px;'>"
-        f"Aktueller Preis: <b style='color:#E2E8F0;'>{current_price:,.2f} USDT</b>"
-        f" &nbsp;&middot;&nbsp; Vorschlag: {lower_s:,.2f} (&minus;{pct_ld:.0f}%)"
-        f" &ndash; {upper_s:,.2f} (+{pct_ud:.0f}%)</div>",
+        "<div style='font-size:1.1rem; font-weight:600; color:#94A3B8; "
+        "letter-spacing:0.04em; margin-top:6px; margin-bottom:2px;'>Grid-Grenzen</div>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        f"<div style='font-size:0.75rem; color:#94A3B8; margin-bottom:4px;'>"
+        f"Aktueller Preis: <b style='color:#E2E8F0;'>{current_price:,.2f} USDT</b><br>"
+        f"Vorschlag: {lower_s:,.2f} (−10%) – {upper_s:,.2f} (+10%)</div>",
         unsafe_allow_html=True
     )
 
@@ -209,50 +207,94 @@ def _show_new_bot_form():
         col_p1, col_p2 = st.columns(2)
         with col_p1:
             st.markdown(_caption("Untere Grenze (%)"), unsafe_allow_html=True)
-            pct_lv = st.number_input("", 1.0, 50.0, pct_ld, 1.0,
+            pct_lv = st.number_input("", 1.0, 50.0, 10.0, 1.0,
                                       key="pt_new_pct_lower", label_visibility="collapsed")
         with col_p2:
             st.markdown(_caption("Obere Grenze (%)"), unsafe_allow_html=True)
-            pct_uv = st.number_input("", 1.0, 50.0, pct_ud, 1.0,
+            pct_uv = st.number_input("", 1.0, 50.0, 10.0, 1.0,
                                       key="pt_new_pct_upper", label_visibility="collapsed")
         lower_price = round(current_price * (1 - pct_lv / 100), 2)
         upper_price = round(current_price * (1 + pct_uv / 100), 2)
-        st.caption(f"-> {lower_price:,.2f} - {upper_price:,.2f} USDT")
+        st.caption(f"→ {lower_price:,.2f} – {upper_price:,.2f} USDT")
     else:
         col_g1, col_g2 = st.columns(2)
         with col_g1:
             st.markdown(_caption("Untere Grenze ($)"), unsafe_allow_html=True)
             lower_price = st.number_input("", min_value=0.001,
-                                           value=float(round(lower_s, 2)),
+                                           value=float(lower_s),
                                            step=step_val, key="pt_new_lower",
                                            label_visibility="collapsed")
         with col_g2:
             st.markdown(_caption("Obere Grenze ($)"), unsafe_allow_html=True)
             upper_price = st.number_input("", min_value=0.001,
-                                           value=float(round(upper_s, 2)),
+                                           value=float(upper_s),
                                            step=step_val, key="pt_new_upper",
                                            label_visibility="collapsed")
 
-    col_gl, col_gv = st.columns([3, 1])
-    with col_gl:
-        st.markdown(_caption("Anzahl Grids"), unsafe_allow_html=True)
-    with col_gv:
-        ng_val = st.session_state.get("pt_new_grids", DEFAULT_NUM_GRIDS)
-        st.markdown(
-            f"<div style='text-align:right; color:#3B82F6; font-weight:600;'>{ng_val}</div>",
-            unsafe_allow_html=True
-        )
+    st.markdown(_divider(), unsafe_allow_html=True)
+
+    # Anzahl Grids
+    st.markdown(
+        "<div style='font-size:1.1rem; font-weight:600; color:#94A3B8; "
+        "letter-spacing:0.04em; margin-top:6px; margin-bottom:2px;'>Anzahl Grids</div>",
+        unsafe_allow_html=True
+    )
     num_grids = st.number_input(
         "", min_value=2, max_value=100,
         value=st.session_state.get("pt_new_grids", DEFAULT_NUM_GRIDS),
         step=1, key="pt_new_grids", label_visibility="collapsed"
     )
 
+    # Gewinn pro Grid
+    _fee_preview = st.session_state.get("pt_new_fee", DEFAULT_FEE_RATE * 100) / 100
+    try:
+        _gstep   = (upper_price - lower_price) / num_grids
+        _gprofit = _gstep / upper_price - 2 * _fee_preview
+        _gcolor  = "#34D399" if _gprofit > 0 else "#F87171"
+        st.markdown(
+            f"<div style='margin-top:4px; margin-bottom:4px; padding:6px 10px; "
+            f"background:rgba(52,211,153,0.07); border-left:3px solid {_gcolor}; "
+            f"border-radius:4px; font-size:0.78rem;'>"
+            f"<span style='color:{_gcolor}; font-weight:600;'>Gewinn pro Grid (nach Fees):</span>"
+            f"<span style='color:{_gcolor};'> {_gprofit*100:.3f}%</span></div>",
+            unsafe_allow_html=True
+        )
+    except Exception:
+        pass
+
+    # ATR-Infofeld
+    try:
+        if df_tmp_atr is not None:
+            from src.analysis.indicators import get_atr_stats
+            _atr, _ = get_atr_stats(df_tmp_atr)
+            _rng = upper_price - lower_price
+            _s05 = max(2, round(_rng / (_atr * 0.5)))
+            _s10 = max(2, round(_rng / (_atr * 1.0)))
+            _s15 = max(2, round(_rng / (_atr * 1.5)))
+            with st.expander("Volatilitätsbasierte Vorschläge"):
+                st.markdown(
+                    f"<div style='font-size:0.75rem; color:#94A3B8;'>"
+                    f"<div style='color:#64748B; margin-bottom:6px;'>ATR (14 Kerzen) = "
+                    f"<b style='color:#94A3B8;'>{_atr:,.2f} USDT</b></div>"
+                    f"<div style='margin-bottom:5px;'><span style='color:#34D399; font-weight:500;'>× 0.5 → {_s05} Grids</span><br>"
+                    f"<span style='color:#64748B;'>Enger, mehr Trades</span></div>"
+                    f"<div style='margin-bottom:5px;'><span style='color:#60A5FA; font-weight:500;'>× 1.0 → {_s10} Grids</span><br>"
+                    f"<span style='color:#64748B;'>Neutral, empfohlen</span></div>"
+                    f"<div><span style='color:#FBBF24; font-weight:500;'>× 1.5 → {_s15} Grids</span><br>"
+                    f"<span style='color:#64748B;'>Weiter, weniger Trades</span></div>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+    except Exception:
+        pass
+
+    st.markdown(_divider(), unsafe_allow_html=True)
+
     # Grid-Modus
     st.markdown(
         "<div style='display:flex;align-items:center;gap:5px;margin-bottom:2px;'>"
-        "<span style='font-size:0.75rem;color:#94A3B8;'>Grid-Modus</span>"
-        "<span title='Arithmetisch: gleiche Abst\u00e4nde\nGeometrisch: gleiche % Abst\u00e4nde\nBottom heavy: enger unten\nTop heavy: enger oben' style='cursor:help;color:#94A3B8;'>&#9432;</span></div>",
+        "<span style='font-size:1.1rem;font-weight:600;color:#94A3B8;letter-spacing:0.04em;'>Grid-Modus</span>"
+        "<span title='Arithmetisch: gleiche Abstände\nGeometrisch: gleiche % Abstände\nBottom heavy: enger unten\nTop heavy: enger oben' style='cursor:help;color:#94A3B8;'>&#9432;</span></div>",
         unsafe_allow_html=True
     )
     _pt_gm_active = st.radio("", ["Symmetrisch", "Asymmetrisch"], horizontal=True, key="pt_gm_active", label_visibility="collapsed")
@@ -265,32 +307,15 @@ def _show_new_bot_form():
     else:
         grid_mode = "asymmetric_bottom" if _pt_gm_asym == "Bottom heavy" else "asymmetric_top"
 
-    st.markdown(_caption("Handelsgebuehr (%)"), unsafe_allow_html=True)
+    st.markdown(_divider(), unsafe_allow_html=True)
+
+    # ── Risiko & Kapital ──────────────────────────────────────
+    st.markdown(_label("Risiko & Kapital"), unsafe_allow_html=True)
+    st.markdown(_caption("Gebührenrate (%)"), unsafe_allow_html=True)
     fee_rate = st.number_input(
         "", 0.0, 1.0, DEFAULT_FEE_RATE * 100, 0.01,
         format="%.3f", key="pt_new_fee", label_visibility="collapsed"
     ) / 100
-
-    try:
-        if upper_price > lower_price and num_grids > 0:
-            gstep = (upper_price - lower_price) / num_grids
-            gprofit = gstep / upper_price - 2 * fee_rate
-            gcolor = "#34D399" if gprofit > 0 else "#F87171"
-            st.markdown(
-                f"<div style='margin-top:6px; padding:8px 10px; "
-                f"background:rgba(52,211,153,0.08); border-left:3px solid {gcolor}; "
-                f"border-radius:4px; font-size:0.8rem;'>"
-                f"<span style='color:{gcolor}; font-weight:600;'>Gewinn pro Grid (nach Fees):</span>"
-                f"<span style='color:{gcolor};'> {gprofit*100:.3f}%</span></div>",
-                unsafe_allow_html=True
-            )
-    except Exception:
-        pass
-
-    st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
-
-    st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
-    st.markdown(_label("Risiko & Kapital"), unsafe_allow_html=True)
     st.markdown(_caption("Kapitalreserve (%)"), unsafe_allow_html=True)
     reserve_pct = st.slider("", 0.0, 20.0, DEFAULT_RESERVE_PCT * 100, 1.0,
                              key="pt_new_reserve", label_visibility="collapsed") / 100
@@ -312,6 +337,35 @@ def _show_new_bot_form():
         st.markdown(_caption("Stop-Loss (%)"), unsafe_allow_html=True)
         stop_loss_pct = st.slider("", 5.0, 50.0, 20.0, 5.0,
                                    key="pt_new_sl_pct", label_visibility="collapsed") / 100
+    dd_enabled = st.checkbox("Drawdown-Drosselung aktivieren", key="pt_new_dd")
+    enable_dd_throttle = dd_enabled
+    dd_threshold_1 = 0.10
+    dd_threshold_2 = 0.20
+    if dd_enabled:
+        st.markdown(_caption("Schwelle 1 (%) → 50% Ordergrösse"), unsafe_allow_html=True)
+        dd_threshold_1 = st.slider("", 5.0, 30.0, 10.0, 1.0,
+                                    key="pt_new_dd_thr1", label_visibility="collapsed") / 100
+        st.markdown(_caption("Schwelle 2 (%) → 25% Ordergrösse"), unsafe_allow_html=True)
+        dd_threshold_2 = st.slider("", 10.0, 50.0, 20.0, 1.0,
+                                    key="pt_new_dd_thr2", label_visibility="collapsed") / 100
+
+    st.markdown("<hr style='border:none; border-top:1px solid rgba(255,255,255,0.08); margin:8px 0;'>", unsafe_allow_html=True)
+    st.markdown(_label("Dynamische Grid-Mechanismen"), unsafe_allow_html=True)
+
+    trailing_active_pt = st.session_state.get("pt_trailing", False)
+    enable_recentering = st.checkbox(
+        "Recentering aktivieren",
+        key="pt_new_recenter",
+        disabled=trailing_active_pt,
+        help="Nicht kombinierbar mit Grid Trailing"
+    )
+    enable_recentering = enable_recentering and not trailing_active_pt
+    recenter_threshold = 0.05
+    if enable_recentering:
+        st.markdown(_caption("Recentering-Schwelle (%)"), unsafe_allow_html=True)
+        recenter_threshold = st.slider("", 1.0, 20.0, 5.0, 1.0,
+                                        key="pt_recenter_thr",
+                                        label_visibility="collapsed") / 100
     atr_enabled_pt = st.checkbox("Volatilitätsbasierte Anpassung", key="pt_atr")
     enable_atr_adjust = atr_enabled_pt
     atr_multiplier    = 1.0
@@ -356,31 +410,6 @@ def _show_new_bot_form():
             _tds = st.number_input("", min_value=0.0, value=0.0, step=100.0,
                                     key="pt_trailing_down_stop", label_visibility="collapsed")
             trailing_down_stop = _tds if _tds > 0 else None
-    trailing_active_pt = st.session_state.get("pt_trailing", False)
-    recenter_enabled = st.checkbox(
-        "Recentering aktivieren",
-        key="pt_new_recenter",
-        disabled=trailing_active_pt,
-        help="Nicht kombinierbar mit Grid Trailing"
-    )
-    enable_recentering = recenter_enabled and not trailing_active_pt
-    recenter_threshold = 0.05
-    if enable_recentering:
-        st.markdown(_caption("Recentering-Schwelle (%)"), unsafe_allow_html=True)
-        recenter_threshold = st.slider("", 1.0, 20.0, 5.0, 1.0,
-                                        key="pt_recenter_thr",
-                                        label_visibility="collapsed") / 100
-    dd_enabled = st.checkbox("Drawdown-Drosselung aktivieren", key="pt_new_dd")
-    enable_dd_throttle = dd_enabled
-    dd_threshold_1 = 0.10
-    dd_threshold_2 = 0.20
-    if dd_enabled:
-        st.markdown(_caption("Schwelle 1 (%) → 50% Ordergrösse"), unsafe_allow_html=True)
-        dd_threshold_1 = st.slider("", 5.0, 30.0, 10.0, 1.0,
-                                    key="pt_new_dd_thr1", label_visibility="collapsed") / 100
-        st.markdown(_caption("Schwelle 2 (%) → 25% Ordergrösse"), unsafe_allow_html=True)
-        dd_threshold_2 = st.slider("", 10.0, 50.0, 20.0, 1.0,
-                                    key="pt_new_dd_thr2", label_visibility="collapsed") / 100
 
     # Parametrisierungsvorschlag
     st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
@@ -550,7 +579,6 @@ def _show_bots_overview(bots: list):
         rt_str = runtime.get("formatted", "–") if isinstance(runtime, dict) else "–"
         color   = "#34D399" if roi >= 0 else "#F87171"
 
-        # Klickbare Bot-Karte
         st.markdown(f"""
         <div style="background:rgba(255,255,255,0.03);
                     border:1px solid rgba(255,255,255,0.08);
@@ -583,19 +611,18 @@ def _show_bots_overview(bots: list):
             st.rerun()
         st.markdown("<div style='margin-bottom:8px'></div>", unsafe_allow_html=True)
 
+
 # ---------------------------------------------------------------------------
 # Bot-Detailansicht
 # ---------------------------------------------------------------------------
 
 def _show_bot_detail(bot: dict):
-    cfg     = bot.get("config", {})
-    metrics = bot.get("metrics", {})
+    cfg       = bot.get("config", {})
+    metrics   = bot.get("metrics", {})
     trade_log = bot.get("trade_log", [])
-    roi     = metrics.get("roi_pct", 0) or 0
-    color   = "#34D399" if roi >= 0 else "#F87171"
+    roi       = metrics.get("roi_pct", 0) or 0
+    color     = "#34D399" if roi >= 0 else "#F87171"
 
-
-    # Header: Bot-Name + Status in einer Zeile, Buttons darunter
     name = bot.get("name", f"{bot['coin']}/USDT")
     st.markdown(
         f"<div style='margin-bottom:8px;'>"
@@ -607,7 +634,6 @@ def _show_bot_detail(bot: dict):
         unsafe_allow_html=True
     )
 
-    # Buttons: 3 links + Zurück rechts
     col_b1, col_b2, col_b3, col_back = st.columns([3, 2, 2, 2])
     with col_b1:
         if st.button("Preis aktualisieren", key="pt_det_update",
@@ -625,7 +651,6 @@ def _show_bot_detail(bot: dict):
                         c = result.get("candles_processed", 0)
                         p = result.get("current_price", 0)
                         st.success(f"Kurs: ${p:,.2f} · {c} Kerzen · {n} neue Trades")
-                        # Regime-Warnung
                         try:
                             from src.analysis.regime import detect_regime
                             from src.data.cache_manager import get_price_data as _gp
@@ -672,15 +697,11 @@ def _show_bot_detail(bot: dict):
             st.session_state.pt_selected_bot = None
             st.rerun()
 
-
     st.divider()
 
-    # Metriken — gleich wie Backtesting via render_metrics_row
     from components.metrics_display import render_metrics_row
-    upnl = metrics.get("unrealized_pnl", {})
-    upnl_usdt = upnl.get("usdt", 0) if isinstance(upnl, dict) else 0
-    upnl_pct  = upnl.get("pct",  0) if isinstance(upnl, dict) else 0
-    runtime   = metrics.get("runtime", {})
+    upnl    = metrics.get("unrealized_pnl", {})
+    runtime = metrics.get("runtime", {})
     if not isinstance(runtime, dict) or not runtime.get("formatted"):
         from src.metrics import calculate_runtime
         runtime = calculate_runtime(bot.get("created_at", ""))
@@ -706,27 +727,34 @@ def _show_bot_detail(bot: dict):
         "_trade_log":           trade_log,
     }
     render_metrics_row(metrics_dict, mode="backtest")
-
     st.divider()
 
-    # Tabs
     tab1, tab2, tab3 = st.tabs(["📈 Chart", "📋 Trade-Log", "⚙️ Konfiguration"])
 
     with tab1:
         try:
-            df_chart, _ = get_price_data(
-                bot["coin"], days=7, interval=bot["interval"]
-            )
+            df_chart, _ = get_price_data(bot["coin"], days=7, interval=bot["interval"])
             if df_chart is not None and not df_chart.empty:
                 df_display = convert_df_timestamps(df_chart)
-                gc = build_grid_config(
-                    lower_price = cfg["lower_price"],
-                    upper_price = cfg["upper_price"],
-                    num_grids   = cfg["num_grids"],
-                    mode        = cfg["grid_mode"],
-                    fee_rate    = cfg.get("fee_rate", DEFAULT_FEE_RATE),
-                )
-                # Trade-Log Timestamps konvertieren
+                _state_grids = bot.get("state", {}).get("grids", {})
+                if _state_grids:
+                    _state_prices = sorted([float(k) for k in _state_grids.keys()])
+                    gc = build_grid_config(
+                        lower_price = _state_prices[0],
+                        upper_price = _state_prices[-1],
+                        num_grids   = cfg["num_grids"],
+                        mode        = cfg["grid_mode"],
+                        fee_rate    = cfg.get("fee_rate", DEFAULT_FEE_RATE),
+                    )
+                    gc.grid_lines = _state_prices
+                else:
+                    gc = build_grid_config(
+                        lower_price = cfg["lower_price"],
+                        upper_price = cfg["upper_price"],
+                        num_grids   = cfg["num_grids"],
+                        mode        = cfg["grid_mode"],
+                        fee_rate    = cfg.get("fee_rate", DEFAULT_FEE_RATE),
+                    )
                 tl_display = []
                 for t in trade_log:
                     t2 = dict(t)
@@ -743,10 +771,9 @@ def _show_bot_detail(bot: dict):
                     interval    = bot["interval"],
                     coin        = bot["coin"],
                     show_volume = True,
-                    upper_price = float(bot["config"]["upper_price"]),
-                    lower_price = float(bot["config"]["lower_price"]),
+                    upper_price = float(gc.grid_lines[-1]) if gc and gc.grid_lines else float(cfg["upper_price"]),
+                    lower_price = float(gc.grid_lines[0])  if gc and gc.grid_lines else float(cfg["lower_price"]),
                 )
-
             else:
                 st.info("Keine Chart-Daten verfügbar.")
         except Exception as e:
@@ -786,8 +813,7 @@ def _show_bot_detail(bot: dict):
             st.markdown(f"- **Untere Grenze:** ${cfg.get('lower_price',0):,.2f}")
             st.markdown(f"- **Obere Grenze:** ${cfg.get('upper_price',0):,.2f}")
             st.markdown(f"- **Gebührenrate:** {cfg.get('fee_rate',0)*100:.3f}%")
-            _created_mez = _format_ts(bot.get("created_at",""))
-            st.markdown(f"- **Erstellt:** {_created_mez}")
+            st.markdown(f"- **Erstellt:** {_format_ts(bot.get('created_at',''))}")
 
 
 # ---------------------------------------------------------------------------

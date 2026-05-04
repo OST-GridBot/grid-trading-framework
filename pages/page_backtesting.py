@@ -77,6 +77,9 @@ def show_backtesting():
             padding-bottom: 0px !important;
             gap: 0px !important;
         }
+        [data-testid="stSidebar"] details summary p {
+            font-size: 0.72rem !important;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -99,6 +102,11 @@ def show_backtesting():
         coin = st.sidebar.text_input("", value="BTC", label_visibility="collapsed",
                                      key="bt_coin_input").upper().strip()
 
+
+    st.sidebar.markdown(
+        "<hr style='border:none; border-top:1px solid rgba(255,255,255,0.08); margin:8px 0;'>",
+        unsafe_allow_html=True
+    )
     # INTERVALL
     st.sidebar.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
     st.sidebar.markdown(_label("Intervall"), unsafe_allow_html=True)
@@ -106,6 +114,11 @@ def show_backtesting():
                                  index=3, horizontal=True, key="bt_interval",
                                  label_visibility="collapsed")
 
+
+    st.sidebar.markdown(
+        "<hr style='border:none; border-top:1px solid rgba(255,255,255,0.08); margin:8px 0;'>",
+        unsafe_allow_html=True
+    )
     # ZEITRAUM
     st.sidebar.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
     st.sidebar.markdown(_label("Zeitraum"), unsafe_allow_html=True)
@@ -119,6 +132,11 @@ def show_backtesting():
     days = max(1, (end_date - start_date).days)
     st.sidebar.caption(f"→ {days} Tage")
 
+
+    st.sidebar.markdown(
+        "<hr style='border:none; border-top:1px solid rgba(255,255,255,0.08); margin:8px 0;'>",
+        unsafe_allow_html=True
+    )
     # STARTKAPITAL
     st.sidebar.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
     st.sidebar.markdown(_label("Startkapital"), unsafe_allow_html=True)
@@ -127,33 +145,41 @@ def show_backtesting():
         value=10_000.0, step=500.0, label_visibility="collapsed", key="bt_capital"
     ))
 
+
+    st.sidebar.markdown(
+        "<hr style='border:none; border-top:1px solid rgba(255,255,255,0.08); margin:8px 0;'>",
+        unsafe_allow_html=True
+    )
     # GRID-PARAMETER
     st.sidebar.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
     st.sidebar.markdown(_label("Grid-Parameter"), unsafe_allow_html=True)
 
     current_price, lower_s, upper_s = None, None, None
+    df_tmp_atr = None
     try:
-        df_tmp, _ = get_price_data(coin, days=14, interval="1h")
+        _atr_interval = interval if "interval" in dir() else "1h"
+        df_tmp, _ = get_price_data(coin, days=14, interval=_atr_interval)
         if df_tmp is not None and not df_tmp.empty:
             current_price = float(df_tmp["close"].iloc[-1])
-            _suggestion = suggest_grid_range(df_tmp, current_price)
-            lower_s = _suggestion.lower_price
-            upper_s = _suggestion.upper_price
+            df_tmp_atr    = df_tmp
     except Exception:
         pass
     current_price = current_price or 68000.0
-    lower_s  = lower_s  or current_price * 0.80
-    upper_s  = upper_s  or current_price * 1.20
+    # Standard-Vorschlag: ±10%
+    lower_s  = round(current_price * 0.90, 2)
+    upper_s  = round(current_price * 1.10, 2)
     step_val = float(round(current_price * 0.01, 2))
 
-    pct_lower_default = round((current_price - lower_s) / current_price * 100, 1)
-    pct_upper_default = round((upper_s - current_price) / current_price * 100, 1)
-
-    # Aktueller Preis + Vorschlag – mit Zeilenumbruch
+    # ── Grid-Grenzen ──────────────────────────────────────────
+    st.sidebar.markdown(
+        "<div style='font-size:1.1rem; font-weight:600; color:#94A3B8; "
+        "letter-spacing:0.04em; margin-top:6px; margin-bottom:2px;'>Grid-Grenzen</div>",
+        unsafe_allow_html=True
+    )
     st.sidebar.markdown(
         f"<div style='font-size:0.75rem; color:#94A3B8; margin-bottom:4px;'>"
         f"Aktueller Preis: <b style='color:#E2E8F0'>{current_price:,.2f} USDT</b><br>"
-        f"Vorschlag: {lower_s:,.0f} (−{pct_lower_default:.0f}%) – {upper_s:,.0f} (+{pct_upper_default:.0f}%)"
+        f"Vorschlag: {lower_s:,.2f} (−10%) – {upper_s:,.2f} (+10%)"
         f"</div>",
         unsafe_allow_html=True
     )
@@ -164,11 +190,11 @@ def show_backtesting():
         c1, c2 = st.sidebar.columns(2)
         with c1:
             st.markdown(_caption("Untere Grenze (%)"), unsafe_allow_html=True)
-            pct_lower_val = st.number_input("", 1.0, 50.0, pct_lower_default, 1.0,
+            pct_lower_val = st.number_input("", 1.0, 50.0, 10.0, 1.0,
                                             key="bt_pct_lower", label_visibility="collapsed")
         with c2:
             st.markdown(_caption("Obere Grenze (%)"), unsafe_allow_html=True)
-            pct_upper_val = st.number_input("", 1.0, 50.0, pct_upper_default, 1.0,
+            pct_upper_val = st.number_input("", 1.0, 50.0, 10.0, 1.0,
                                             key="bt_pct_upper", label_visibility="collapsed")
         lower_price = round(current_price * (1 - pct_lower_val / 100), 2)
         upper_price = round(current_price * (1 + pct_upper_val / 100), 2)
@@ -178,36 +204,83 @@ def show_backtesting():
         with c1:
             st.markdown(_caption("Untere Grenze ($)"), unsafe_allow_html=True)
             lower_price = st.number_input("", min_value=0.001,
-                                          value=float(round(lower_s, 2)),
+                                          value=float(lower_s),
                                           step=step_val, key="bt_lower",
                                           label_visibility="collapsed")
         with c2:
             st.markdown(_caption("Obere Grenze ($)"), unsafe_allow_html=True)
             upper_price = st.number_input("", min_value=0.001,
-                                          value=float(round(upper_s, 2)),
+                                          value=float(upper_s),
                                           step=step_val, key="bt_upper",
                                           label_visibility="collapsed")
 
-    # Anzahl Grids
-    col_gl, col_gv = st.sidebar.columns([3, 1])
-    with col_gl:
-        st.markdown(_caption("Anzahl Grids"), unsafe_allow_html=True)
-    with col_gv:
-        st.markdown(
-            f"<div style='text-align:right; color:#3B82F6; font-weight:600;'>"
-            f"{st.session_state.get('bt_grids', DEFAULT_NUM_GRIDS)}</div>",
-            unsafe_allow_html=True
-        )
+    # Trennlinie nach Grid-Grenzen
+    st.sidebar.markdown(
+        "<hr style='border:none; border-top:1px solid rgba(255,255,255,0.08); margin:8px 0;'>",
+        unsafe_allow_html=True
+    )
+
+    # Anzahl Grids + ATR-Infofeld
+    st.sidebar.markdown("<div style='font-size:1.1rem; font-weight:600; color:#94A3B8; letter-spacing:0.04em; margin-top:6px; margin-bottom:2px;'>Anzahl Grids</div>", unsafe_allow_html=True)
     num_grids = st.sidebar.number_input(
         "", min_value=1, max_value=100,
         value=st.session_state.get("bt_grids", DEFAULT_NUM_GRIDS),
         step=1, key="bt_grids", label_visibility="collapsed"
     )
 
+    # Gewinn pro Grid (direkt nach Anzahl Grids)
+    _fee_preview = st.session_state.get("bt_fee", DEFAULT_FEE_RATE * 100) / 100
+    gmin, gmax = _calc_grid_profit(lower_price, upper_price, num_grids, grid_mode if "grid_mode" in dir() else "arithmetic", _fee_preview)
+    if gmin is not None and gmax is not None:
+        color = "#34D399" if gmin > 0 else "#F87171"
+        st.sidebar.markdown(
+            f'''<div style="margin-top:4px; margin-bottom:4px; padding:6px 10px;
+                background:rgba(52,211,153,0.07); border-left:3px solid {color};
+                border-radius:4px; font-size:0.78rem;">
+                <span style="color:{color}; font-weight:600;">Gewinn pro Grid (nach Fees):</span>
+                <span style="color:{color};"> {gmin:.2f}% – {gmax:.2f}%</span>
+            </div>''',
+            unsafe_allow_html=True
+        )
+
+    # ATR-Infofeld (dynamisch nach Coin + Zeitraum) — als Expander
+    try:
+        if df_tmp_atr is not None:
+            from src.analysis.indicators import get_atr_stats
+            _atr, _ = get_atr_stats(df_tmp_atr)
+            _rng    = upper_price - lower_price
+            _s05 = max(2, round(_rng / (_atr * 0.5)))
+            _s10 = max(2, round(_rng / (_atr * 1.0)))
+            _s15 = max(2, round(_rng / (_atr * 1.5)))
+            with st.sidebar.expander("Volatilitätsbasierte Vorschläge"):
+                st.markdown(
+                    f"<div style='font-size:0.75rem; color:#94A3B8;'>"
+                    f"<div style='color:#64748B; margin-bottom:6px;'>ATR (14 Kerzen) = <b style='color:#94A3B8;'>{_atr:,.2f} USDT</b></div>"
+                    f"<div style='margin-bottom:5px;'>"
+                    f"<span style='color:#34D399; font-weight:500;'>× 0.5 → {_s05} Grids</span><br>"
+                    f"<span style='color:#64748B;'>Enger, mehr Trades</span></div>"
+                    f"<div style='margin-bottom:5px;'>"
+                    f"<span style='color:#60A5FA; font-weight:500;'>× 1.0 → {_s10} Grids</span><br>"
+                    f"<span style='color:#64748B;'>Neutral, empfohlen</span></div>"
+                    f"<div>"
+                    f"<span style='color:#FBBF24; font-weight:500;'>× 1.5 → {_s15} Grids</span><br>"
+                    f"<span style='color:#64748B;'>Weiter, weniger Trades</span></div>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+    except Exception:
+        pass
+
+    # Trennlinie nach Anzahl Grids
+    st.sidebar.markdown(
+        "<hr style='border:none; border-top:1px solid rgba(255,255,255,0.08); margin:8px 0;'>",
+        unsafe_allow_html=True
+    )
+
     # Grid-Modus
     st.sidebar.markdown(
         "<div style='display:flex;align-items:center;gap:5px;margin-bottom:2px;'>"
-        "<span style='font-size:0.75rem;color:#94A3B8;'>Grid-Modus</span>"
+        "<span style='font-size:1.1rem;font-weight:600;color:#94A3B8;letter-spacing:0.04em;'>Grid-Modus</span>"
         "<span title='Arithmetisch: gleiche Abst\u00e4nde\nGeometrisch: gleiche % Abst\u00e4nde\nBottom heavy: enger unten\nTop heavy: enger oben' style='cursor:help;color:#94A3B8;'>&#9432;</span></div>",
         unsafe_allow_html=True
     )
@@ -221,30 +294,16 @@ def show_backtesting():
     else:
         grid_mode = "asymmetric_bottom" if _bt_gm_asym == "Bottom heavy" else "asymmetric_top"
     
-    # Gebührenrate
-    st.sidebar.markdown(_caption("Gebührenrate"), unsafe_allow_html=True)
-    fee_rate = st.sidebar.number_input(
-        "", 0.0, 1.0, DEFAULT_FEE_RATE * 100, 0.01,
-        format="%.3f", key="bt_fee", label_visibility="collapsed"
-    ) / 100
 
-    # Gewinn pro Grid nach Fees
-    gmin, gmax = _calc_grid_profit(lower_price, upper_price, num_grids, grid_mode, fee_rate)
-    if gmin is not None and gmax is not None:
-        color = "#34D399" if gmin > 0 else "#F87171"
-        st.sidebar.markdown(
-            f'''<div style="margin-top:6px; margin-bottom:4px; padding:8px 10px;
-                background:rgba(52,211,153,0.08); border-left:3px solid {color};
-                border-radius:4px; font-size:0.8rem;">
-                <span style="color:{color}; font-weight:600;">▲ Gewinn pro Grid (nach Fees):</span><br>
-                <span style="color:{color};">{gmin:.2f}% – {gmax:.2f}%</span>
-            </div>''',
-            unsafe_allow_html=True
-        )
 
     # RISIKO & KAPITAL
     st.sidebar.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
     st.sidebar.markdown(_label("Risiko & Kapital"), unsafe_allow_html=True)
+    st.sidebar.markdown(_caption("Gebührenrate (%)"), unsafe_allow_html=True)
+    fee_rate = st.sidebar.number_input(
+        "", 0.0, 1.0, DEFAULT_FEE_RATE * 100, 0.01,
+        format="%.3f", key="bt_fee", label_visibility="collapsed"
+    ) / 100
     st.sidebar.markdown(_caption("Kapitalreserve (%)"), unsafe_allow_html=True)
     reserve_pct = st.sidebar.slider("", 0.0, 20.0, DEFAULT_RESERVE_PCT * 100, 1.0,
                          key="bt_reserve", label_visibility="collapsed") / 100
@@ -278,6 +337,11 @@ def show_backtesting():
         dd_threshold_2 = st.sidebar.slider("", 10.0, 50.0, 20.0, 1.0, key="bt_dd_thr2",
                                            label_visibility="collapsed") / 100
 
+
+    st.sidebar.markdown(
+        "<hr style='border:none; border-top:1px solid rgba(255,255,255,0.08); margin:8px 0;'>",
+        unsafe_allow_html=True
+    )
     # DYNAMISCHE GRID-MECHANISMEN
     st.sidebar.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
     st.sidebar.markdown(_label("Dynamische Grid-Mechanismen"), unsafe_allow_html=True)
