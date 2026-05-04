@@ -21,6 +21,7 @@ from src.data.cache_manager import get_price_data
 from src.strategy.grid_builder import suggest_grid_range, build_grid_config
 from src.utils.timezone import convert_df_timestamps, utc_to_zurich
 from components.chart import plot_grid_chart
+from components.chart_v2 import plot_grid_chart_v2
 from config.settings import (
     DEFAULT_NUM_GRIDS, DEFAULT_GRID_MODE,
     DEFAULT_FEE_RATE, DEFAULT_RESERVE_PCT,
@@ -607,7 +608,7 @@ def _show_bot_detail(bot: dict):
     )
 
     # Buttons: 3 links + Zurück rechts
-    col_b1, col_b2, col_b3, col_spacer, col_back = st.columns([2, 2, 2, 1, 2])
+    col_b1, col_b2, col_b3, col_back = st.columns([3, 2, 2, 2])
     with col_b1:
         if st.button("Preis aktualisieren", key="pt_det_update",
                       disabled=bot["status"] != "running",
@@ -735,23 +736,17 @@ def _show_bot_detail(bot: dict):
                         pass
                     tl_display.append(t2)
 
-                fig = plot_grid_chart(
-                    df           = df_display,
-                    grid_lines   = gc.grid_lines if gc else [],
-                    trade_log    = tl_display,
-                    coin         = bot["coin"],
-                    title        = f"{bot['coin']}/USDT · {bot['interval']} · Paper Trading",
-                    show_volume  = True,
-                    show_grid_bg = True,
-                    chart_type   = "Candlestick",
+                plot_grid_chart_v2(
+                    df          = df_display,
+                    grid_lines  = gc.grid_lines if gc else [],
+                    trade_log   = tl_display,
+                    interval    = bot["interval"],
+                    coin        = bot["coin"],
+                    show_volume = True,
+                    upper_price = float(bot["config"]["upper_price"]),
+                    lower_price = float(bot["config"]["lower_price"]),
                 )
-                # Zoom: letzte 2 Tage anzeigen
-                if len(df_display) > 0:
-                    import pandas as pd
-                    x_end   = df_display["timestamp"].iloc[-1] + pd.Timedelta(hours=2)
-                    x_start = df_display["timestamp"].iloc[-1] - pd.Timedelta(days=2)
-                    fig.update_layout(xaxis_range=[x_start, x_end])
-                st.plotly_chart(fig, use_container_width=True)
+
             else:
                 st.info("Keine Chart-Daten verfügbar.")
         except Exception as e:

@@ -21,6 +21,7 @@ from src.data.cache_manager import get_price_data
 from src.strategy.grid_builder import suggest_grid_range, build_grid_config
 from src.utils.timezone import convert_df_timestamps, utc_to_zurich
 from components.chart import plot_grid_chart
+from components.chart_v2 import plot_grid_chart_v2
 from config.settings import (
     DEFAULT_NUM_GRIDS, DEFAULT_GRID_MODE,
     DEFAULT_FEE_RATE, DEFAULT_RESERVE_PCT,
@@ -363,17 +364,14 @@ def _show_form_chart(coin: str = "BTC", interval: str = "1h"):
         df_chart, _ = get_price_data(coin, days=days, interval=interval, force=force)
         if df_chart is not None and not df_chart.empty:
             df_display = convert_df_timestamps(df_chart)
-            fig = plot_grid_chart(
+            plot_grid_chart_v2(
                 df           = df_display,
                 grid_lines   = [],
                 trade_log    = [],
                 coin         = coin,
-                title        = f"{coin}/USDT · {interval} · letzte {days}d",
+                interval     = interval,
                 show_volume  = True,
-                show_grid_bg = False,
-                chart_type   = "Candlestick",
             )
-            st.plotly_chart(fig, use_container_width=True)
     except Exception as e:
         st.caption(f"Chart nicht verfügbar: {e}")
 
@@ -854,7 +852,7 @@ def _show_bot_detail(bot: dict):
     )
 
     # Buttons: 3 links + Zurück rechts
-    col_b1, col_b2, col_b3, col_spacer, col_back = st.columns([2, 2, 2, 1, 2])
+    col_b1, col_b2, col_b3, col_back = st.columns([3, 2, 2, 2])
     with col_b1:
         if st.button("Preis aktualisieren", key="lt_det_update",
                       disabled=bot["status"] != "running",
@@ -982,23 +980,16 @@ def _show_bot_detail(bot: dict):
                         pass
                     tl_display.append(t2)
 
-                fig = plot_grid_chart(
-                    df           = df_display,
-                    grid_lines   = gc.grid_lines if gc else [],
-                    trade_log    = tl_display,
-                    coin         = bot["coin"],
-                    title        = f"{bot['coin']}/USDT · {bot['interval']} · Live Trading",
-                    show_volume  = True,
-                    show_grid_bg = True,
-                    chart_type   = "Candlestick",
+                plot_grid_chart_v2(
+                    df          = df_display,
+                    grid_lines  = gc.grid_lines if gc else [],
+                    trade_log   = tl_display,
+                    coin        = bot["coin"],
+                    interval    = bot["interval"],
+                    show_volume = True,
+                    upper_price = float(bot["config"]["upper_price"]),
+                    lower_price = float(bot["config"]["lower_price"]),
                 )
-                # Zoom: letzte 2 Tage anzeigen
-                if len(df_display) > 0:
-                    import pandas as pd
-                    x_end   = df_display["timestamp"].iloc[-1] + pd.Timedelta(hours=2)
-                    x_start = df_display["timestamp"].iloc[-1] - pd.Timedelta(days=2)
-                    fig.update_layout(xaxis_range=[x_start, x_end])
-                st.plotly_chart(fig, use_container_width=True)
             else:
                 st.info("Keine Chart-Daten verfügbar.")
         except Exception as e:

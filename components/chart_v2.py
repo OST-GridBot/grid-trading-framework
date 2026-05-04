@@ -235,7 +235,7 @@ def plot_grid_chart_v2(
 
   document.getElementById('hdr-coin').textContent     = coinName + '/USDT';
   document.getElementById('hdr-interval').textContent = interval;
-  document.getElementById('hdr-dates').textContent    = dateRange;
+  document.getElementById('hdr-dates').textContent    = '';
 
   // Marker lookup by timestamp
   const markerMap = {{}};

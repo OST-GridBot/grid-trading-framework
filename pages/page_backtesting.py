@@ -7,7 +7,8 @@ import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
 
-from components.chart import plot_grid_chart, plot_equity_curve, plot_drawdown_chart
+from components.chart import plot_grid_chart
+from components.chart_v2 import plot_grid_chart_v2
 from components.metrics_display import render_metrics_row, render_trade_log
 
 from src.backtesting.engine import run_backtest
@@ -500,17 +501,16 @@ def show_backtesting():
                 except Exception:
                     pass
                 trade_log_display.append(t2)
-            fig = plot_grid_chart(
-                df           = df_display,
-                grid_lines   = grid_lines,
-                trade_log    = trade_log_display,
-                coin         = coin,
-                title        = f"{coin}/USDT · {interval} · {start_date} – {end_date}",
-                show_volume  = show_volume,
-                show_grid_bg = show_grid_bg,
-                chart_type   = chart_type,
+            plot_grid_chart_v2(
+                df          = df_display,
+                grid_lines  = grid_lines,
+                trade_log   = trade_log_display,
+                coin        = coin,
+                interval    = interval,
+                show_volume = show_volume,
+                upper_price = float(grid_lines[-1]) if grid_lines else upper_price,
+                lower_price = float(grid_lines[0])  if grid_lines else lower_price,
             )
-            st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Keine Preisdaten verfügbar.")
 

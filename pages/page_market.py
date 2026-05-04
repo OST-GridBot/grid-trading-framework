@@ -13,6 +13,7 @@ import pandas as pd
 from src.data.cache_manager import get_price_data
 from src.utils.timezone import convert_df_timestamps
 from components.chart import plot_grid_chart
+from components.chart_v2 import plot_grid_chart_v2
 
 COINS = [
     "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "AVAX",
@@ -142,19 +143,15 @@ def show_market():
     # -----------------------------------------------------------------------
     # Chart
     # -----------------------------------------------------------------------
-    fig = plot_grid_chart(
-        df           = df_display,
-        grid_lines   = [],
-        trade_log    = [],
-        coin         = coin,
-        title        = f"{coin}/USDT · {interval} · letzte {days} Tage",
-        show_volume  = show_volume,
-        show_grid_bg = False,
-        chart_type   = chart_type,
+    plot_grid_chart_v2(
+        df          = df_display,
+        grid_lines  = [],
+        trade_log   = [],
+        coin        = coin,
+        interval    = interval,
+        show_volume = show_volume,
+        height      = 620,
     )
-    # Chart grösser machen
-    fig.update_layout(height=620)
-    st.plotly_chart(fig, use_container_width=True)
 
     # Cache-Info
     cache_txt = "aus Cache" if from_cache else "live von Binance"
