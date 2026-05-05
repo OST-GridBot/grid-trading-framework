@@ -135,6 +135,86 @@ def optimize_num_grids(
 
 
 # ---------------------------------------------------------------------------
+# Multi-Parameter Optimierung (Anzahl Grids + Modus + Recentering)
+# ---------------------------------------------------------------------------
+
+def optimize_full_grid_search(
+    df:               pd.DataFrame,
+    lower_price:      float,
+    upper_price:      float,
+    total_investment: float = 10_000.0,
+    fee_rate:         float = DEFAULT_FEE_RATE,
+    grid_range:       range = range(5, 51, 5),
+    modes:            list  = None,
+    test_recentering: bool  = True,
+    recenter_threshold: float = 0.05,
+    objective:        str   = "maximize_sharpe",
+) -> OptimizationResult:
+    """
+    Vollständige Multi-Parameter-Suche.
+
+    Variiert: num_grids, grid_mode (4 Optionen), enable_recentering (an/aus)
+    Range (lower/upper) bleibt fix wie vom User definiert.
+
+    Args:
+        df               : OHLCV-DataFrame
+        lower_price      : Untere Grid-Grenze (fix)
+        upper_price      : Obere Grid-Grenze (fix)
+        total_investment : Startkapital
+        fee_rate         : Gebuehrenrate
+        grid_range       : Zu testende Grid-Anzahlen
+        modes            : Liste Grid-Modi (default: alle 4)
+        test_recentering : ob Recentering an/aus mitgetestet werden soll
+        recenter_threshold: Recentering-Schwelle wenn aktiv (default 5%)
+        objective        : Optimierungsziel
+
+    Returns:
+        OptimizationResult mit bester Kombination
+    """
+    if modes is None:
+        modes = ["arithmetic", "geometric", "asymmetric_bottom", "asymmetric_top"]
+
+    recenter_options = [False, True] if test_recentering else [False]
+
+    results  = []
+    num_days = get_num_days(df, "1h")
+
+    for num_grids in grid_range:
+        for mode in modes:
+            for use_rc in recenter_options:
+                sim = simulate_grid_bot(
+                    df=df, total_investment=total_investment,
+                    lower_price=lower_price, upper_price=upper_price,
+                    num_grids=num_grids, grid_mode=mode, fee_rate=fee_rate,
+                    enable_recentering=use_rc,
+                    recenter_threshold=recenter_threshold if use_rc else 0.05,
+                )
+                if sim.get("error"):
+                    continue
+
+                score = _calculate_score(sim, df, total_investment, num_days, objective)
+                if score is None:
+                    continue
+
+                dd = calculate_drawdown(sim["daily_values"])
+                results.append({
+                    "num_grids":          num_grids,
+                    "grid_mode":          mode,
+                    "enable_recentering": use_rc,
+                    "lower_price":        round(lower_price, 4),
+                    "upper_price":        round(upper_price, 4),
+                    "roi_pct":            round(sim["profit_pct"], 4),
+                    "sharpe":             calculate_sharpe_ratio(sim["daily_values"]),
+                    "max_dd_pct":         dd.max_drawdown_pct,
+                    "num_trades":         sim["num_trades"],
+                    "fees_paid":          round(sim["fees_paid"], 2),
+                    "score":              score,
+                })
+
+    return _build_result(results, ["num_grids", "grid_mode", "enable_recentering", "lower_price", "upper_price"], objective)
+
+
+# ---------------------------------------------------------------------------
 # Range-Optimierung
 # ---------------------------------------------------------------------------
 

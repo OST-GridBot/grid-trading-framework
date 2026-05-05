@@ -12,7 +12,7 @@ from components.chart_v2 import plot_grid_chart_v2
 from components.metrics_display import render_metrics_row, render_trade_log
 
 from src.backtesting.engine import run_backtest
-from src.backtesting.optimizer import optimize_num_grids
+from src.backtesting.optimizer import optimize_num_grids, optimize_full_grid_search
 from src.data.cache_manager import get_price_data
 from src.strategy.grid_builder import suggest_grid_range, build_grid_config
 from config.settings import DEFAULT_NUM_GRIDS, DEFAULT_GRID_MODE, DEFAULT_FEE_RATE, DEFAULT_RESERVE_PCT
@@ -646,8 +646,8 @@ def show_backtesting():
     # -----------------------------------------------------------------------
     if result and not result.get("error") and df is not None and not df.empty:
         st.divider()
-        st.markdown("### Grid-Anzahl optimieren")
-        st.caption("Findet die optimale Anzahl Grids für die gewählten Parameter.")
+        st.markdown("### Parameter optimieren")
+        st.caption("Findet die optimale Kombination aus Anzahl Grids, Grid-Modus und Recentering.")
 
         col_obj, col_run = st.columns([3, 1])
         with col_obj:
@@ -667,24 +667,45 @@ def show_backtesting():
             opt_btn = st.button("Optimieren", use_container_width=True, key="bt_opt_btn")
 
         if opt_btn:
-            with st.spinner("Optimiere Grid-Anzahl..."):
-                opt = optimize_num_grids(
+            with st.spinner("Optimiere Grid-Parameter (Anzahl, Modus, Recentering)..."):
+                opt = optimize_full_grid_search(
                     df=df, lower_price=lower_price, upper_price=upper_price,
-                    total_investment=total_investment, grid_mode=grid_mode,
-                    fee_rate=fee_rate, grid_range=range(5, 51, 5), objective=objective,
+                    total_investment=total_investment,
+                    fee_rate=fee_rate, grid_range=range(5, 51, 5),
+                    test_recentering=True,
+                    objective=objective,
                 )
             if opt.num_tested > 0:
                 best = opt.best_params
+                _mode_lbl = {
+                    "arithmetic":         "Arithmetisch",
+                    "geometric":          "Geometrisch",
+                    "asymmetric_bottom":  "Bottom Heavy",
+                    "asymmetric_top":     "Top Heavy",
+                }.get(best.get("grid_mode",""), best.get("grid_mode",""))
+                _rc_lbl = "Aktiv" if best.get("enable_recentering") else "Inaktiv"
                 st.success(
-                    f"Beste Grid-Anzahl: **{int(best.get('num_grids', 0))}** "
-                    f"| ROI: {best.get('roi_pct', 0):+.2f}% "
-                    f"| Sharpe: {best.get('sharpe', 0):.2f} "
-                    f"| Max DD: {best.get('max_dd_pct', 0):.2f}%"
+                    f"**Beste Parametrisierung gefunden:**\n"
+                    f"- Anzahl Grids: **{int(best.get('num_grids', 0))}**\n"
+                    f"- Grid-Modus: **{_mode_lbl}**\n"
+                    f"- Recentering: **{_rc_lbl}**\n"
+                    f"- Untere Grenze: **${best.get('lower_price', 0):,.2f}**\n"
+                    f"- Obere Grenze: **${best.get('upper_price', 0):,.2f}**\n\n"
+                    f"ROI: {best.get('roi_pct', 0):+.2f}% | "
+                    f"Sharpe: {best.get('sharpe', 0):.2f} | "
+                    f"Max DD: {best.get('max_dd_pct', 0):.2f}%"
                 )
+                _df_show = opt.all_results.copy()
+                _df_show["grid_mode"] = _df_show["grid_mode"].map({
+                    "arithmetic": "Arith.", "geometric": "Geom.",
+                    "asymmetric_bottom": "Bottom", "asymmetric_top": "Top",
+                })
+                _df_show["enable_recentering"] = _df_show["enable_recentering"].map({True: "An", False: "Aus"})
                 st.dataframe(
-                    opt.all_results[["num_grids","roi_pct","sharpe","max_dd_pct","num_trades","score"]
+                    _df_show[["num_grids","grid_mode","enable_recentering","roi_pct","sharpe","max_dd_pct","num_trades","score"]
                     ].rename(columns={
-                        "num_grids":"Grids","roi_pct":"ROI %","sharpe":"Sharpe",
+                        "num_grids":"Grids","grid_mode":"Modus","enable_recentering":"Recenter",
+                        "roi_pct":"ROI %","sharpe":"Sharpe",
                         "max_dd_pct":"Max DD %","num_trades":"Trades","score":"Score",
                     }),
                     use_container_width=True, hide_index=True,
