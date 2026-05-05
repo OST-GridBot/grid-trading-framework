@@ -157,13 +157,27 @@ def show_backtesting():
     current_price, lower_s, upper_s = None, None, None
     df_tmp_atr = None
     try:
-        _atr_interval = interval if "interval" in dir() else "1h"
-        df_tmp, _ = get_price_data(coin, days=14, interval=_atr_interval)
+        # Preis vom Startdatum laden
+        _days_back = max(14, (date.today() - start_date).days + 7)
+        df_tmp, _ = get_price_data(coin, days=_days_back, interval="1h")
         if df_tmp is not None and not df_tmp.empty:
-            current_price = float(df_tmp["close"].iloc[-1])
-            df_tmp_atr    = df_tmp
+            df_tmp["timestamp"] = pd.to_datetime(df_tmp["timestamp"])
+            df_start = df_tmp[df_tmp["timestamp"].dt.date >= start_date]
+            if not df_start.empty:
+                current_price = float(df_start["close"].iloc[0])
+            else:
+                current_price = float(df_tmp["close"].iloc[0])
+            df_tmp_atr = df_tmp
     except Exception:
         pass
+    if current_price is None:
+        try:
+            df_tmp2, _ = get_price_data(coin, days=14, interval="1h")
+            if df_tmp2 is not None and not df_tmp2.empty:
+                current_price = float(df_tmp2["close"].iloc[-1])
+                df_tmp_atr = df_tmp2
+        except Exception:
+            pass
     current_price = current_price or 68000.0
     # Standard-Vorschlag: ±10%
     lower_s  = round(current_price * 0.90, 2)
@@ -178,7 +192,7 @@ def show_backtesting():
     )
     st.sidebar.markdown(
         f"<div style='font-size:0.75rem; color:#94A3B8; margin-bottom:4px;'>"
-        f"Aktueller Preis: <b style='color:#E2E8F0'>{current_price:,.2f} USDT</b><br>"
+        f"Preis am {start_date.strftime('%d.%m.%Y')}: <b style='color:#E2E8F0'>{current_price:,.2f} USDT</b><br>"
         f"Vorschlag: {lower_s:,.2f} (−10%) – {upper_s:,.2f} (+10%)"
         f"</div>",
         unsafe_allow_html=True
@@ -545,18 +559,15 @@ def show_backtesting():
         st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
 
     # Tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["Chart", "Equity", "Drawdown", "Trades"])
+    tab1, tab2 = st.tabs(["Chart", "Trades"])
     trade_log    = result.get("trade_log",    []) if result else []
     grid_lines   = result.get("grid_lines",   []) if result else []
     daily_values = result.get("daily_values", {}) if result else {}
 
     with tab1:
         if df is not None and not df.empty:
-            # Timestamps UTC→MEZ konvertieren fuer Anzeige
-            from src.utils.timezone import convert_df_timestamps
+            from src.utils.timezone import convert_df_timestamps, utc_to_zurich
             df_display = convert_df_timestamps(df)
-            # Trade-Log Timestamps ebenfalls konvertieren
-            from src.utils.timezone import utc_to_zurich
             trade_log_display = []
             for t in trade_log:
                 t2 = dict(t)
@@ -565,29 +576,29 @@ def show_backtesting():
                 except Exception:
                     pass
                 trade_log_display.append(t2)
+            # Grid-Vorschau wenn noch keine Simulation
+            try:
+                from src.strategy.grid_builder import calculate_grid_lines
+                preview_grid_lines = calculate_grid_lines(lower_price, upper_price, num_grids, grid_mode)
+            except Exception:
+                preview_grid_lines = []
+            display_grid_lines = grid_lines if grid_lines else preview_grid_lines
+            display_upper = float(display_grid_lines[-1]) if display_grid_lines else upper_price
+            display_lower = float(display_grid_lines[0])  if display_grid_lines else lower_price
             plot_grid_chart_v2(
                 df          = df_display,
-                grid_lines  = grid_lines,
+                grid_lines  = display_grid_lines,
                 trade_log   = trade_log_display,
                 coin        = coin,
                 interval    = interval,
                 show_volume = show_volume,
-                upper_price = float(grid_lines[-1]) if grid_lines else upper_price,
-                lower_price = float(grid_lines[0])  if grid_lines else lower_price,
+                upper_price = display_upper,
+                lower_price = display_lower,
             )
         else:
             st.info("Keine Preisdaten verfügbar.")
 
     with tab2:
-        fig2 = plot_equity_curve(daily_values=daily_values, initial_value=total_investment,
-                                  title="Portfolio vs. Buy & Hold")
-        st.plotly_chart(fig2, use_container_width=True)
-
-    with tab3:
-        fig3 = plot_drawdown_chart(daily_values=daily_values, title="Drawdown-Verlauf")
-        st.plotly_chart(fig3, use_container_width=True)
-
-    with tab4:
         render_trade_log(trade_log)
 
     # -----------------------------------------------------------------------

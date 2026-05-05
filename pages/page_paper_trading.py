@@ -77,6 +77,8 @@ def show_paper_trading():
         st.session_state.pt_show_new_bot = False
     if "pt_show_overview" not in st.session_state:
         st.session_state.pt_show_overview = False
+    if "pt_show_portfolio" not in st.session_state:
+        st.session_state.pt_show_portfolio = True
 
     bots        = sorted(bot_store.get_all_bots(mode="paper"), key=lambda b: b.get("created_at",""), reverse=True)
     bot_count   = len(bots)
@@ -84,6 +86,13 @@ def show_paper_trading():
     running_bots = [b for b in bots if b.get("status") == "running"]
 
     st.sidebar.markdown(_label("Ansicht"), unsafe_allow_html=True)
+    if st.sidebar.button("📊 Portfolio",
+                          use_container_width=True,
+                          key="pt_btn_portfolio"):
+        st.session_state.pt_show_new_bot  = False
+        st.session_state.pt_selected_bot  = None
+        st.session_state.pt_show_overview = False
+        st.rerun()
     if st.sidebar.button("＋ Neuen Bot starten",
                           use_container_width=True,
                           disabled=not can_create,
@@ -113,7 +122,7 @@ def show_paper_trading():
         pass
     st.divider()
 
-    if st.session_state.pt_show_new_bot or (not bots and not st.session_state.pt_selected_bot):
+    if st.session_state.pt_show_new_bot:
         _show_new_bot_form()
         return
 
@@ -125,15 +134,129 @@ def show_paper_trading():
         else:
             st.session_state.pt_selected_bot = None
 
-    if st.session_state.pt_show_overview or bots:
+    if st.session_state.pt_show_overview:
         _show_bots_overview(bots)
-    else:
+        return
+
+    if not bots:
         _show_empty_state()
+        return
+
+    # Standard: Portfolio-Ansicht
+    _show_portfolio(bots)
 
 
 # ---------------------------------------------------------------------------
 # Neuen Bot erstellen
 # ---------------------------------------------------------------------------
+
+def _show_form_chart(coin: str = "BTC", interval: str = "1h"):
+    """Zeigt Chart des gewählten Coins mit gewähltem Intervall."""
+    days_map = {"1m": 1, "5m": 1, "15m": 2, "1h": 7, "4h": 14}
+    days  = days_map.get(interval, 7)
+    force = interval in ("1m", "5m")
+    try:
+        df_chart, _ = get_price_data(coin, days=days, interval=interval, force=force)
+        if df_chart is not None and not df_chart.empty:
+            df_display = convert_df_timestamps(df_chart)
+            plot_grid_chart_v2(
+                df          = df_display,
+                grid_lines  = [],
+                trade_log   = [],
+                coin        = coin,
+                interval    = interval,
+                show_volume = True,
+            )
+    except Exception as e:
+        st.caption(f"Chart nicht verfügbar: {e}")
+
+
+def _show_portfolio(bots: list):
+    """Portfolio-Übersicht aller Paper-Trading Bots."""
+    running = [b for b in bots if b.get("status") == "running"]
+    stopped = [b for b in bots if b.get("status") != "running"]
+
+    total_invest = sum(b.get("config",{}).get("total_investment",0) for b in running)
+    total_roi    = sum((b.get("metrics",{}).get("roi_pct",0) or 0) * b.get("config",{}).get("total_investment",0) for b in running)
+    weighted_roi = (total_roi / total_invest) if total_invest > 0 else 0
+    total_trades = sum(len(b.get("trade_log",[])) for b in bots)
+    total_profit = sum(
+        sum(t.get("profit",0) or 0 for t in b.get("trade_log",[]) if t.get("type")=="SELL")
+        for b in bots
+    )
+
+    st.markdown("### 📊 Portfolio-Übersicht")
+
+    # Metriken-Karten
+    c1, c2, c3, c4, c5 = st.columns(5)
+    roi_color = "#34D399" if weighted_roi >= 0 else "#F87171"
+    profit_color = "#34D399" if total_profit >= 0 else "#F87171"
+
+    for col, label, value in [
+        (c1, "Aktive Bots",    f"{len(running)}/{MAX_BOTS_PER_MODE}"),
+        (c2, "Gesamtinvest",   f"${total_invest:,.0f}"),
+        (c3, "Ø ROI",          f"{weighted_roi:+.2f}%"),
+        (c4, "Realisierter Profit", f"${total_profit:+.2f}"),
+        (c5, "Trades gesamt",  str(total_trades)),
+    ]:
+        color = roi_color if label == "Ø ROI" else (profit_color if "Profit" in label else "#E2E8F0")
+        col.markdown(
+            f"<div style='background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); "
+            f"border-radius:8px; padding:14px; text-align:center;'>"
+            f"<div style='color:#64748B; font-size:0.75rem; margin-bottom:4px;'>{label}</div>"
+            f"<div style='color:{color}; font-size:1.3rem; font-weight:700;'>{value}</div>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+
+    st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
+
+    # Bot-Liste kompakt
+    if running:
+        st.markdown("**Laufende Bots**")
+        for bot in running:
+            cfg     = bot.get("config", {})
+            metrics = bot.get("metrics", {})
+            roi     = metrics.get("roi_pct", 0) or 0
+            color   = "#34D399" if roi >= 0 else "#F87171"
+            st.markdown(
+                f"<div style='display:grid; grid-template-columns:1fr auto auto; gap:8px; align-items:center; "
+                f"padding:8px 12px; background:rgba(255,255,255,0.02); border-left:3px solid {color}; "
+                f"border-radius:4px; margin-bottom:4px;'>"
+                f"<span style='color:#E2E8F0; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'>{bot.get('name', bot['coin'])}</span>"
+                f"<span style='color:#64748B; font-size:0.78rem; white-space:nowrap;'>{bot['coin']} · {bot['interval']} · ${cfg.get('total_investment',0):,.0f}</span>"
+                f"<span style='color:{color}; font-weight:600; white-space:nowrap; text-align:right;'>{roi:+.2f}%</span>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+    if stopped:
+        st.markdown("**Gestoppte Bots**")
+        for bot in stopped:
+            cfg = bot.get("config", {})
+            metrics = bot.get("metrics", {})
+            roi = metrics.get("roi_pct", 0) or 0
+            st.markdown(
+                f"<div style='display:flex; justify-content:space-between; align-items:center; "
+                f"padding:8px 12px; background:rgba(255,255,255,0.02); border-left:3px solid #475569; "
+                f"border-radius:4px; margin-bottom:4px; opacity:0.6;'>"
+                f"<span style='color:#94A3B8;'>{bot.get('name', bot['coin'])}</span>"
+                f"<span style='color:#64748B; font-size:0.8rem;'>{bot['coin']} · {bot['interval']}</span>"
+                f"<span style='color:#64748B;'>{roi:+.2f}%</span>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+
+    st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
+    col_b1, col_b2 = st.columns(2)
+    with col_b1:
+        if st.button("＋ Neuen Bot starten", use_container_width=True, type="primary", key="pt_portfolio_new"):
+            st.session_state.pt_show_new_bot = True
+            st.rerun()
+    with col_b2:
+        if st.button(f"Übersicht aktive Bots ({len(bots)})", use_container_width=True, key="pt_portfolio_overview"):
+            st.session_state.pt_show_overview = True
+            st.rerun()
+
 
 def _show_new_bot_form():
     st.markdown("### Neuen Bot konfigurieren")
@@ -164,6 +287,36 @@ def _show_new_bot_form():
     interval = st.radio("", ["1m","5m","15m","1h","4h"],
                          index=3, horizontal=True, key="pt_new_interval",
                          label_visibility="collapsed")
+    # Chart mit Grid-Vorschau nach Intervall-Auswahl
+    try:
+        from src.strategy.grid_builder import calculate_grid_lines
+        _days_chart = {"1m":1,"5m":1,"15m":2,"1h":7,"4h":14}.get(interval, 7)
+        _df_chart, _ = get_price_data(coin, days=_days_chart, interval=interval)
+        if _df_chart is not None and not _df_chart.empty:
+            _df_disp = convert_df_timestamps(_df_chart)
+            # Grid-Vorschau aus aktuellen Sidebar-Werten
+            _p = float(_df_chart["close"].iloc[-1])
+            _lo = round(_p * 0.90, 4)
+            _hi = round(_p * 1.10, 4)
+            _ng = st.session_state.get("pt_new_grids", DEFAULT_NUM_GRIDS)
+            try:
+                _gl = calculate_grid_lines(_lo, _hi, _ng, "arithmetic")
+            except Exception:
+                _gl = []
+            plot_grid_chart_v2(
+                df          = _df_disp,
+                grid_lines  = _gl,
+                trade_log   = [],
+                coin        = coin,
+                interval    = interval,
+                show_volume = False,
+                upper_price = float(_gl[-1]) if _gl else _hi,
+                lower_price = float(_gl[0])  if _gl else _lo,
+                height      = 420,
+            )
+    except Exception as e:
+        st.caption(f"Chart nicht verfügbar: {e}")
+
     st.markdown(_divider(), unsafe_allow_html=True)
 
     st.markdown(_label("Startkapital"), unsafe_allow_html=True)
@@ -806,14 +959,44 @@ def _show_bot_detail(bot: dict):
             st.markdown(f"- **Coin:** {bot['coin']}/USDT")
             st.markdown(f"- **Intervall:** {bot['interval']}")
             st.markdown(f"- **Startkapital:** ${cfg.get('total_investment',0):,.2f}")
+            st.markdown(f"- **Kapitalreserve:** {cfg.get('reserve_pct',0)*100:.0f}%")
             st.markdown(f"- **Grid-Modus:** {cfg.get('grid_mode','–')}")
-            st.markdown(f"- **Stop-Loss:** {'Aktiv' if cfg.get('stop_loss_pct') else 'Inaktiv'}")
-        with col_b:
             st.markdown(f"- **Anzahl Grids:** {cfg.get('num_grids','–')}")
             st.markdown(f"- **Untere Grenze:** ${cfg.get('lower_price',0):,.2f}")
             st.markdown(f"- **Obere Grenze:** ${cfg.get('upper_price',0):,.2f}")
             st.markdown(f"- **Gebührenrate:** {cfg.get('fee_rate',0)*100:.3f}%")
             st.markdown(f"- **Erstellt:** {_format_ts(bot.get('created_at',''))}")
+        with col_b:
+            st.markdown("**Dynamische Mechanismen:**")
+            if cfg.get("stop_loss_pct"):
+                st.markdown(f"- **Stop-Loss:** Aktiv ({cfg['stop_loss_pct']*100:.0f}%)")
+            else:
+                st.markdown("- **Stop-Loss:** Inaktiv")
+            if cfg.get("enable_dd_throttle"):
+                st.markdown(f"- **DD-Drosselung:** Aktiv (Schwelle 1: {cfg.get('dd_threshold_1',0)*100:.0f}% / Schwelle 2: {cfg.get('dd_threshold_2',0)*100:.0f}%)")
+            else:
+                st.markdown("- **DD-Drosselung:** Inaktiv")
+            if cfg.get("enable_variable_orders"):
+                st.markdown(f"- **Variable Orders:** Aktiv (unten {cfg.get('weight_bottom',1)}× / oben {cfg.get('weight_top',1)}×)")
+            else:
+                st.markdown("- **Variable Orders:** Inaktiv")
+            if cfg.get("enable_recentering"):
+                st.markdown(f"- **Recentering:** Aktiv ({cfg.get('recenter_threshold',0)*100:.0f}%)")
+            else:
+                st.markdown("- **Recentering:** Inaktiv")
+            if cfg.get("enable_atr_adjust"):
+                st.markdown(f"- **ATR-Anpassung:** Aktiv (×{cfg.get('atr_multiplier',1.0)})")
+            else:
+                st.markdown("- **ATR-Anpassung:** Inaktiv")
+            trailing_up   = cfg.get("enable_trailing_up",   False)
+            trailing_down = cfg.get("enable_trailing_down",  False)
+            if trailing_up or trailing_down:
+                parts = []
+                if trailing_up:   parts.append(f"Up (Stop: ${cfg.get('trailing_up_stop','–')})")
+                if trailing_down: parts.append(f"Down (Stop: ${cfg.get('trailing_down_stop','–')})")
+                st.markdown(f"- **Grid Trailing:** Aktiv ({', '.join(parts)})")
+            else:
+                st.markdown("- **Grid Trailing:** Inaktiv")
 
 
 # ---------------------------------------------------------------------------

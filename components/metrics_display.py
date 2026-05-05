@@ -357,7 +357,7 @@ def render_live_metrics(metrics: dict) -> None:
 # Trade-Log Tabelle
 # ---------------------------------------------------------------------------
 
-def render_trade_log(trade_log: list, max_rows: int = 50) -> None:
+def render_trade_log(trade_log: list, max_rows: int = 100000) -> None:
     """
     Formatierter Trade-Log als Tabelle.
 
