@@ -364,7 +364,7 @@ def show_backtesting():
         "Recentering aktivieren",
         value=False, key="bt_recenter",
         disabled=trailing_active,
-        help="Nicht kombinierbar mit Grid Trailing"
+        help="Nicht kombinierbar mit Grid Trailing" if trailing_active else None,
     )
     if trailing_active and enable_recentering:
         enable_recentering = False
@@ -373,6 +373,12 @@ def show_backtesting():
         st.sidebar.markdown(_caption("Recentering-Schwelle (%)"), unsafe_allow_html=True)
         recenter_threshold = st.sidebar.slider("", 1.0, 20.0, 5.0, 1.0, key="bt_recenter_thr",
                                             label_visibility="collapsed") / 100
+        _rc_pct = int(recenter_threshold * 100)
+        st.sidebar.caption(
+            f"Bei {_rc_pct}% wird das Grid neu zentriert, sobald der Preis "
+            f"{_rc_pct}% über die Upper- oder unter die Lower-Grenze hinaus läuft. "
+            f"Niedriger = häufigeres Anpassen."
+        )
 
     atr_enabled = st.sidebar.checkbox("Volatilitätsbasierte Anpassung", value=False, key="bt_atr")
     enable_atr_adjust     = atr_enabled
@@ -398,26 +404,60 @@ def show_backtesting():
         atr_multiplier = st.sidebar.slider("", 0.5, 5.0, 1.0, 0.1,
                                             key="bt_atr_mult",
                                             label_visibility="collapsed")
-    trailing_enabled = st.sidebar.checkbox("Grid Trailing aktivieren", value=False, key="bt_trailing")
+    _bt_recenter_active = st.session_state.get("bt_recenter", False)
+    trailing_enabled = st.sidebar.checkbox(
+        "Grid Trailing aktivieren", value=False, key="bt_trailing",
+        disabled=_bt_recenter_active,
+        help="Nicht kombinierbar mit Recentering" if _bt_recenter_active else None,
+    )
+    if _bt_recenter_active and trailing_enabled:
+        trailing_enabled = False
     enable_trailing_up   = False
     enable_trailing_down = False
     trailing_up_stop     = None
     trailing_down_stop   = None
     if trailing_enabled:
+        _bt_tr_col1, _bt_tr_col2 = st.sidebar.columns([1, 17])
+        with _bt_tr_col2:
+            _bt_tr_pct_mode = st.checkbox("Trailing Stops prozentual", value=False, key="bt_trailing_pct_mode")
         enable_trailing_up = st.sidebar.checkbox("Trailing Up", value=True, key="bt_trailing_up")
         if enable_trailing_up:
-            st.sidebar.markdown(_caption("Trailing Up Stop-Preis ($)"), unsafe_allow_html=True)
-            trailing_up_stop = st.sidebar.number_input("", min_value=0.0,
-                value=0.0, step=100.0, key="bt_trailing_up_stop",
-                label_visibility="collapsed")
-            trailing_up_stop = trailing_up_stop if trailing_up_stop > 0 else None
+            if _bt_tr_pct_mode:
+                st.sidebar.markdown(_caption("Trailing Up Stop (% über Upper)"), unsafe_allow_html=True)
+                _tu_pct = st.sidebar.number_input("", min_value=0.0, max_value=200.0,
+                    value=10.0, step=1.0, key="bt_trailing_up_pct",
+                    label_visibility="collapsed")
+                trailing_up_stop = round(upper_price * (1 + _tu_pct / 100), 4) if upper_price > 0 else None
+                if trailing_up_stop:
+                    st.sidebar.caption(f"→ ${trailing_up_stop:,.2f} absolut")
+            else:
+                st.sidebar.markdown(_caption("Trailing Up Stop-Preis ($)"), unsafe_allow_html=True)
+                trailing_up_stop = st.sidebar.number_input("", min_value=0.0,
+                    value=0.0, step=100.0, key="bt_trailing_up_stop",
+                    label_visibility="collapsed")
+                trailing_up_stop = trailing_up_stop if trailing_up_stop > 0 else None
+                if trailing_up_stop and upper_price > 0:
+                    _pct_up = (trailing_up_stop - upper_price) / upper_price * 100
+                    st.sidebar.caption(f"→ {_pct_up:+.1f}% über Upper-Grenze (${upper_price:,.2f})")
         enable_trailing_down = st.sidebar.checkbox("Trailing Down", value=True, key="bt_trailing_down")
         if enable_trailing_down:
-            st.sidebar.markdown(_caption("Trailing Down Stop-Preis ($)"), unsafe_allow_html=True)
-            trailing_down_stop = st.sidebar.number_input("", min_value=0.0,
-                value=0.0, step=100.0, key="bt_trailing_down_stop",
-                label_visibility="collapsed")
-            trailing_down_stop = trailing_down_stop if trailing_down_stop > 0 else None
+            if _bt_tr_pct_mode:
+                st.sidebar.markdown(_caption("Trailing Down Stop (% unter Lower)"), unsafe_allow_html=True)
+                _td_pct = st.sidebar.number_input("", min_value=0.0, max_value=99.0,
+                    value=10.0, step=1.0, key="bt_trailing_down_pct",
+                    label_visibility="collapsed")
+                trailing_down_stop = round(lower_price * (1 - _td_pct / 100), 4) if lower_price > 0 else None
+                if trailing_down_stop:
+                    st.sidebar.caption(f"→ ${trailing_down_stop:,.2f} absolut")
+            else:
+                st.sidebar.markdown(_caption("Trailing Down Stop-Preis ($)"), unsafe_allow_html=True)
+                trailing_down_stop = st.sidebar.number_input("", min_value=0.0,
+                    value=0.0, step=100.0, key="bt_trailing_down_stop",
+                    label_visibility="collapsed")
+                trailing_down_stop = trailing_down_stop if trailing_down_stop > 0 else None
+                if trailing_down_stop and lower_price > 0:
+                    _pct_dn = (trailing_down_stop - lower_price) / lower_price * 100
+                    st.sidebar.caption(f"→ {_pct_dn:+.1f}% unter Lower-Grenze (${lower_price:,.2f})")
 
     # CHART EINSTELLUNGEN (ganz unten)
     st.sidebar.divider()

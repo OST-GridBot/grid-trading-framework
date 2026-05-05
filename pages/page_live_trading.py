@@ -489,16 +489,25 @@ def _show_new_bot_form():
     )
 
     _fee_preview = st.session_state.get("lt_new_fee", DEFAULT_FEE_RATE * 100) / 100
+    _gm_active = st.session_state.get("lt_gm_active", "Symmetrisch")
+    _gm_sym    = st.session_state.get("lt_gm_sym", "Arithmetisch")
+    _gmode_preview = "arithmetic" if (_gm_active == "Symmetrisch" and _gm_sym == "Arithmetisch") else "geometric"
     try:
-        _gstep   = (upper_price - lower_price) / num_grids
-        _gprofit = _gstep / upper_price - 2 * _fee_preview
-        _gcolor  = "#34D399" if _gprofit > 0 else "#F87171"
+        if _gmode_preview == "arithmetic":
+            _gstep = (upper_price - lower_price) / num_grids
+            _gmin  = (_gstep / upper_price - 2 * _fee_preview) * 100
+            _gmax  = (_gstep / lower_price - 2 * _fee_preview) * 100
+        else:
+            _ratio = (upper_price / lower_price) ** (1 / num_grids)
+            _gmin  = (_ratio - 1 - 2 * _fee_preview) * 100
+            _gmax  = _gmin
+        _gcolor = "#34D399" if _gmin > 0 else "#F87171"
         st.markdown(
             f"<div style='margin-top:4px; margin-bottom:4px; padding:6px 10px; "
             f"background:rgba(52,211,153,0.07); border-left:3px solid {_gcolor}; "
             f"border-radius:4px; font-size:0.78rem;'>"
             f"<span style='color:{_gcolor}; font-weight:600;'>Gewinn pro Grid (nach Fees):</span>"
-            f"<span style='color:{_gcolor};'> {_gprofit*100:.3f}%</span></div>",
+            f"<span style='color:{_gcolor};'> {_gmin:.2f}% – {_gmax:.2f}%</span></div>",
             unsafe_allow_html=True
         )
     except Exception:
@@ -555,7 +564,6 @@ def _show_new_bot_form():
         "", 0.0, 1.0, DEFAULT_FEE_RATE * 100, 0.01,
         format="%.3f", key="lt_new_fee", label_visibility="collapsed"
     ) / 100
-    st.markdown(_caption("Kapitalreserve (%)"), unsafe_allow_html=True)
 
     st.markdown(_caption("Kapitalreserve (%)"), unsafe_allow_html=True)
     reserve_pct = st.slider("", 0.0, 20.0, DEFAULT_RESERVE_PCT * 100, 1.0,
@@ -598,7 +606,7 @@ def _show_new_bot_form():
         "Recentering aktivieren",
         key="lt_new_recenter",
         disabled=trailing_active_pt,
-        help="Nicht kombinierbar mit Grid Trailing"
+        help="Nicht kombinierbar mit Grid Trailing" if trailing_active_pt else None,
     )
     enable_recentering = enable_recentering and not trailing_active_pt
     recenter_threshold = 0.05
@@ -607,6 +615,12 @@ def _show_new_bot_form():
         recenter_threshold = st.slider("", 1.0, 20.0, 5.0, 1.0,
                                         key="lt_recenter_thr",
                                         label_visibility="collapsed") / 100
+        _rc_pct = int(recenter_threshold * 100)
+        st.caption(
+            f"Bei {_rc_pct}% wird das Grid neu zentriert, sobald der Preis "
+            f"{_rc_pct}% über die Upper- oder unter die Lower-Grenze hinaus läuft. "
+            f"Niedriger = häufigeres Anpassen."
+        )
     atr_enabled_pt = st.checkbox("Volatilitätätsbasierte Anpassung", key="lt_atr")
     enable_atr_adjust = atr_enabled_pt
     atr_multiplier    = 1.0
@@ -633,24 +647,58 @@ def _show_new_bot_form():
         atr_multiplier = st.slider("", 0.5, 5.0, 1.0, 0.1,
                                     key="lt_atr_mult",
                                     label_visibility="collapsed")
-    trailing_enabled_pt = st.checkbox("Grid Trailing aktivieren", key="lt_trailing")
+    _lt_recenter_active = st.session_state.get("lt_new_recenter", False)
+    trailing_enabled_pt = st.checkbox(
+        "Grid Trailing aktivieren", key="lt_trailing",
+        disabled=_lt_recenter_active,
+        help="Nicht kombinierbar mit Recentering" if _lt_recenter_active else None,
+    )
+    if _lt_recenter_active and trailing_enabled_pt:
+        trailing_enabled_pt = False
     enable_trailing_up   = False
     enable_trailing_down = False
     trailing_up_stop     = None
     trailing_down_stop   = None
     if trailing_enabled_pt:
+        _lt_tr_col1, _lt_tr_col2 = st.columns([1, 17])
+        with _lt_tr_col2:
+            _lt_tr_pct_mode = st.checkbox("Trailing Stops prozentual", value=False, key="lt_trailing_pct_mode")
         enable_trailing_up = st.checkbox("Trailing Up", value=True, key="lt_trailing_up")
         if enable_trailing_up:
-            st.markdown(_caption("Trailing Up Stop-Preis ($)"), unsafe_allow_html=True)
-            _tus = st.number_input("", min_value=0.0, value=0.0, step=100.0,
-                                    key="lt_trailing_up_stop", label_visibility="collapsed")
-            trailing_up_stop = _tus if _tus > 0 else None
+            if _lt_tr_pct_mode:
+                st.markdown(_caption("Trailing Up Stop (% über Upper)"), unsafe_allow_html=True)
+                _tu_pct = st.number_input("", min_value=0.0, max_value=200.0,
+                                           value=10.0, step=1.0,
+                                           key="lt_trailing_up_pct", label_visibility="collapsed")
+                trailing_up_stop = round(upper_price * (1 + _tu_pct / 100), 4) if upper_price > 0 else None
+                if trailing_up_stop:
+                    st.caption(f"→ ${trailing_up_stop:,.2f} absolut")
+            else:
+                st.markdown(_caption("Trailing Up Stop-Preis ($)"), unsafe_allow_html=True)
+                _tus = st.number_input("", min_value=0.0, value=0.0, step=100.0,
+                                        key="lt_trailing_up_stop", label_visibility="collapsed")
+                trailing_up_stop = _tus if _tus > 0 else None
+                if trailing_up_stop and upper_price > 0:
+                    _pct_up = (trailing_up_stop - upper_price) / upper_price * 100
+                    st.caption(f"→ {_pct_up:+.1f}% über Upper-Grenze (${upper_price:,.2f})")
         enable_trailing_down = st.checkbox("Trailing Down", value=True, key="lt_trailing_down")
         if enable_trailing_down:
-            st.markdown(_caption("Trailing Down Stop-Preis ($)"), unsafe_allow_html=True)
-            _tds = st.number_input("", min_value=0.0, value=0.0, step=100.0,
-                                    key="lt_trailing_down_stop", label_visibility="collapsed")
-            trailing_down_stop = _tds if _tds > 0 else None
+            if _lt_tr_pct_mode:
+                st.markdown(_caption("Trailing Down Stop (% unter Lower)"), unsafe_allow_html=True)
+                _td_pct = st.number_input("", min_value=0.0, max_value=99.0,
+                                           value=10.0, step=1.0,
+                                           key="lt_trailing_down_pct", label_visibility="collapsed")
+                trailing_down_stop = round(lower_price * (1 - _td_pct / 100), 4) if lower_price > 0 else None
+                if trailing_down_stop:
+                    st.caption(f"→ ${trailing_down_stop:,.2f} absolut")
+            else:
+                st.markdown(_caption("Trailing Down Stop-Preis ($)"), unsafe_allow_html=True)
+                _tds = st.number_input("", min_value=0.0, value=0.0, step=100.0,
+                                        key="lt_trailing_down_stop", label_visibility="collapsed")
+                trailing_down_stop = _tds if _tds > 0 else None
+                if trailing_down_stop and lower_price > 0:
+                    _pct_dn = (trailing_down_stop - lower_price) / lower_price * 100
+                    st.caption(f"→ {_pct_dn:+.1f}% unter Lower-Grenze (${lower_price:,.2f})")
 
     # Parametrisierungsvorschlag
     st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
@@ -1048,13 +1096,45 @@ def _show_bot_detail(bot: dict):
             st.info("Noch keine Trades — Bot wartet auf Grid-Auslösung.")
 
     with tab3:
+        # Helper für dynamische Mechanismen
+        def _sl():
+            return f"Aktiv ({cfg['stop_loss_pct']*100:.0f}%)" if cfg.get("stop_loss_pct") else "Inaktiv"
+        def _dd():
+            if cfg.get("enable_dd_throttle"):
+                return f"Aktiv (Schwelle 1: {cfg.get('dd_threshold_1',0)*100:.0f}% / Schwelle 2: {cfg.get('dd_threshold_2',0)*100:.0f}%)"
+            return "Inaktiv"
+        def _vo():
+            if cfg.get("enable_variable_orders"):
+                return f"Aktiv (unten {cfg.get('weight_bottom',1)}× / oben {cfg.get('weight_top',1)}×)"
+            return "Inaktiv"
+        def _rc():
+            if cfg.get("enable_recentering"):
+                return f"Aktiv ({cfg.get('recenter_threshold',0)*100:.0f}%)"
+            return "Inaktiv"
+        def _atr():
+            if cfg.get("enable_atr_adjust"):
+                return f"Aktiv (×{cfg.get('atr_multiplier',1.0)})"
+            return "Inaktiv"
+        def _tr():
+            up   = cfg.get("enable_trailing_up", False)
+            dn   = cfg.get("enable_trailing_down", False)
+            if not (up or dn):
+                return "Inaktiv"
+            parts = []
+            if up: parts.append(f"Up (Stop: ${cfg.get('trailing_up_stop','–')})")
+            if dn: parts.append(f"Down (Stop: ${cfg.get('trailing_down_stop','–')})")
+            return f"Aktiv ({', '.join(parts)})"
+
         col_a, col_b = st.columns(2)
         with col_a:
             st.markdown(f"- **Coin:** {bot['coin']}/USDT")
             st.markdown(f"- **Intervall:** {bot['interval']}")
             st.markdown(f"- **Startkapital:** ${cfg.get('total_investment',0):,.2f}")
+            st.markdown(f"- **Kapitalreserve:** {cfg.get('reserve_pct',0)*100:.0f}%")
             st.markdown(f"- **Grid-Modus:** {cfg.get('grid_mode','–')}")
-            st.markdown(f"- **Stop-Loss:** {'Aktiv' if cfg.get('stop_loss_pct') else 'Inaktiv'}")
+            st.markdown(f"- **Stop-Loss:** {_sl()}")
+            st.markdown(f"- **Variable Orders:** {_vo()}")
+            st.markdown(f"- **ATR-Anpassung:** {_atr()}")
         with col_b:
             st.markdown(f"- **Anzahl Grids:** {cfg.get('num_grids','–')}")
             st.markdown(f"- **Untere Grenze:** ${cfg.get('lower_price',0):,.2f}")
@@ -1062,6 +1142,9 @@ def _show_bot_detail(bot: dict):
             st.markdown(f"- **Gebührenrate:** {cfg.get('fee_rate',0)*100:.3f}%")
             _created_mez = _format_ts(bot.get("created_at",""))
             st.markdown(f"- **Erstellt:** {_created_mez}")
+            st.markdown(f"- **DD-Drosselung:** {_dd()}")
+            st.markdown(f"- **Recentering:** {_rc()}")
+            st.markdown(f"- **Grid Trailing:** {_tr()}")
 
 
 # ---------------------------------------------------------------------------
