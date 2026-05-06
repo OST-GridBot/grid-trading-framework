@@ -17,6 +17,7 @@ import streamlit as st
 import pandas as pd
 
 from src.trading.bot_store import store as bot_store
+from src.trading.optimizer import smart_grid_setup
 from src.data.cache_manager import get_price_data
 from src.strategy.grid_builder import suggest_grid_range, build_grid_config
 from src.utils.timezone import convert_df_timestamps, utc_to_zurich
@@ -328,6 +329,125 @@ def _show_new_bot_form():
     st.markdown(_divider(), unsafe_allow_html=True)
 
     # ── Grid-Parameter ────────────────────────────────────────
+    # SMART GRID-BOT
+    st.markdown(_label("Smart Grid-Bot"), unsafe_allow_html=True)
+    _smart_obj_options = {
+        "maximize_roi":      "Höchster ROI",
+        "minimize_drawdown": "Geringstes Risiko",
+    }
+    _smart_obj = st.selectbox(
+        "", list(_smart_obj_options.keys()),
+        format_func=lambda k: _smart_obj_options[k],
+        key="pt_smart_obj", label_visibility="collapsed",
+    )
+    _smart_help = {
+        "maximize_roi":      "Maximiert den Gesamtgewinn ohne Risiko-Berücksichtigung. Aggressivste Strategie.",
+        "minimize_drawdown": "Maximiert ROI bei minimalem Verlustrisiko durch Stop-Loss und Drawdown-Drosselung.",
+    }
+    st.caption(_smart_help[_smart_obj])
+
+    st.markdown(_caption("Historische Daten (Tage)"), unsafe_allow_html=True)
+    _smart_days = st.slider("", 3, 150, 30, 1, key="pt_smart_days", label_visibility="collapsed")
+    st.caption(f"Optimierung basiert auf den letzten {_smart_days} Tagen.")
+
+    if st.button("🎯 Optimale Parameter berechnen", use_container_width=True, key="pt_smart_btn"):
+        _combos = 288 if _smart_obj == "maximize_roi" else 384
+        with st.spinner(f"Lade {coin}/USDT Daten und teste {_combos} Kombinationen..."):
+            _df_smart, _ = get_price_data(coin, days=_smart_days, interval=interval)
+            if _df_smart is None or _df_smart.empty:
+                st.session_state["pt_smart_result"] = None
+                st.session_state["pt_smart_error"]  = "Keine Daten verfügbar."
+            else:
+                _result = smart_grid_setup(
+                    df=_df_smart,
+                    total_investment=total_investment,
+                    fee_rate=DEFAULT_FEE_RATE,
+                    objective=_smart_obj,
+                )
+                st.session_state["pt_smart_result"] = _result
+                st.session_state["pt_smart_error"]  = None
+
+    _smart = st.session_state.get("pt_smart_result")
+    _smart_err = st.session_state.get("pt_smart_error")
+    if _smart_err:
+        st.warning(_smart_err)
+    elif _smart is not None:
+        _mode_lbl = {
+            "arithmetic":         "Arithmetisch",
+            "geometric":          "Geometrisch",
+            "asymmetric_bottom":  "Bottom Heavy",
+            "asymmetric_top":     "Top Heavy",
+        }.get(_smart.grid_mode, _smart.grid_mode)
+        _rc_lbl = "Aktiv" if _smart.enable_recentering else "Inaktiv"
+        _tr_lbl = "Up + Down" if (_smart.enable_trailing_up or _smart.enable_trailing_down) else "Inaktiv"
+        _sl_lbl = f"Aktiv ({int(_smart.stop_loss_pct*100)}%)" if _smart.stop_loss_pct else "Inaktiv"
+        _dd_lbl = "Aktiv" if _smart.enable_dd_throttle else "Inaktiv"
+        _vo_lbl = "Aktiv" if _smart.enable_variable_orders else "Inaktiv"
+
+        if _smart.expected_roi_pct <= 0:
+            st.warning(f"Kein profitables Setup gefunden (Backtest-ROI: {_smart.expected_roi_pct:+.2f}%)")
+        else:
+            st.success(f"Backtest-ROI auf historischen Daten: {_smart.expected_roi_pct:+.2f}%")
+
+        _box_html = (
+            f"<div style='font-size:0.78rem; color:#94A3B8; padding:8px 10px; "
+            f"background:rgba(255,255,255,0.03); border-radius:4px; margin-top:6px;'>"
+            f"<b style='color:#E2E8F0;'>Untere Grenze:</b> ${_smart.lower_price:,.2f}<br>"
+            f"<b style='color:#E2E8F0;'>Obere Grenze:</b> ${_smart.upper_price:,.2f}<br>"
+            f"<b style='color:#E2E8F0;'>Anzahl Grids:</b> {_smart.num_grids}<br>"
+            f"<b style='color:#E2E8F0;'>Grid-Modus:</b> {_mode_lbl}<br>"
+            f"<b style='color:#E2E8F0;'>Recentering:</b> {_rc_lbl}<br>"
+            f"<b style='color:#E2E8F0;'>Grid Trailing:</b> {_tr_lbl}"
+        )
+        if _smart_obj == "minimize_drawdown":
+            _box_html += f"<br><b style='color:#E2E8F0;'>Stop-Loss:</b> {_sl_lbl}"
+            _box_html += f"<br><b style='color:#E2E8F0;'>DD-Drosselung:</b> {_dd_lbl}"
+        else:
+            if _smart.stop_loss_pct is not None:
+                _box_html += f"<br><b style='color:#E2E8F0;'>Stop-Loss:</b> {_sl_lbl}"
+            if _smart.enable_dd_throttle:
+                _box_html += f"<br><b style='color:#E2E8F0;'>DD-Drosselung:</b> {_dd_lbl}"
+            if _smart.enable_variable_orders:
+                _box_html += f"<br><b style='color:#E2E8F0;'>Variable Orders:</b> {_vo_lbl}"
+        _box_html += "</div>"
+        st.markdown(_box_html, unsafe_allow_html=True)
+
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            if st.button("Übernehmen", use_container_width=True, key="pt_smart_apply", type="primary"):
+                st.session_state["pt_new_lower"]   = _smart.lower_price
+                st.session_state["pt_new_upper"]   = _smart.upper_price
+                st.session_state["pt_new_grids"]   = _smart.num_grids
+                if _smart.grid_mode in ("arithmetic", "geometric"):
+                    st.session_state["pt_gm_active"] = "Symmetrisch"
+                    st.session_state["pt_gm_sym"]    = "Arithmetisch" if _smart.grid_mode == "arithmetic" else "Geometrisch"
+                else:
+                    st.session_state["pt_gm_active"] = "Asymmetrisch"
+                    st.session_state["pt_gm_asym"]   = "Bottom heavy" if _smart.grid_mode == "asymmetric_bottom" else "Top heavy"
+                st.session_state["pt_new_recenter"] = _smart.enable_recentering
+                st.session_state["pt_trailing"]     = _smart.enable_trailing_up or _smart.enable_trailing_down
+                if _smart.enable_trailing_up:
+                    st.session_state["pt_trailing_up"]      = True
+                    st.session_state["pt_trailing_up_stop"] = float(_smart.trailing_up_stop or 0)
+                if _smart.enable_trailing_down:
+                    st.session_state["pt_trailing_down"]      = True
+                    st.session_state["pt_trailing_down_stop"] = float(_smart.trailing_down_stop or 0)
+                if _smart.stop_loss_pct is not None:
+                    st.session_state["pt_sl"]     = True
+                    st.session_state["pt_sl_pct"] = float(_smart.stop_loss_pct * 100)
+                else:
+                    st.session_state["pt_sl"] = False
+                st.session_state["pt_dd"] = _smart.enable_dd_throttle
+                st.session_state["pt_vo"] = _smart.enable_variable_orders
+                st.session_state["pt_smart_result"] = None
+                st.rerun()
+        with _c2:
+            if st.button("Verwerfen", use_container_width=True, key="pt_smart_dismiss"):
+                st.session_state["pt_smart_result"] = None
+                st.rerun()
+
+    st.markdown(_divider(), unsafe_allow_html=True)
+
     st.markdown(_label("Grid-Parameter"), unsafe_allow_html=True)
     current_price, df_tmp_atr = None, None
     try:
@@ -613,78 +733,6 @@ def _show_new_bot_form():
                     _pct_dn = (trailing_down_stop - lower_price) / lower_price * 100
                     st.caption(f"→ {_pct_dn:+.1f}% unter Lower-Grenze (${lower_price:,.2f})")
 
-    # Parametrisierungsvorschlag
-    st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
-    st.divider()
-    st.markdown("**💡 Parametrisierungsvorschlag**")
-    col_opt1, col_opt2, col_opt3 = st.columns([2, 2, 1])
-    with col_opt1:
-        opt_objective = st.selectbox(
-            "Optimierungsziel",
-            ["maximize_sharpe", "maximize_roi", "maximize_calmar", "minimize_drawdown"],
-            format_func=lambda x: {
-                "maximize_sharpe":   "Bestes Risiko/Rendite (Sharpe)",
-                "maximize_roi":      "Höchster ROI",
-                "maximize_calmar":   "Calmar Ratio",
-                "minimize_drawdown": "Geringstes Risiko",
-            }.get(x, x),
-            key="pt_opt_objective",
-        )
-    with col_opt2:
-        opt_days = st.selectbox(
-            "Historischer Zeitraum",
-            [7, 14, 30],
-            index=1,
-            format_func=lambda x: f"Letzte {x} Tage",
-            key="pt_opt_days",
-        )
-    with col_opt3:
-        st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
-        opt_btn = st.button("🔍 Vorschlag", use_container_width=True, key="pt_opt_btn")
-
-    if opt_btn:
-        with st.spinner(f"Analysiere {coin}/USDT der letzten {opt_days} Tage..."):
-            try:
-                from src.trading.optimizer import suggest_parameters
-                s = suggest_parameters(
-                    coin             = coin,
-                    total_investment = total_investment,
-                    lookback_days    = opt_days,
-                    interval         = interval,
-                    objective        = opt_objective,
-                )
-                regime_colors = {
-                    "range":      "#34D399",
-                    "trend_up":   "#FBBF24",
-                    "trend_down": "#F87171",
-                    "neutral":    "#94A3B8",
-                }
-                rc = regime_colors.get(s.regime, "#94A3B8")
-                st.markdown(
-                    f"<div style='padding:12px 16px; background:rgba(255,255,255,0.04); "
-                    f"border-left:3px solid {rc}; border-radius:6px; margin-top:8px;'>"
-                    f"<div style='color:{rc}; font-weight:700; margin-bottom:8px;'>"
-                    f"Parametrisierungsvorschlag für {coin}/USDT</div>"
-                    f"<div style='color:#E2E8F0; font-size:0.9rem; line-height:1.8;'>"
-                    f"<b>Grid-Modus:</b> {'Arithmetisch' if s.grid_mode == 'arithmetic' else 'Geometrisch'}<br>"
-                    f"<b>Anzahl Grids:</b> {s.num_grids}<br>"
-                    f"<b>Untere Grenze:</b> ${s.lower_price:,.2f}<br>"
-                    f"<b>Obere Grenze:</b> ${s.upper_price:,.2f}<br>"
-                    f"<b>ROI (hist.):</b> {s.roi_pct:+.2f}% | "
-                    f"<b>Sharpe:</b> {s.sharpe:.2f} | "
-                    f"<b>Max DD:</b> {s.max_dd_pct:.2f}%"
-                    f"</div>"
-                    f"<div style='color:#94A3B8; font-size:0.8rem; margin-top:8px;'>"
-                    f"{s.reasoning.split(chr(10))[0]}</div>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-                if s.warning:
-                    st.warning(s.warning)
-            except Exception as e:
-                st.error(f"Fehler beim Erstellen des Vorschlags: {e}")
-
-    st.divider()
     st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
     col_btn1, col_btn2 = st.columns([2, 1])
     with col_btn1:
