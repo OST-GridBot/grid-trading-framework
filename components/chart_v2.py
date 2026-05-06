@@ -187,9 +187,7 @@ def plot_grid_chart_v2(
       <button class="tb-btn" onclick="fitAll()">Fit</button>
       <button class="tb-btn" onclick="zoomIn()">+</button>
       <button class="tb-btn" onclick="zoomOut()">−</button>
-      <button class="tb-btn" id="btn-pan" onclick="togglePan()">Pan</button>
-      <div class="tb-sep" id="vol-sep" style="display:none"></div>
-      <button class="tb-btn" id="btn-vol" style="display:none" onclick="toggleVol()">Vol</button>
+
     </div>
   </div>
   <div id="chart-wrap">
@@ -249,7 +247,6 @@ def plot_grid_chart_v2(
   volData.forEach(v => {{ volMap[v.time] = v.value; }});
 
   let volVisible = true;
-  let panMode    = false;
   let volSeries  = null;
   const marginsOn  = {{ top:0.05, bottom:0.28 }};
   const marginsOff = {{ top:0.05, bottom:0.05 }};
@@ -304,8 +301,6 @@ def plot_grid_chart_v2(
 
   // ── Volume ────────────────────────────────────────────────
   if (hasVol && volData.length > 0) {{
-    document.getElementById('vol-sep').style.display = 'block';
-    document.getElementById('btn-vol').style.display = 'block';
     volSeries = chart.addHistogramSeries({{
       priceFormat:{{ type:'volume' }}, priceScaleId:'vol',
       lastValueVisible:false, priceLineVisible:false,
@@ -380,22 +375,6 @@ def plot_grid_chart_v2(
     if (!r) return;
     const mid=(r.from+r.to)/2, h=(r.to-r.from)*0.85;
     ts.setVisibleRange({{from:mid-h, to:mid+h}});
-  }}
-  function togglePan() {{
-    panMode = !panMode;
-    chart.applyOptions({{
-      handleScale: {{ mouseWheel:!panMode, pinch:!panMode, axisPressedMouseMove:!panMode }},
-      handleScroll: {{ mouseWheel:panMode, pressedMouseMove:true, horzTouchDrag:true }},
-    }});
-    document.getElementById('btn-pan').classList.toggle('active', panMode);
-  }}
-  function toggleVol() {{
-    if (!volSeries) return;
-    volVisible = !volVisible;
-    volSeries.applyOptions({{ visible:volVisible }});
-    chart.applyOptions({{ rightPriceScale:{{ scaleMargins:volVisible ? marginsOn : marginsOff }} }});
-    document.getElementById('btn-vol').classList.toggle('active', !volVisible);
-    if (!volVisible) document.getElementById('vol-label').style.display='none';
   }}
 
   // ── Tooltip ───────────────────────────────────────────────

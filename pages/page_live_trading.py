@@ -1168,14 +1168,20 @@ def _show_bot_detail(bot: dict):
                 return f"Aktiv (×{cfg.get('atr_multiplier',1.0)})"
             return "Inaktiv"
         def _tr():
-            up   = cfg.get("enable_trailing_up", False)
-            dn   = cfg.get("enable_trailing_down", False)
+            up = cfg.get("enable_trailing_up", False)
+            dn = cfg.get("enable_trailing_down", False)
             if not (up or dn):
                 return "Inaktiv"
             parts = []
-            if up: parts.append(f"Up (Stop: ${cfg.get('trailing_up_stop','–')})")
-            if dn: parts.append(f"Down (Stop: ${cfg.get('trailing_down_stop','–')})")
-            return f"Aktiv ({', '.join(parts)})"
+            if up:
+                _s = cfg.get("trailing_up_stop", None)
+                _v = f"\\${_s:,.2f}" if isinstance(_s, (int, float)) else "–"
+                parts.append(f"Up Stop: {_v}")
+            if dn:
+                _s = cfg.get("trailing_down_stop", None)
+                _v = f"\\${_s:,.2f}" if isinstance(_s, (int, float)) else "–"
+                parts.append(f"Down Stop: {_v}")
+            return f"Aktiv ({' / '.join(parts)})"
 
         col_a, col_b = st.columns(2)
         with col_a:

@@ -792,13 +792,25 @@ def _show_new_bot_form():
 # ---------------------------------------------------------------------------
 
 def _show_bots_overview(bots: list):
-    col_ov1, col_ov2 = st.columns([3, 1])
-    with col_ov1:
+    running = [b for b in bots if b.get("status") == "running"]
+
+    # Beide Buttons rechtsbündig untereinander; Schrift bleibt einzeilig
+    st.markdown(
+        "<style>"
+        "div[data-testid='stButton'] button p { white-space: nowrap !important; }"
+        "</style>",
+        unsafe_allow_html=True
+    )
+
+    col_left, col_right = st.columns([3, 2])
+    with col_left:
         st.markdown("### Übersicht aktive Bots")
-    with col_ov2:
-        running = [b for b in bots if b.get("status") == "running"]
+    with col_right:
+        if st.button("← Zurück zum Portfolio", key="pt_overview_back", use_container_width=True):
+            st.session_state.pt_show_overview = False
+            st.rerun()
         if st.button(
-            f"🔄 Alle aktualisieren ({len(running)})",
+            f"Alle aktualisieren ({len(running)})",
             use_container_width=True,
             disabled=len(running) == 0,
             key="pt_update_all"
@@ -930,17 +942,15 @@ def _show_bot_detail(bot: dict):
                 except Exception as e:
                     st.error(f"Fehler: {e}")
     with col_b2:
-        if st.button("Stoppen", key="pt_det_stop",
-                      disabled=bot["status"] != "running",
+        _is_running = bot["status"] == "running"
+        _btn_label  = "Stoppen" if _is_running else "Fortfahren"
+        if st.button(_btn_label, key="pt_det_stop",
                       use_container_width=True):
-            bot_store.set_status(bot["bot_id"], "stopped")
+            bot_store.set_status(bot["bot_id"], "stopped" if _is_running else "running")
             st.rerun()
     with col_b3:
-        if st.button("Löschen", key="pt_det_del",
-                      use_container_width=True):
-            bot_store.delete_bot(bot["bot_id"])
-            st.session_state.pt_selected_bot = None
-            st.rerun()
+        if st.button("Löschen", key="pt_det_del", use_container_width=True):
+            _confirm_delete_bot(bot["bot_id"], bot.get("name", bot["coin"]))
     with col_back:
         if st.button("← Zurück", key="pt_det_back",
                       use_container_width=True):
@@ -1088,10 +1098,16 @@ def _show_bot_detail(bot: dict):
             trailing_up   = cfg.get("enable_trailing_up",   False)
             trailing_down = cfg.get("enable_trailing_down",  False)
             if trailing_up or trailing_down:
-                parts = []
-                if trailing_up:   parts.append(f"Up (Stop: ${cfg.get('trailing_up_stop','–')})")
-                if trailing_down: parts.append(f"Down (Stop: ${cfg.get('trailing_down_stop','–')})")
-                st.markdown(f"- **Grid Trailing:** Aktiv ({', '.join(parts)})")
+                _parts = []
+                if trailing_up:
+                    _tu_stop = cfg.get("trailing_up_stop", None)
+                    _tu_str  = f"\\${_tu_stop:,.2f}" if isinstance(_tu_stop, (int, float)) else "–"
+                    _parts.append(f"Up Stop: {_tu_str}")
+                if trailing_down:
+                    _td_stop = cfg.get("trailing_down_stop", None)
+                    _td_str  = f"\\${_td_stop:,.2f}" if isinstance(_td_stop, (int, float)) else "–"
+                    _parts.append(f"Down Stop: {_td_str}")
+                st.markdown(f"- **Grid Trailing:** Aktiv ({' / '.join(_parts)})")
             else:
                 st.markdown("- **Grid Trailing:** Inaktiv")
 
@@ -1111,3 +1127,35 @@ def _show_empty_state():
         "</div>",
         unsafe_allow_html=True
     )
+
+
+@st.dialog("Bot löschen")
+def _confirm_delete_bot(bot_id: str, bot_name: str):
+    """Modal-Dialog zur Bot-Löschungs-Bestätigung."""
+    st.markdown(
+        f"<div style='font-size:0.95rem; color:#E2E8F0; margin-bottom:16px;'>"
+        f"Soll der Bot <b>{bot_name}</b> wirklich gelöscht werden?<br>"
+        f"<span style='color:#94A3B8; font-size:0.85rem;'>Diese Aktion kann nicht rückgängig gemacht werden.</span>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+    # Custom CSS: Ja-Button rot
+    st.markdown("""
+        <style>
+        div[data-testid="stDialog"] div[data-testid="column"]:first-child button {
+            background-color: #DC2626 !important;
+            border-color: #DC2626 !important;
+            color: white !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    _yes_col, _no_col = st.columns(2)
+    with _yes_col:
+        if st.button("Ja, löschen", key="pt_del_yes", use_container_width=True):
+            bot_store.delete_bot(bot_id)
+            st.session_state.pt_selected_bot = None
+            st.rerun()
+    with _no_col:
+        if st.button("Nein", key="pt_del_no", use_container_width=True):
+            st.rerun()
+
