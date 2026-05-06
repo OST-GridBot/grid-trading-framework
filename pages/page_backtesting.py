@@ -12,7 +12,7 @@ from components.chart_v2 import plot_grid_chart_v2
 from components.metrics_display import render_metrics_row, render_trade_log
 
 from src.backtesting.engine import run_backtest
-from src.backtesting.optimizer import optimize_num_grids, optimize_full_grid_search
+from src.backtesting.optimizer import optimize_num_grids, optimize_full_grid_search, smart_grid_setup
 from src.data.cache_manager import get_price_data
 from src.strategy.grid_builder import suggest_grid_range, build_grid_config
 from config.settings import DEFAULT_NUM_GRIDS, DEFAULT_GRID_MODE, DEFAULT_FEE_RATE, DEFAULT_RESERVE_PCT
@@ -144,6 +144,137 @@ def show_backtesting():
         "", min_value=100.0, max_value=1_000_000.0,
         value=10_000.0, step=500.0, label_visibility="collapsed", key="bt_capital"
     ))
+
+
+    st.sidebar.markdown(
+        "<hr style='border:none; border-top:1px solid rgba(255,255,255,0.08); margin:8px 0;'>",
+        unsafe_allow_html=True
+    )
+    # SMART GRID-BOT
+    st.sidebar.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
+    st.sidebar.markdown(_label("Smart Grid-Bot"), unsafe_allow_html=True)
+
+    _smart_obj_options = {
+        "maximize_roi":      "Höchster ROI",
+        "minimize_drawdown": "Geringstes Risiko",
+    }
+    _smart_obj = st.sidebar.selectbox(
+        "", list(_smart_obj_options.keys()),
+        format_func=lambda k: _smart_obj_options[k],
+        key="bt_smart_obj", label_visibility="collapsed",
+    )
+    _smart_help = {
+        "maximize_roi":      "Maximiert den Gesamtgewinn ohne Risiko-Berücksichtigung. Aggressivste Strategie.",
+        "minimize_drawdown": "Maximiert ROI bei minimalem Verlustrisiko durch Stop-Loss und Drawdown-Drosselung.",
+    }
+    st.sidebar.caption(_smart_help[_smart_obj])
+
+    if st.sidebar.button("🎯 Optimale Parameter berechnen", use_container_width=True, key="bt_smart_btn"):
+        _combos = {
+            "maximize_roi":      288,
+            "minimize_drawdown": 384,
+        }.get(_smart_obj, 288)
+        with st.spinner(f"Lade {coin}/USDT Daten und teste {_combos} Kombinationen..."):
+            _df_smart, _ = get_price_data(coin, interval=interval, start_date=start_date, end_date=end_date)
+            if _df_smart is None or _df_smart.empty:
+                st.session_state["bt_smart_result"] = None
+                st.session_state["bt_smart_error"]  = "Keine Daten verfügbar."
+            else:
+                _result = smart_grid_setup(
+                    df=_df_smart,
+                    total_investment=total_investment,
+                    fee_rate=DEFAULT_FEE_RATE,
+                    objective=_smart_obj,
+                )
+                st.session_state["bt_smart_result"] = _result
+                st.session_state["bt_smart_error"]  = None
+
+    _smart = st.session_state.get("bt_smart_result")
+    _smart_err = st.session_state.get("bt_smart_error")
+    if _smart_err:
+        st.sidebar.warning(_smart_err)
+    elif _smart is not None:
+        _mode_lbl = {
+            "arithmetic":         "Arithmetisch",
+            "geometric":          "Geometrisch",
+            "asymmetric_bottom":  "Bottom Heavy",
+            "asymmetric_top":     "Top Heavy",
+        }.get(_smart.grid_mode, _smart.grid_mode)
+        _rc_lbl = "Aktiv" if _smart.enable_recentering else "Inaktiv"
+        if _smart.enable_trailing_up or _smart.enable_trailing_down:
+            _tr_lbl = "Up + Down"
+        else:
+            _tr_lbl = "Inaktiv"
+
+        if _smart.expected_roi_pct <= 0:
+            st.sidebar.warning(f"Kein profitables Setup gefunden (Bestes ROI: {_smart.expected_roi_pct:+.2f}%)")
+        else:
+            st.sidebar.success(f"Erwartetes ROI: {_smart.expected_roi_pct:+.2f}%")
+
+        _sl_lbl = f"Aktiv ({int(_smart.stop_loss_pct*100)}%)" if _smart.stop_loss_pct else "Inaktiv"
+        _dd_lbl = "Aktiv" if _smart.enable_dd_throttle else "Inaktiv"
+        _vo_lbl = "Aktiv" if _smart.enable_variable_orders else "Inaktiv"
+
+        _box_html = (
+            f"<div style='font-size:0.78rem; color:#94A3B8; padding:8px 10px; "
+            f"background:rgba(255,255,255,0.03); border-radius:4px; margin-top:6px;'>"
+            f"<b style='color:#E2E8F0;'>Untere Grenze:</b> ${_smart.lower_price:,.2f}<br>"
+            f"<b style='color:#E2E8F0;'>Obere Grenze:</b> ${_smart.upper_price:,.2f}<br>"
+            f"<b style='color:#E2E8F0;'>Anzahl Grids:</b> {_smart.num_grids}<br>"
+            f"<b style='color:#E2E8F0;'>Grid-Modus:</b> {_mode_lbl}<br>"
+            f"<b style='color:#E2E8F0;'>Recentering:</b> {_rc_lbl}<br>"
+            f"<b style='color:#E2E8F0;'>Grid Trailing:</b> {_tr_lbl}"
+        )
+        if _smart_obj == "minimize_drawdown":
+            _box_html += f"<br><b style='color:#E2E8F0;'>Stop-Loss:</b> {_sl_lbl}"
+            _box_html += f"<br><b style='color:#E2E8F0;'>DD-Drosselung:</b> {_dd_lbl}"
+        else:
+            if _smart.stop_loss_pct is not None:
+                _box_html += f"<br><b style='color:#E2E8F0;'>Stop-Loss:</b> {_sl_lbl}"
+            if _smart.enable_dd_throttle:
+                _box_html += f"<br><b style='color:#E2E8F0;'>DD-Drosselung:</b> {_dd_lbl}"
+            if _smart.enable_variable_orders:
+                _box_html += f"<br><b style='color:#E2E8F0;'>Variable Orders:</b> {_vo_lbl}"
+        _box_html += "</div>"
+        st.sidebar.markdown(_box_html, unsafe_allow_html=True)
+
+        _c1, _c2 = st.sidebar.columns(2)
+        with _c1:
+            if st.button("Übernehmen", use_container_width=True, key="bt_smart_apply", type="primary"):
+                st.session_state["bt_lower"]   = _smart.lower_price
+                st.session_state["bt_upper"]   = _smart.upper_price
+                st.session_state["bt_grids"]   = _smart.num_grids
+                # Grid-Modus
+                if _smart.grid_mode in ("arithmetic", "geometric"):
+                    st.session_state["bt_gm_active"] = "Symmetrisch"
+                    st.session_state["bt_gm_sym"]    = "Arithmetisch" if _smart.grid_mode == "arithmetic" else "Geometrisch"
+                else:
+                    st.session_state["bt_gm_active"] = "Asymmetrisch"
+                    st.session_state["bt_gm_asym"]   = "Bottom heavy" if _smart.grid_mode == "asymmetric_bottom" else "Top heavy"
+                st.session_state["bt_recenter"] = _smart.enable_recentering
+                st.session_state["bt_trailing"] = _smart.enable_trailing_up or _smart.enable_trailing_down
+                if _smart.enable_trailing_up:
+                    st.session_state["bt_trailing_up"]      = True
+                    st.session_state["bt_trailing_up_stop"] = float(_smart.trailing_up_stop or 0)
+                if _smart.enable_trailing_down:
+                    st.session_state["bt_trailing_down"]      = True
+                    st.session_state["bt_trailing_down_stop"] = float(_smart.trailing_down_stop or 0)
+                # Stop-Loss
+                if _smart.stop_loss_pct is not None:
+                    st.session_state["bt_sl"]     = True
+                    st.session_state["bt_sl_pct"] = float(_smart.stop_loss_pct * 100)
+                else:
+                    st.session_state["bt_sl"] = False
+                # DD-Drosselung
+                st.session_state["bt_dd"] = _smart.enable_dd_throttle
+                # Variable Orders
+                st.session_state["bt_vo"] = _smart.enable_variable_orders
+                st.session_state["bt_smart_result"] = None
+                st.rerun()
+        with _c2:
+            if st.button("Verwerfen", use_container_width=True, key="bt_smart_dismiss"):
+                st.session_state["bt_smart_result"] = None
+                st.rerun()
 
 
     st.sidebar.markdown(

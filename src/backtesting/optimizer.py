@@ -215,6 +215,168 @@ def optimize_full_grid_search(
 
 
 # ---------------------------------------------------------------------------
+# SmartGridSetup
+# ---------------------------------------------------------------------------
+
+@dataclass
+class SmartSetupResult:
+    """Ergebnis des SmartGridSetup."""
+    lower_price:          float
+    upper_price:          float
+    num_grids:            int
+    grid_mode:            str
+    enable_recentering:   bool
+    enable_trailing_up:   bool
+    enable_trailing_down: bool
+    trailing_up_stop:     Optional[float]
+    trailing_down_stop:   Optional[float]
+    expected_roi_pct:     float
+    num_tested:           int
+    stop_loss_pct:           Optional[float] = None
+    enable_dd_throttle:      bool = False
+    enable_variable_orders:  bool = False
+
+
+def smart_grid_setup(
+    df:               pd.DataFrame,
+    total_investment: float = 10_000.0,
+    fee_rate:         float = DEFAULT_FEE_RATE,
+    objective:        str   = "maximize_roi",
+):
+    """
+    SmartGridSetup: Findet die optimale Bot-Konfiguration je nach Optimierungsziel.
+
+    Fundament (immer dabei):
+        - Range (+/-5%, +/-10%, +/-15%, +/-20% um Median)
+        - Anzahl Grids (5, 10, 15, 20, 25, 30)
+        - Grid-Modus (4 Optionen)
+
+    Pro Ziel zusaetzlich:
+        - maximize_roi:        Recentering ⊕ Trailing
+        - maximize_sharpe:     Recentering ⊕ Trailing + Variable Orders
+        - maximize_calmar:     Recentering ⊕ Trailing + DD-Drosselung
+        - minimize_drawdown:   Stop-Loss + DD-Drosselung (kein Recenter/Trailing)
+    """
+    if df is None or df.empty:
+        return None
+
+    median_price = float(df["close"].median())
+
+    range_pcts  = [0.05, 0.10, 0.15, 0.20]
+    grid_counts = [5, 10, 15, 20, 25, 30]
+    modes       = ["arithmetic", "geometric", "asymmetric_bottom", "asymmetric_top"]
+
+    # Mechanismus-Optionen je nach Ziel
+    if objective == "minimize_drawdown":
+        # Kein Recenter/Trailing — nur SL + DD
+        mech_options = [0]  # immer ohne dynamische Mechanismen
+        sl_options   = [None, 0.20]  # Stop-Loss aus / 20%
+        dd_options   = [False, True]  # DD-Drosselung aus / an
+        vo_options   = [False]
+    elif objective == "maximize_calmar":
+        mech_options = [0, 1, 2]
+        sl_options   = [None]
+        dd_options   = [False, True]
+        vo_options   = [False]
+    elif objective == "maximize_sharpe":
+        mech_options = [0, 1, 2]
+        sl_options   = [None]
+        dd_options   = [False]
+        vo_options   = [False, True]
+    else:  # maximize_roi
+        mech_options = [0, 1, 2]
+        sl_options   = [None]
+        dd_options   = [False]
+        vo_options   = [False]
+
+    num_days = get_num_days(df, "1h")
+
+    best_score = -float("inf")
+    best_cfg   = None
+    num_tested = 0
+
+    for range_pct in range_pcts:
+        lower = median_price * (1 - range_pct)
+        upper = median_price * (1 + range_pct)
+
+        for num_grids in grid_counts:
+            for mode in modes:
+                for mech in mech_options:
+                    for sl in sl_options:
+                        for dd_on in dd_options:
+                            for vo_on in vo_options:
+                                use_recenter = (mech == 1)
+                                use_trailing = (mech == 2)
+                                tr_up_stop = upper * 1.20 if use_trailing else None
+                                tr_dn_stop = lower * 0.80 if use_trailing else None
+
+                                sim = simulate_grid_bot(
+                                    df=df, total_investment=total_investment,
+                                    lower_price=lower, upper_price=upper,
+                                    num_grids=num_grids, grid_mode=mode, fee_rate=fee_rate,
+                                    enable_recentering=use_recenter,
+                                    recenter_threshold=0.05,
+                                    enable_trailing_up=use_trailing,
+                                    enable_trailing_down=use_trailing,
+                                    trailing_up_stop=tr_up_stop,
+                                    trailing_down_stop=tr_dn_stop,
+                                    stop_loss_pct=sl,
+                                    enable_dd_throttle=dd_on,
+                                    dd_threshold_1=0.10,
+                                    dd_threshold_2=0.20,
+                                    enable_variable_orders=vo_on,
+                                    weight_bottom=2.0 if vo_on else 1.0,
+                                    weight_top=0.5 if vo_on else 1.0,
+                                )
+                                num_tested += 1
+                                if sim.get("error"):
+                                    continue
+
+                                # Score je nach Ziel
+                                score = _calculate_score(sim, df, total_investment, num_days, objective)
+                                if score is None:
+                                    continue
+
+                                if score > best_score:
+                                    best_score = score
+                                    best_cfg = {
+                                        "lower_price":          round(lower, 4),
+                                        "upper_price":          round(upper, 4),
+                                        "num_grids":            num_grids,
+                                        "grid_mode":            mode,
+                                        "enable_recentering":   use_recenter,
+                                        "enable_trailing_up":   use_trailing,
+                                        "enable_trailing_down": use_trailing,
+                                        "trailing_up_stop":     tr_up_stop,
+                                        "trailing_down_stop":   tr_dn_stop,
+                                        "stop_loss_pct":        sl,
+                                        "enable_dd_throttle":   dd_on,
+                                        "enable_variable_orders": vo_on,
+                                        "expected_roi_pct":     round(sim.get("profit_pct", 0), 4),
+                                    }
+
+    if best_cfg is None:
+        return None
+
+    return SmartSetupResult(
+        lower_price          = best_cfg["lower_price"],
+        upper_price          = best_cfg["upper_price"],
+        num_grids            = best_cfg["num_grids"],
+        grid_mode            = best_cfg["grid_mode"],
+        enable_recentering   = best_cfg["enable_recentering"],
+        enable_trailing_up   = best_cfg["enable_trailing_up"],
+        enable_trailing_down = best_cfg["enable_trailing_down"],
+        trailing_up_stop     = best_cfg["trailing_up_stop"],
+        trailing_down_stop   = best_cfg["trailing_down_stop"],
+        expected_roi_pct     = best_cfg["expected_roi_pct"],
+        num_tested           = num_tested,
+        stop_loss_pct          = best_cfg.get("stop_loss_pct"),
+        enable_dd_throttle     = best_cfg.get("enable_dd_throttle", False),
+        enable_variable_orders = best_cfg.get("enable_variable_orders", False),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Range-Optimierung
 # ---------------------------------------------------------------------------
 
