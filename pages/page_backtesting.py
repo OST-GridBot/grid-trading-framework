@@ -7,7 +7,6 @@ import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
 
-from components.chart import plot_grid_chart
 from components.chart_v2 import plot_grid_chart_v2
 from components.metrics_display import render_metrics_row, render_trade_log
 

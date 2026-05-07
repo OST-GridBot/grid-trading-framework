@@ -12,7 +12,6 @@ import streamlit as st
 import pandas as pd
 from src.data.cache_manager import get_price_data
 from src.utils.timezone import convert_df_timestamps
-from components.chart import plot_grid_chart
 from components.chart_v2 import plot_grid_chart_v2
 
 COINS = [

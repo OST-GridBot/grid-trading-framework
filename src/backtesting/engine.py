@@ -28,7 +28,7 @@ from src.data.cache_manager import get_price_data
 from src.strategy.grid_bot import simulate_grid_bot
 from src.strategy.grid_builder import build_grid_config, suggest_grid_range, validate_grid_config
 from src.metrics import calculate_drawdown, calculate_kelly_fraction
-from src.strategy.risk import calculate_position_size
+from src.metrics import calculate_position_size
 from src.analysis.indicators import get_adx_value, get_atr_stats, calculate_volatility
 from src.analysis.regime import detect_regime
 
