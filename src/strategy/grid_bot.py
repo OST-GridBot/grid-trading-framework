@@ -211,6 +211,10 @@ class GridBot:
         self.recentering_count: int = 0
         self.stop_loss_triggered: bool = False
 
+        # Phase 2: event_log für Visualisierung von Trailing/Recentering/Stop-Loss
+        self.event_log: list = []
+        self._current_timestamp = None
+
         # Preise
         self.last_price        = initial_price
         self.last_traded_price = None
@@ -345,6 +349,9 @@ class GridBot:
         Args:
             candle: pd.Series mit timestamp, open, high, low, close, volume
         """
+        # Phase 2: aktuellen Timestamp für event_log merken
+        self._current_timestamp = candle.get("timestamp")
+
         if self.stop_loss_triggered:
             return
 
@@ -366,6 +373,11 @@ class GridBot:
             # Stop-Loss pruefen
             if self._check_stop_loss(portfolio_value):
                 self.stop_loss_triggered = True
+                self.event_log.append({
+                    "type":      "stop_loss",
+                    "timestamp": self._current_timestamp,
+                    "price":     float(candle["close"]),
+                })
                 return
 
             # Reset des Intra-Candle BUY-Trackers
@@ -635,6 +647,12 @@ class GridBot:
         self._build_grids(current_price)
         self.last_traded_price = None
         self.recentering_count += 1
+        self.event_log.append({
+            "type":      "recentering",
+            "timestamp": self._current_timestamp,
+            "new_lower": float(self.lower_price),
+            "new_upper": float(self.upper_price),
+        })
 
     # -----------------------------------------------------------------------
     # Validierung
@@ -660,6 +678,12 @@ class GridBot:
                 return
             self._shift_grid(new_lower, new_upper, current_price)
             self.trailing_count += 1
+            self.event_log.append({
+                "type":      "trailing",
+                "timestamp": self._current_timestamp,
+                "new_lower": float(self.lower_price),
+                "new_upper": float(self.upper_price),
+            })
 
         # Trailing DOWN
         elif self.enable_trailing_down and current_price <= self.lower_price:
@@ -670,6 +694,12 @@ class GridBot:
                 return
             self._shift_grid(new_lower, new_upper, current_price)
             self.trailing_count += 1
+            self.event_log.append({
+                "type":      "trailing",
+                "timestamp": self._current_timestamp,
+                "new_lower": float(self.lower_price),
+                "new_upper": float(self.upper_price),
+            })
 
     def _shift_grid(self, new_lower: float, new_upper: float, current_price: float) -> None:
         """
@@ -951,6 +981,7 @@ def simulate_grid_bot(
             "fees_paid":           total_fees,
             "num_trades":          len(bot.trade_log),
             "trade_log":           bot.trade_log,
+        "event_log":           bot.event_log,
             "grid_lines":          bot.grid_lines,
             "final_position":      dict(bot.position),
             "initial_price":       initial_price,
