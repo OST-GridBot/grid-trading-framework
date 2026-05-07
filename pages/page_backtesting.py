@@ -593,11 +593,18 @@ def show_backtesting():
     # CHART EINSTELLUNGEN (ganz unten)
     st.sidebar.divider()
     st.sidebar.markdown(_label("Chart Einstellungen"), unsafe_allow_html=True)
-    st.sidebar.markdown(_caption("Chart Typ"), unsafe_allow_html=True)
-    chart_type   = st.sidebar.selectbox("", ["Candlestick","Linie"], key="bt_chart_type",
-                                    label_visibility="collapsed")
-    show_volume  = st.sidebar.checkbox("Volumen anzeigen",     value=True, key="bt_show_vol")
-    show_grid_bg = st.sidebar.checkbox("Gridbereich anzeigen", value=True, key="bt_show_grid")
+    st.sidebar.markdown(_caption("Einfach"), unsafe_allow_html=True)
+    show_volume        = st.sidebar.checkbox("Volumen anzeigen",      value=True, key="bt_show_vol")
+    show_range_box     = st.sidebar.checkbox("Range-Box anzeigen",    value=True, key="bt_show_range_box")
+    show_grid_lines    = st.sidebar.checkbox("Grid-Linien anzeigen",  value=True, key="bt_show_grid_lines")
+    show_trade_markers = st.sidebar.checkbox("Trade-Marker anzeigen", value=True, key="bt_show_trade_markers")
+    show_crosshair     = st.sidebar.checkbox("Crosshair (Fadenkreuz)",value=True, key="bt_show_crosshair")
+    st.sidebar.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+    st.sidebar.markdown(_caption("Erweitert"), unsafe_allow_html=True)
+    show_drawdown_area = st.sidebar.checkbox("Drawdown-Bereich",       value=False, key="bt_show_dd_area",  help="Wird in Phase 2 aktiv")
+    show_sl_trigger    = st.sidebar.checkbox("Stop-Loss Trigger",      value=False, key="bt_show_sl_trig",  help="Wird in Phase 2 aktiv")
+    show_trailing_path = st.sidebar.checkbox("Trailing-Verlauf",       value=False, key="bt_show_tr_path", help="Wird in Phase 2 aktiv")
+    show_recenter_mark = st.sidebar.checkbox("Recentering-Marker",     value=False, key="bt_show_rc_mark", help="Wird in Phase 2 aktiv")
 
     # -----------------------------------------------------------------------
     # Header
@@ -765,6 +772,10 @@ def show_backtesting():
                 show_volume = show_volume,
                 upper_price = display_upper,
                 lower_price = display_lower,
+                show_grid_lines    = show_grid_lines,
+                show_trade_markers = show_trade_markers,
+                show_crosshair     = show_crosshair,
+                show_range_box     = show_range_box,
             )
         else:
             st.info("Keine Preisdaten verfügbar.")

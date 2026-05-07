@@ -19,6 +19,10 @@ def plot_grid_chart_v2(
     show_volume:  bool  = True,
     upper_price:  Optional[float] = None,
     lower_price:  Optional[float] = None,
+    show_grid_lines:   bool = True,
+    show_trade_markers: bool = True,
+    show_crosshair:    bool = True,
+    show_range_box:    bool = True,
     height:       int   = 560,
 ) -> None:
 
@@ -98,6 +102,10 @@ def plot_grid_chart_v2(
     interval_js      = json.dumps(interval)
     date_range_js    = json.dumps(date_range_str)
     has_vol_js       = "true" if has_volume else "false"
+    show_gl_js       = "true" if show_grid_lines    else "false"
+    show_tm_js       = "true" if show_trade_markers else "false"
+    show_ch_js       = "true" if show_crosshair     else "false"
+    show_rb_js       = "true" if show_range_box     else "false"
 
     HEADER_H = 44
     chart_h  = height - HEADER_H
@@ -226,6 +234,10 @@ def plot_grid_chart_v2(
   const interval   = {interval_js};
   const dateRange  = {date_range_js};
   const hasVol     = {has_vol_js};
+  const showGL    = {show_gl_js};
+  const showTM    = {show_tm_js};
+  const showCH    = {show_ch_js};
+  const showRB    = {show_rb_js};
 
   // Marker colours — slightly darker than original
   const BUY_COLOR  = '#158A50';  // darker green
@@ -266,7 +278,7 @@ def plot_grid_chart_v2(
       vertLines: {{ color:'rgba(255,255,255,0.04)' }},
       horzLines: {{ color:'rgba(255,255,255,0.04)' }},
     }},
-    crosshair: {{ mode:LightweightCharts.CrosshairMode.Normal }},
+    crosshair: {{ mode: showCH ? LightweightCharts.CrosshairMode.Normal : LightweightCharts.CrosshairMode.Hidden }},
     rightPriceScale: {{
       borderColor: 'rgba(255,255,255,0.08)',
       scaleMargins: hasVol ? marginsOn : marginsOff,
@@ -285,18 +297,48 @@ def plot_grid_chart_v2(
   }});
   candleSeries.setData(candles);
 
-  priceLines.forEach(p => candleSeries.createPriceLine({{
-    price:p, color:'rgba(100,160,255,0.35)', lineWidth:1,
-    lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:false,
-  }}));
-  if (upperPrice) candleSeries.createPriceLine({{
+  if (showGL) {{
+    priceLines.forEach(p => candleSeries.createPriceLine({{
+      price:p, color:'rgba(100,160,255,0.35)', lineWidth:1,
+      lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:false,
+    }}));
+  }}
+  if (showRB && upperPrice) candleSeries.createPriceLine({{
     price:upperPrice, color:'rgba(59,130,246,0.9)', lineWidth:2,
     lineStyle:LightweightCharts.LineStyle.Solid, axisLabelVisible:true, title:'Upper',
   }});
-  if (lowerPrice) candleSeries.createPriceLine({{
+  if (showRB && lowerPrice) candleSeries.createPriceLine({{
     price:lowerPrice, color:'rgba(59,130,246,0.9)', lineWidth:2,
     lineStyle:LightweightCharts.LineStyle.Solid, axisLabelVisible:true, title:'Lower',
   }});
+
+  // Range-Box als getönte Fläche zwischen Lower und Upper
+  if (showRB && upperPrice && lowerPrice && candles.length > 0) {{
+    const rangeUpperData = candles.map(c => ({{ time: c.time, value: upperPrice }}));
+    const rangeLowerData = candles.map(c => ({{ time: c.time, value: lowerPrice }}));
+
+    const rangeUpperSeries = chart.addAreaSeries({{
+      topColor:    'rgba(59,130,246,0.10)',
+      bottomColor: 'rgba(59,130,246,0.00)',
+      lineColor:   'rgba(0,0,0,0)',
+      lineWidth:   0,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    }});
+    rangeUpperSeries.setData(rangeUpperData);
+
+    const rangeLowerSeries = chart.addAreaSeries({{
+      topColor:    'rgba(15,17,23,1.00)',
+      bottomColor: 'rgba(15,17,23,1.00)',
+      lineColor:   'rgba(0,0,0,0)',
+      lineWidth:   0,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    }});
+    rangeLowerSeries.setData(rangeLowerData);
+  }}
   chart.timeScale().fitContent();
 
   // ── Volume ────────────────────────────────────────────────
@@ -315,7 +357,7 @@ def plot_grid_chart_v2(
 
   function drawMarkers() {{
     overlay.innerHTML = '';
-    if (allMarkers.length === 0) return;
+    if (!showTM || allMarkers.length === 0) return;
 
     allMarkers.forEach(m => {{
       const x = chart.timeScale().timeToCoordinate(m.time);

@@ -885,6 +885,22 @@ def _show_bot_detail(bot: dict):
     roi       = metrics.get("roi_pct", 0) or 0
     color     = "#34D399" if roi >= 0 else "#F87171"
 
+    # Chart-Einstellungen Sidebar (nur in Bot-Detailansicht)
+    st.sidebar.markdown(_label("Chart Einstellungen"), unsafe_allow_html=True)
+    st.sidebar.markdown(_caption("Einfach"), unsafe_allow_html=True)
+    show_volume        = st.sidebar.checkbox("Volumen anzeigen",      value=True, key="pt_det_show_vol")
+    show_range_box     = st.sidebar.checkbox("Range-Box anzeigen",    value=True, key="pt_det_show_range_box")
+    show_grid_lines    = st.sidebar.checkbox("Grid-Linien anzeigen",  value=True, key="pt_det_show_grid_lines")
+    show_trade_markers = st.sidebar.checkbox("Trade-Marker anzeigen", value=True, key="pt_det_show_trade_markers")
+    show_crosshair     = st.sidebar.checkbox("Crosshair (Fadenkreuz)",value=True, key="pt_det_show_crosshair")
+    st.sidebar.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+    st.sidebar.markdown(_caption("Erweitert"), unsafe_allow_html=True)
+    st.sidebar.checkbox("Drawdown-Bereich",       value=False, key="pt_det_show_dd_area",  help="Wird in Phase 2 aktiv")
+    st.sidebar.checkbox("Stop-Loss Trigger",      value=False, key="pt_det_show_sl_trig",  help="Wird in Phase 2 aktiv")
+    st.sidebar.checkbox("Trailing-Verlauf",       value=False, key="pt_det_show_tr_path",  help="Wird in Phase 2 aktiv")
+    st.sidebar.checkbox("Recentering-Marker",     value=False, key="pt_det_show_rc_mark",  help="Wird in Phase 2 aktiv")
+
+
     name = bot.get("name", f"{bot['coin']}/USDT")
     st.markdown(
         f"<div style='margin-bottom:8px;'>"
@@ -1030,9 +1046,13 @@ def _show_bot_detail(bot: dict):
                     trade_log   = tl_display,
                     interval    = bot["interval"],
                     coin        = bot["coin"],
-                    show_volume = True,
+                    show_volume = show_volume,
                     upper_price = float(gc.grid_lines[-1]) if gc and gc.grid_lines else float(cfg["upper_price"]),
                     lower_price = float(gc.grid_lines[0])  if gc and gc.grid_lines else float(cfg["lower_price"]),
+                    show_grid_lines    = show_grid_lines,
+                    show_trade_markers = show_trade_markers,
+                    show_crosshair     = show_crosshair,
+                    show_range_box     = show_range_box,
                 )
             else:
                 st.info("Keine Chart-Daten verfügbar.")
