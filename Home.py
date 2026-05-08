@@ -75,7 +75,6 @@ PAGES = {
     "🔍  Coin Scanner":   "scanner",
     "📄  Paper Trading":  "paper_trading",
     "🔴  Live Trading":   "live_trading",
-    "🧪  Chart V2 Test":  "chart_test",
 }
 
 if "nav_redirect" in st.session_state:
@@ -117,7 +116,3 @@ elif page == "paper_trading":
 elif page == "live_trading":
     from pages.page_live_trading import show_live_trading
     show_live_trading()
-
-elif page == "chart_test":
-    from pages.page_chart_test import show_chart_test
-    show_chart_test()
