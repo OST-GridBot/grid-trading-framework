@@ -228,10 +228,29 @@ def calculate_all_metrics(
     final_price:      float,
     fees_paid:        float,
     num_days:         float,
+    num_grids:        Optional[int]   = None,
+    current_price:    Optional[float] = None,
+    open_buys:        Optional[list]  = None,
+    start_time                         = None,
+    fee_rate:         float           = 0.001,
 ) -> dict:
     """
     Berechnet alle Kennzahlen auf einmal.
     Einheitlicher Einstiegspunkt fuer alle Betriebsmodi.
+
+    Pflicht-Felder (immer im Resultat):
+        roi_pct, cagr_pct, sharpe_ratio, sortino_ratio, calmar_ratio,
+        profit_factor, win_rate_pct, max_drawdown_pct, max_drawdown_usdt,
+        current_drawdown_pct, fee_impact_pct, benchmark_roi_pct,
+        outperformance_pct, kelly_fraction, avg_trade_duration_h,
+        avg_profit_per_trade, num_trades, fees_paid, initial_investment,
+        final_value
+
+    Optional-Felder (nur wenn entsprechender Parameter uebergeben):
+        grid_efficiency : wenn num_grids gesetzt
+        current_price   : wenn current_price gesetzt
+        unrealized_pnl  : wenn open_buys + current_price gesetzt
+        runtime         : wenn start_time gesetzt
     """
     roi    = calculate_roi(initial_value, final_value)
     cagr   = calculate_cagr(initial_value, final_value, num_days)
@@ -245,8 +264,9 @@ def calculate_all_metrics(
     bh_roi = calculate_benchmark_roi(initial_price, final_price)
     kelly  = calculate_kelly_fraction(trade_log, initial_value)
     dur    = calculate_avg_trade_duration(trade_log)
+    avg_p  = calculate_avg_profit_per_trade(trade_log)
 
-    return {
+    result = {
         "roi_pct":              roi,
         "cagr_pct":             cagr,
         "sharpe_ratio":         sharpe,
@@ -262,7 +282,28 @@ def calculate_all_metrics(
         "outperformance_pct":   round(roi - bh_roi, 4) if bh_roi is not None else None,
         "kelly_fraction":       kelly,
         "avg_trade_duration_h": dur,
+        "avg_profit_per_trade": avg_p,
+        "num_trades":           len(trade_log),
+        "fees_paid":            round(float(fees_paid), 4),
+        "initial_investment":   float(initial_value),
+        "final_value":          float(final_value),
     }
+
+    if num_grids is not None:
+        result["grid_efficiency"] = calculate_grid_efficiency(trade_log, num_grids)
+
+    if current_price is not None:
+        result["current_price"] = float(current_price)
+
+    if open_buys is not None and current_price is not None:
+        result["unrealized_pnl"] = calculate_unrealized_pnl(
+            open_buys, current_price, fee_rate
+        )
+
+    if start_time is not None:
+        result["runtime"] = calculate_runtime(start_time)
+
+    return result
 
 
 # ---------------------------------------------------------------------------
