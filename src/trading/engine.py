@@ -20,11 +20,7 @@ from config.settings import DEFAULT_FEE_RATE
 from src.data.binance_api import fetch_klines_df
 from src.strategy.grid_bot import GridBot
 from src.trading.bot_store import BotStore, store as default_store
-from src.metrics import (
-    calculate_all_metrics, calculate_grid_efficiency,
-    calculate_avg_profit_per_trade, calculate_runtime,
-    calculate_unrealized_pnl,
-)
+from src.metrics import calculate_all_metrics
 
 
 # Kerzen pro Intervall fuer den initialen Abruf
@@ -159,10 +155,23 @@ class BotRunner:
         initial_val  = cfg["total_investment"]
         final_val    = self._grid_bot.get_portfolio_value(current_price)
 
+        # Offene Positionen direkt aus dem FIFO-Inventar (statt Trade-Log mit
+        # nicht-gesetztem matched-Flag zu filtern, was vorher alle BUYs als
+        # "offen" markiert hat).
         open_buys = [
-            t for t in trade_log
-            if t.get("type") == "BUY" and not t.get("matched", False)
+            {"price": float(p), "amount": float(a), "fee": 0.0}
+            for (a, p, _ts) in self._grid_bot.coin_inventory
         ]
+
+        # Echte Laufzeit in Tagen (statt grobe Approximation ueber daily_values)
+        try:
+            created_at = pd.to_datetime(self._bot["created_at"])
+            now_utc    = pd.Timestamp.now(tz="UTC")
+            if created_at.tzinfo is None:
+                created_at = created_at.tz_localize("UTC")
+            num_days = max(0.0, (now_utc - created_at).total_seconds() / 86400.0)
+        except Exception:
+            num_days = max(1.0, len(daily_values))
 
         metrics = {}
         try:
@@ -174,14 +183,13 @@ class BotRunner:
                 initial_price = self._grid_bot.initial_price or current_price,
                 final_price   = current_price,
                 fees_paid     = sum(t.get("fee", 0) for t in trade_log),
-                num_days      = max(1, len(daily_values)),
+                num_days      = num_days,
+                num_grids     = cfg["num_grids"],
+                current_price = current_price,
+                open_buys     = open_buys,
+                start_time    = self._bot["created_at"],
+                fee_rate      = cfg.get("fee_rate", 0.001),
             )
-            metrics["grid_efficiency"]      = calculate_grid_efficiency(trade_log, cfg["num_grids"])
-            metrics["avg_profit_per_trade"] = calculate_avg_profit_per_trade(trade_log)
-            metrics["runtime"]              = calculate_runtime(self._bot["created_at"])
-            metrics["unrealized_pnl"]       = calculate_unrealized_pnl(open_buys, current_price)
-            metrics["current_price"]        = current_price
-            metrics["final_value"]          = final_val
         except Exception as e:
             print(f"BotRunner: Metrik-Fehler: {e}")
 

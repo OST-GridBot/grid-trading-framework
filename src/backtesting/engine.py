@@ -27,8 +27,13 @@ from config.settings import (
 from src.data.cache_manager import get_price_data
 from src.strategy.grid_bot import simulate_grid_bot
 from src.strategy.grid_builder import build_grid_config, suggest_grid_range, validate_grid_config
-from src.metrics import calculate_drawdown, calculate_kelly_fraction
-from src.metrics import calculate_position_size
+from src.metrics import (
+    calculate_all_metrics,
+    calculate_drawdown,
+    calculate_kelly_fraction,
+    calculate_position_size,
+    get_num_days,
+)
 from src.analysis.indicators import get_adx_value, get_atr_stats, calculate_volatility
 from src.analysis.regime import detect_regime
 
@@ -140,14 +145,23 @@ def run_backtest(
     if sim.get("error"):
         return _error_result(sim["error"])
 
-    # --- Kennzahlen berechnen ---
-    metrics = calculate_metrics(sim, df, total_investment, interval)
+    # --- Kennzahlen (Standard-Schema aus src/metrics.py) ---
+    num_days_real = get_num_days(df, interval)
+    metrics = calculate_all_metrics(
+        trade_log     = sim["trade_log"],
+        daily_values  = sim["daily_values"],
+        initial_value = total_investment,
+        final_value   = sim["final_value"],
+        initial_price = sim["initial_price"],
+        final_price   = sim["final_price"],
+        fees_paid     = sim["fees_paid"],
+        num_days      = num_days_real,
+        num_grids     = num_grids,
+    )
 
     # --- Risiko bewerten ---
-    dd     = calculate_drawdown(sim["daily_values"])
-    kelly  = calculate_kelly_fraction(sim["trade_log"], total_investment)
     _, atr_pct = get_atr_stats(df)
-    pos    = calculate_position_size(total_investment, atr_pct)
+    pos        = calculate_position_size(total_investment, atr_pct)
 
     # --- Marktregime ---
     regime = detect_regime(df, interval)
@@ -155,161 +169,46 @@ def run_backtest(
     # --- Grid-Konfiguration ---
     grid_cfg = build_grid_config(lower_price, upper_price, num_grids, grid_mode, fee_rate)
 
-    return {
-        # Simulation
+    # --- Result-Dict ---
+    # Standard-Schema (Schritt B des Metriken-Refactors)
+    result = dict(metrics)
+
+    # Backtest-spezifische Felder
+    result.update({
         "coin":                coin.upper(),
         "interval":            interval,
         "days":                days,
         "from_cache":          from_cache,
-        "initial_investment":  total_investment,
-        "final_value":         sim["final_value"],
-        "profit_usdt":         sim["profit_usdt"],
-        "profit_pct":          sim["profit_pct"],
-        "fees_paid":           sim["fees_paid"],
-        "num_trades":          sim["num_trades"],
         "trade_log":           sim["trade_log"],
         "grid_lines":          sim["grid_lines"],
         "final_position":      sim["final_position"],
         "initial_price":       sim["initial_price"],
         "final_price":         sim["final_price"],
-        "price_change_pct":    sim["price_change_pct"],
         "daily_values":        sim["daily_values"],
         "recentering_count":   sim["recentering_count"],
         "trailing_count":      sim.get("trailing_count", 0),
         "stop_loss_triggered": sim["stop_loss_triggered"],
-        # Kennzahlen
-        "cagr":                metrics["cagr"],
-        "sharpe_ratio":        metrics["sharpe_ratio"],
-        "profit_factor":       metrics["profit_factor"],
-        "win_rate":            metrics["win_rate"],
-        "avg_profit_per_trade":metrics["avg_profit_per_trade"],
-        "calmar_ratio":        metrics["calmar_ratio"],
-        # Risiko
-        "max_drawdown_pct":    dd.max_drawdown_pct,
-        "max_drawdown_usdt":   dd.max_drawdown_usdt,
-        "current_drawdown":    dd.current_drawdown_pct,
-        "recovery_days":       dd.recovery_days,
-        "kelly":               kelly,
-        "position_size":       pos,
-        # Markt
+        "profit_usdt":         sim["profit_usdt"],
         "regime":              regime,
         "atr_pct":             atr_pct,
         "grid_config":         grid_cfg,
         "warnings":            warnings,
         "df":                  df,
+        "position_size":       pos,
         "error":               None,
-    }
+    })
 
+    # Rückwärtskompatible Aliase (werden in Schritt D entfernt, sobald
+    # Pages auf das Standard-Schema umgestellt sind)
+    result["profit_pct"]       = result["roi_pct"]
+    result["cagr"]             = result["cagr_pct"]
+    result["win_rate"]         = result["win_rate_pct"]
+    result["price_change_pct"] = result["benchmark_roi_pct"]
+    result["current_drawdown"] = result["current_drawdown_pct"]
+    result["kelly"]            = result["kelly_fraction"]
+    result["recovery_days"]    = calculate_drawdown(sim["daily_values"]).recovery_days
 
-def calculate_metrics(
-    sim:              dict,
-    df:               pd.DataFrame,
-    total_investment: float,
-    interval:         str,
-) -> dict:
-    """
-    Berechnet alle Backtesting-Kennzahlen (Bachelorarbeit Ziel 6).
-
-    Kennzahlen:
-        CAGR         : Compound Annual Growth Rate (annualisierte Rendite)
-        Sharpe Ratio : Risikoadjustierte Rendite (Rendite / Volatilitaet)
-        Profit-Faktor: Bruttogewinn / Bruttoverlust
-        Win-Rate     : Anteil profitabler Trades in %
-
-    Args:
-        sim             : Ergebnis von simulate_grid_bot()
-        df              : OHLCV-DataFrame
-        total_investment: Startkapital
-        interval        : Kerzen-Intervall
-
-    Returns:
-        Dictionary mit allen Kennzahlen
-    """
-    trade_log    = sim.get("trade_log", [])
-    daily_values = sim.get("daily_values", {})
-    final_value  = sim.get("final_value", total_investment)
-
-    # CAGR berechnen
-    num_days = len(df)
-    cagr     = _calculate_cagr(total_investment, final_value, num_days, interval)
-
-    # Sharpe Ratio
-    sharpe = _calculate_sharpe(daily_values)
-
-    # Profit-Faktor
-    sell_trades   = [t for t in trade_log if t.get("type") == "SELL"]
-    gross_profit  = sum(t["profit"] for t in sell_trades if t["profit"] > 0)
-    gross_loss    = abs(sum(t["profit"] for t in sell_trades if t["profit"] <= 0))
-    profit_factor = round(gross_profit / gross_loss, 4) if gross_loss > 0 else None
-
-    # Win-Rate
-    wins     = [t for t in sell_trades if t["profit"] > 0]
-    win_rate = round(len(wins) / len(sell_trades) * 100, 2) if sell_trades else None
-
-    # Durchschnittlicher Gewinn pro Trade
-    profits = [t["profit"] for t in sell_trades]
-    avg_profit = round(np.mean(profits), 4) if profits else 0.0
-
-    # Calmar Ratio: CAGR / Max Drawdown
-    from src.metrics import calculate_calmar_ratio
-    dd     = calculate_drawdown(sim.get("daily_values", {}))
-    calmar = calculate_calmar_ratio(cagr, dd.max_drawdown_pct)
-
-    return {
-        "cagr":                 cagr,
-        "sharpe_ratio":         sharpe,
-        "profit_factor":        profit_factor,
-        "win_rate":             win_rate,
-        "avg_profit_per_trade": avg_profit,
-        "calmar_ratio":         calmar,
-    }
-
-
-def _calculate_cagr(
-    initial:  float,
-    final:    float,
-    num_days: int,
-    interval: str,
-) -> Optional[float]:
-    """
-    Berechnet CAGR (Compound Annual Growth Rate).
-    Formel: CAGR = (final/initial)^(365/days) - 1
-    """
-    from config.settings import BINANCE_INTERVAL_MAP
-    interval_minutes = {
-        "1m": 1, "5m": 5, "15m": 15,
-        "1h": 60, "4h": 240, "1d": 1440,
-    }
-    mins     = interval_minutes.get(interval, 60)
-    days     = (num_days * mins) / (60 * 24)
-    if days < 1 or initial <= 0:
-        return None
-    try:
-        cagr = (final / initial) ** (365 / days) - 1
-        return round(cagr * 100, 2)
-    except Exception:
-        return None
-
-
-def _calculate_sharpe(
-    daily_values: dict,
-    risk_free_rate: float = 0.04,
-) -> Optional[float]:
-    """
-    Berechnet die Sharpe Ratio.
-    Formel: Sharpe = (Rendite - risikofreier Zins) / Standardabweichung
-    Risikofreier Zins: 4% p.a. (Standard US-Staatsanleihe)
-    """
-    if len(daily_values) < 2:
-        return None
-    series  = pd.Series(daily_values).sort_index()
-    returns = series.pct_change().dropna()
-    if returns.std() == 0:
-        return None
-    daily_rf    = risk_free_rate / 365
-    excess      = returns - daily_rf
-    sharpe      = (excess.mean() / returns.std()) * np.sqrt(365)
-    return round(float(sharpe), 4)
+    return result
 
 
 def run_multi_coin_backtest(
@@ -386,15 +285,62 @@ def run_multi_coin_backtest(
 
 
 def _error_result(message: str) -> dict:
-    """Gibt ein leeres Fehler-Ergebnis-Dictionary zurueck."""
+    """
+    Gibt ein leeres Fehler-Ergebnis-Dictionary zurueck.
+    Hat dasselbe Schluesselschema wie das Erfolgs-Result, damit Aufrufer
+    keine fehlenden Schluessel behandeln muessen.
+    """
     return {
-        "coin": "", "interval": "", "days": 0,
-        "initial_investment": 0.0, "final_value": 0.0,
-        "profit_usdt": 0.0, "profit_pct": 0.0,
-        "fees_paid": 0.0, "num_trades": 0,
-        "trade_log": [], "grid_lines": [],
-        "cagr": None, "sharpe_ratio": None,
-        "profit_factor": None, "win_rate": None,
-        "max_drawdown_pct": 0.0, "regime": None,
-        "error": message,
+        # Standard-Schema (calculate_all_metrics)
+        "roi_pct":              0.0,
+        "cagr_pct":             None,
+        "sharpe_ratio":         None,
+        "sortino_ratio":        None,
+        "calmar_ratio":         None,
+        "profit_factor":        None,
+        "win_rate_pct":         None,
+        "max_drawdown_pct":     0.0,
+        "max_drawdown_usdt":    0.0,
+        "current_drawdown_pct": 0.0,
+        "fee_impact_pct":       None,
+        "benchmark_roi_pct":    None,
+        "outperformance_pct":   None,
+        "kelly_fraction":       None,
+        "avg_trade_duration_h": None,
+        "avg_profit_per_trade": None,
+        "num_trades":           0,
+        "fees_paid":            0.0,
+        "initial_investment":   0.0,
+        "final_value":          0.0,
+        "grid_efficiency":      None,
+        # Backtest-spezifisch
+        "coin":                 "",
+        "interval":             "",
+        "days":                 0,
+        "from_cache":           False,
+        "trade_log":            [],
+        "grid_lines":           [],
+        "final_position":       {"usdt": 0.0, "coin": 0.0},
+        "initial_price":        0.0,
+        "final_price":          0.0,
+        "daily_values":         {},
+        "recentering_count":    0,
+        "trailing_count":       0,
+        "stop_loss_triggered":  False,
+        "profit_usdt":          0.0,
+        "regime":               None,
+        "atr_pct":              0.0,
+        "grid_config":          None,
+        "warnings":             [],
+        "df":                   None,
+        "position_size":        None,
+        # Rueckwaertskompatible Aliase (werden in Schritt D entfernt)
+        "profit_pct":           0.0,
+        "cagr":                 None,
+        "win_rate":             None,
+        "price_change_pct":     None,
+        "current_drawdown":     0.0,
+        "kelly":                None,
+        "recovery_days":        0,
+        "error":                message,
     }
