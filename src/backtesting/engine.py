@@ -32,7 +32,10 @@ from src.analysis.metrics import (
     calculate_position_size,
     get_num_days,
 )
-from src.analysis.indicators import get_atr_stats
+from src.analysis.indicators import (
+    get_atr_stats, get_adx_value, calculate_volatility,
+    calculate_return_stats, get_price_extremes,
+)
 from src.analysis.regime import detect_regime
 
 
@@ -145,21 +148,31 @@ def run_backtest(
 
     # --- Kennzahlen (Standard-Schema aus src/analysis/metrics.py) ---
     num_days_real = get_num_days(df, interval)
+    has_dynamic_capital = enable_variable_orders or enable_dd_throttle
     metrics = calculate_all_metrics(
-        trade_log     = sim["trade_log"],
-        daily_values  = sim["daily_values"],
-        initial_value = total_investment,
-        final_value   = sim["final_value"],
-        initial_price = sim["initial_price"],
-        final_price   = sim["final_price"],
-        fees_paid     = sim["fees_paid"],
-        num_days      = num_days_real,
-        num_grids     = num_grids,
+        trade_log           = sim["trade_log"],
+        daily_values        = sim["daily_values"],
+        initial_value       = total_investment,
+        final_value         = sim["final_value"],
+        initial_price       = sim["initial_price"],
+        final_price         = sim["final_price"],
+        fees_paid           = sim["fees_paid"],
+        num_days            = num_days_real,
+        num_grids           = num_grids,
+        current_price       = sim["final_price"],
+        has_dynamic_capital = has_dynamic_capital,
     )
 
     # --- Risiko bewerten ---
-    _, atr_pct = get_atr_stats(df)
-    pos        = calculate_position_size(total_investment, atr_pct)
+    atr_usdt, atr_pct = get_atr_stats(df)
+    pos               = calculate_position_size(total_investment, atr_pct)
+
+    # --- Indikatoren (fuer Tab "Indikatoren") ---
+    vola_monthly, vola_yearly = calculate_volatility(df, interval)
+    return_stats   = calculate_return_stats(df)
+    price_extremes = get_price_extremes(df)
+    adx14 = get_adx_value(df, period=14)
+    adx30 = get_adx_value(df, period=30)
 
     # --- Marktregime ---
     regime = detect_regime(df, interval)
@@ -188,7 +201,15 @@ def run_backtest(
         "stop_loss_triggered": sim["stop_loss_triggered"],
         "profit_usdt":         sim["profit_usdt"],
         "regime":              regime,
+        # Indikatoren / Marktdaten (Tabs "Marktdaten" und "Indikatoren")
+        "atr_usdt":            atr_usdt,
         "atr_pct":             atr_pct,
+        "adx14":               adx14,
+        "adx30":               adx30,
+        "vola_monthly_pct":    vola_monthly,
+        "vola_yearly_pct":     vola_yearly,
+        "return_stats":        return_stats,
+        "price_extremes":      price_extremes,
         "grid_config":         grid_cfg,
         "warnings":            warnings,
         "df":                  df,
@@ -315,7 +336,14 @@ def _error_result(message: str) -> dict:
         "stop_loss_triggered":  False,
         "profit_usdt":          0.0,
         "regime":               None,
+        "atr_usdt":             0.0,
         "atr_pct":              0.0,
+        "adx14":                0.0,
+        "adx30":                0.0,
+        "vola_monthly_pct":     None,
+        "vola_yearly_pct":      None,
+        "return_stats":         {"avg_pct": None, "mad_pct": None, "std_pct": None},
+        "price_extremes":       {"max_price": 0.0, "min_price": 0.0, "range_usdt": 0.0, "range_pct": 0.0},
         "grid_config":          None,
         "warnings":             [],
         "df":                   None,

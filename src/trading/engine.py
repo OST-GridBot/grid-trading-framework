@@ -142,8 +142,17 @@ class BotRunner:
 
     # ── State speichern ──────────────────────────────────────────────────────
 
-    def _save_state(self, current_price: float) -> None:
-        """Speichert aktuellen Bot-State und Metriken in den BotStore."""
+    def _save_state(self, current_price: float, df: Optional[pd.DataFrame] = None) -> None:
+        """
+        Speichert aktuellen Bot-State und Metriken in den BotStore.
+
+        Args:
+            current_price: Aktueller Marktpreis
+            df           : Optional. Wenn gegeben, werden Indikatoren
+                           (ADX/ATR/Vola, Markt-Stats, Returns) berechnet
+                           und ins metrics-Dict gepackt. Nur am Ende eines
+                           Updates uebergeben (run_update), nicht pro Kerze.
+        """
         if self._grid_bot is None:
             return
 
@@ -173,25 +182,51 @@ class BotRunner:
         except Exception:
             num_days = max(1.0, len(daily_values))
 
+        has_dynamic_capital = (
+            cfg.get("enable_variable_orders", False) or
+            cfg.get("enable_dd_throttle", False)
+        )
+
         metrics = {}
         try:
             metrics = calculate_all_metrics(
-                trade_log     = trade_log,
-                daily_values  = daily_values,
-                initial_value = initial_val,
-                final_value   = final_val,
-                initial_price = self._grid_bot.initial_price or current_price,
-                final_price   = current_price,
-                fees_paid     = sum(t.get("fee", 0) for t in trade_log),
-                num_days      = num_days,
-                num_grids     = cfg["num_grids"],
-                current_price = current_price,
-                open_buys     = open_buys,
-                start_time    = self._bot["created_at"],
-                fee_rate      = cfg.get("fee_rate", 0.001),
+                trade_log           = trade_log,
+                daily_values        = daily_values,
+                initial_value       = initial_val,
+                final_value         = final_val,
+                initial_price       = self._grid_bot.initial_price or current_price,
+                final_price         = current_price,
+                fees_paid           = sum(t.get("fee", 0) for t in trade_log),
+                num_days            = num_days,
+                num_grids           = cfg["num_grids"],
+                current_price       = current_price,
+                open_buys           = open_buys,
+                start_time          = self._bot["created_at"],
+                fee_rate            = cfg.get("fee_rate", 0.001),
+                has_dynamic_capital = has_dynamic_capital,
             )
         except Exception as e:
             print(f"BotRunner: Metrik-Fehler: {e}")
+
+        # Indikatoren / Marktdaten — nur wenn df gegeben (am Ende von run_update)
+        if df is not None and not df.empty:
+            try:
+                from src.analysis.indicators import (
+                    get_atr_stats, get_adx_value, calculate_volatility,
+                    calculate_return_stats, get_price_extremes,
+                )
+                atr_usdt, atr_pct = get_atr_stats(df)
+                vola_m, vola_y    = calculate_volatility(df, self._bot["interval"])
+                metrics["atr_usdt"]         = atr_usdt
+                metrics["atr_pct"]          = atr_pct
+                metrics["adx14"]            = get_adx_value(df, period=14)
+                metrics["adx30"]            = get_adx_value(df, period=30)
+                metrics["vola_monthly_pct"] = vola_m
+                metrics["vola_yearly_pct"]  = vola_y
+                metrics["return_stats"]     = calculate_return_stats(df)
+                metrics["price_extremes"]   = get_price_extremes(df)
+            except Exception as e:
+                print(f"BotRunner: Indikator-Fehler: {e}")
 
         # Timestamps serialisierbar machen (pd.Timestamp → str)
         def _serialize(obj):
@@ -299,6 +334,11 @@ class BotRunner:
             candles_processed = 1
 
         current_price = float(df["close"].iloc[-1])
+
+        # Indikatoren-Update am Ende: einmaliger Save mit df, damit ADX/ATR/
+        # Vola/Returns/Marktdaten-Extremes ins metrics-Dict landen
+        if not df.empty:
+            self._save_state(current_price, df=df)
         return {
             "error":             None,
             "current_price":     current_price,
