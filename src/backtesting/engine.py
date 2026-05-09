@@ -196,9 +196,6 @@ def run_backtest(
         "error":               None,
     })
 
-    # Drawdown-Recovery-Days separat (nicht im Standard-Schema)
-    result["recovery_days"] = calculate_drawdown(sim["daily_values"]).recovery_days
-
     return result
 
 
@@ -325,6 +322,5 @@ def _error_result(message: str) -> dict:
         "warnings":             [],
         "df":                   None,
         "position_size":        None,
-        "recovery_days":        0,
         "error":                message,
     }

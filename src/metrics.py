@@ -20,6 +20,7 @@ Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Optional
 
 
@@ -32,14 +33,14 @@ class DrawdownResult:
     max_drawdown_pct:     float
     max_drawdown_usdt:    float
     current_drawdown_pct: float
-    recovery_days:        int
 
 
 def calculate_drawdown(daily_values: dict) -> DrawdownResult:
     """Max Drawdown aus täglichen Portfolio-Werten."""
     if not daily_values or len(daily_values) < 2:
-        return DrawdownResult(0.0, 0.0, 0.0, 0)
-    values = list(daily_values.values())
+        return DrawdownResult(0.0, 0.0, 0.0)
+    # Chronologisch sortieren (Bot-State aus JSON ist nicht garantiert geordnet)
+    values = pd.Series(daily_values).sort_index().tolist()
     peak = values[0]
     max_dd_pct = 0.0
     max_dd_usdt = 0.0
@@ -55,7 +56,6 @@ def calculate_drawdown(daily_values: dict) -> DrawdownResult:
         max_drawdown_pct     = round(max_dd_pct,  4),
         max_drawdown_usdt    = round(max_dd_usdt, 2),
         current_drawdown_pct = round(current_dd,  4),
-        recovery_days        = 0,
     )
 
 
@@ -166,21 +166,44 @@ def calculate_fee_impact(trade_log: list, fees_paid: float) -> Optional[float]:
 
 
 def calculate_avg_trade_duration(trade_log: list) -> Optional[float]:
-    """Durchschnittliche Trade-Dauer in Stunden (BUY → SELL)."""
-    buys  = [t for t in trade_log if t.get("type") == "BUY"]
-    sells = [t for t in trade_log if t.get("type") == "SELL"]
-    pairs = min(len(buys), len(sells))
-    if pairs == 0:
+    """Durchschnittliche Trade-Dauer in Stunden (BUY → matched SELL).
+
+    Matcht jeden SELL mit dem aeltesten offenen BUY, dessen Preis unter
+    dem SELL-Preis liegt — dieselbe FIFO-Logik wie im GridBot.
+    """
+    if not trade_log:
         return None
+
+    # Chronologisch verarbeiten (trade_log kann ungeordnet sein)
+    sorted_trades = sorted(
+        trade_log,
+        key=lambda t: pd.to_datetime(t.get("timestamp"))
+    )
+
+    open_buys: list = []  # FIFO-Queue offener BUY-Trades
     durations = []
-    for i in range(pairs):
-        try:
-            diff = (pd.to_datetime(sells[i]["timestamp"]) -
-                    pd.to_datetime(buys[i]["timestamp"])).total_seconds() / 3600
-            if diff >= 0:
-                durations.append(diff)
-        except Exception:
-            continue
+    for t in sorted_trades:
+        ttype = str(t.get("type", "")).upper()
+        if "BUY" in ttype:
+            open_buys.append(t)
+        elif "SELL" in ttype:
+            sell_price = float(t.get("price", 0))
+            matched_idx = None
+            for i, b in enumerate(open_buys):
+                if float(b.get("price", 0)) < sell_price - 1e-8:
+                    matched_idx = i
+                    break
+            if matched_idx is None:
+                continue
+            buy = open_buys.pop(matched_idx)
+            try:
+                diff = (pd.to_datetime(t["timestamp"]) -
+                        pd.to_datetime(buy["timestamp"])).total_seconds() / 3600
+                if diff >= 0:
+                    durations.append(diff)
+            except Exception:
+                continue
+
     return round(float(np.mean(durations)), 2) if durations else None
 
 
@@ -194,10 +217,7 @@ def calculate_benchmark_roi(
     return round((final_price - initial_price) / initial_price * 100, 4)
 
 
-def calculate_kelly_fraction(
-    trade_log:        list,
-    total_investment: float,
-) -> Optional[float]:
+def calculate_kelly_fraction(trade_log: list) -> Optional[float]:
     """Kelly-Kriterium fuer optimale Positionsgrösse."""
     sells = [t for t in trade_log if t.get("type") == "SELL"]
     if not sells:
@@ -262,7 +282,7 @@ def calculate_all_metrics(
     wr     = calculate_win_rate(trade_log)
     fee_imp= calculate_fee_impact(trade_log, fees_paid)
     bh_roi = calculate_benchmark_roi(initial_price, final_price)
-    kelly  = calculate_kelly_fraction(trade_log, initial_value)
+    kelly  = calculate_kelly_fraction(trade_log)
     dur    = calculate_avg_trade_duration(trade_log)
     avg_p  = calculate_avg_profit_per_trade(trade_log)
 
@@ -316,36 +336,6 @@ def get_num_days(df, interval: str) -> float:
     return (len(df) * mins) / (60 * 24)
 
 
-def calculate_benchmark(sim: dict, total_investment: float) -> dict:
-    """Vergleicht Grid-Bot mit Buy-and-Hold."""
-    initial_price = sim.get("initial_price", 0)
-    final_price   = sim.get("final_price",   0)
-    bot_roi       = sim.get("profit_pct",    0)
-    if initial_price <= 0:
-        return {"bh_roi": None, "outperformance": None}
-    bh_roi = round((final_price - initial_price) / initial_price * 100, 4)
-    return {
-        "bh_roi":         bh_roi,
-        "outperformance": round(bot_roi - bh_roi, 4),
-    }
-
-
-def format_metrics_summary(metrics: dict) -> str:
-    """Formatiert alle Kennzahlen als lesbaren Text."""
-    sep = "=" * 45
-    return "\n".join([
-        sep, "  KENNZAHLEN", sep,
-        f"  ROI              : {metrics.get('roi_pct', 0):>10.2f} %",
-        f"  CAGR             : {metrics.get('cagr_pct') or 0:>10.2f} %",
-        f"  Sharpe Ratio     : {metrics.get('sharpe_ratio') or 0:>10.4f}",
-        f"  Calmar Ratio     : {metrics.get('calmar_ratio') or 0:>10.4f}",
-        f"  Profit-Faktor    : {metrics.get('profit_factor') or 0:>10.4f}",
-        f"  Win-Rate         : {metrics.get('win_rate_pct') or 0:>10.2f} %",
-        f"  Max Drawdown     : {metrics.get('max_drawdown_pct', 0):>10.2f} %",
-        sep,
-    ])
-
-
 # ---------------------------------------------------------------------------
 # Zusätzliche Grid-Bot Metriken
 # ---------------------------------------------------------------------------
@@ -360,8 +350,13 @@ def calculate_grid_efficiency(trade_log: list, num_grids: int) -> Optional[float
     sells = [t for t in trade_log if t.get("type") == "SELL"]
     if not sells:
         return None
-    # Einzigartige Preise der Trades = aktive Grid-Levels
-    unique_prices = set(round(t.get("price", 0), 2) for t in trade_log if t.get("price", 0) > 0)
+    # Einzigartige Preise der Trades = aktive Grid-Levels.
+    # Vergleich ueber 6 signifikante Stellen statt 2 Dezimalstellen, sonst
+    # kollabieren niedrigpreisige Coins (SHIB ~0.000023) auf einen Wert.
+    unique_prices = set(
+        f"{t.get('price', 0):.6g}"
+        for t in trade_log if t.get("price", 0) > 0
+    )
     active_levels = len(unique_prices)
     efficiency = min(active_levels / num_grids * 100, 100.0)
     return round(efficiency, 2)
@@ -389,8 +384,6 @@ def calculate_runtime(start_time) -> dict:
     Returns:
         dict mit hours, days, formatted string
     """
-    import pandas as pd
-    from datetime import datetime, timezone
     try:
         if isinstance(start_time, str):
             start_dt = pd.to_datetime(start_time).to_pydatetime()

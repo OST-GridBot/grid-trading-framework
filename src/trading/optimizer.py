@@ -73,6 +73,7 @@ def smart_grid_setup(
     total_investment: float = 10_000.0,
     fee_rate:         float = DEFAULT_FEE_RATE,
     objective:        str   = "maximize_roi",
+    interval:         str   = "1h",
 ):
     """
     SmartGridSetup für Live/Paper Trading.
@@ -112,7 +113,7 @@ def smart_grid_setup(
         dd_options   = [False]
         vo_options   = [False]
 
-    num_days = get_num_days(df, "1h")
+    num_days = get_num_days(df, interval)
 
     best_score = -float("inf")
     best_cfg   = None

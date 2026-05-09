@@ -184,6 +184,7 @@ def show_backtesting():
                     total_investment=total_investment,
                     fee_rate=DEFAULT_FEE_RATE,
                     objective=_smart_obj,
+                    interval=interval,
                 )
                 st.session_state["bt_smart_result"] = _result
                 st.session_state["bt_smart_error"]  = None
@@ -780,6 +781,7 @@ def show_backtesting():
                     fee_rate=fee_rate, grid_range=range(5, 51, 5),
                     test_recentering=True,
                     objective=objective,
+                    interval=interval,
                 )
             if opt.num_tested > 0:
                 best = opt.best_params

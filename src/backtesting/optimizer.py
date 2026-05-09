@@ -85,6 +85,7 @@ def optimize_num_grids(
     fee_rate:         float  = DEFAULT_FEE_RATE,
     grid_range:       range  = range(5, 51, 5),
     objective:        str    = "maximize_roi",
+    interval:         str    = "1h",
 ) -> OptimizationResult:
     """
     Findet die optimale Grid-Anzahl.
@@ -105,7 +106,7 @@ def optimize_num_grids(
         OptimizationResult mit bester Grid-Anzahl und allen Resultaten
     """
     results = []
-    num_days = get_num_days(df, "1h")
+    num_days = get_num_days(df, interval)
 
     for num_grids in grid_range:
         sim = simulate_grid_bot(
@@ -149,6 +150,7 @@ def optimize_full_grid_search(
     test_recentering: bool  = True,
     recenter_threshold: float = 0.05,
     objective:        str   = "maximize_sharpe",
+    interval:         str   = "1h",
 ) -> OptimizationResult:
     """
     Vollständige Multi-Parameter-Suche.
@@ -177,7 +179,7 @@ def optimize_full_grid_search(
     recenter_options = [False, True] if test_recentering else [False]
 
     results  = []
-    num_days = get_num_days(df, "1h")
+    num_days = get_num_days(df, interval)
 
     for num_grids in grid_range:
         for mode in modes:
@@ -242,6 +244,7 @@ def smart_grid_setup(
     total_investment: float = 10_000.0,
     fee_rate:         float = DEFAULT_FEE_RATE,
     objective:        str   = "maximize_roi",
+    interval:         str   = "1h",
 ):
     """
     SmartGridSetup: Findet die optimale Bot-Konfiguration je nach Optimierungsziel.
@@ -289,7 +292,7 @@ def smart_grid_setup(
         dd_options   = [False]
         vo_options   = [False]
 
-    num_days = get_num_days(df, "1h")
+    num_days = get_num_days(df, interval)
 
     best_score = -float("inf")
     best_cfg   = None
@@ -389,6 +392,7 @@ def optimize_grid_range(
     fee_rate:         float  = DEFAULT_FEE_RATE,
     range_pcts:       list   = None,
     objective:        str    = "maximize_sharpe",
+    interval:         str    = "1h",
 ) -> OptimizationResult:
     """
     Findet die optimale Grid-Range.
@@ -412,7 +416,7 @@ def optimize_grid_range(
         range_pcts = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50]
 
     results  = []
-    num_days = get_num_days(df, "1h")
+    num_days = get_num_days(df, interval)
 
     for pct in range_pcts:
         lower = current_price * (1 - pct)
@@ -457,6 +461,7 @@ def compare_grid_modes(
     num_grids:        int   = 20,
     fee_rate:         float = DEFAULT_FEE_RATE,
     objective:        str   = "maximize_sharpe",
+    interval:         str   = "1h",
 ) -> dict:
     """
     Vergleicht arithmetischen und geometrischen Grid-Modus.
@@ -473,7 +478,7 @@ def compare_grid_modes(
     Returns:
         Dictionary mit Ergebnissen beider Modi und Empfehlung
     """
-    num_days = get_num_days(df, "1h")
+    num_days = get_num_days(df, interval)
     results  = {}
 
     for mode in ["arithmetic", "geometric"]:
@@ -527,6 +532,7 @@ def grid_search(
     modes:            list   = None,
     objective:        str    = "maximize_sharpe",
     max_combinations: int    = 100,
+    interval:         str    = "1h",
 ) -> OptimizationResult:
     """
     Vollstaendige Grid-Search ueber alle Parameter.
@@ -561,7 +567,7 @@ def grid_search(
     ][:max_combinations]
 
     results  = []
-    num_days = get_num_days(df, "1h")
+    num_days = get_num_days(df, interval)
 
     print(f"Grid-Search: {len(combinations)} Kombinationen werden getestet...")
 
@@ -655,6 +661,7 @@ def optimize_by_regime(
     opt = grid_search(
         df=df, current_price=current_price,
         total_investment=total_investment, fee_rate=fee_rate,
+        interval=interval,
         grid_counts=grid_counts, range_pcts=range_pcts,
         modes=["arithmetic", "geometric"],
         objective=objective, max_combinations=50,

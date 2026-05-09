@@ -458,6 +458,7 @@ def _show_new_bot_form():
                     total_investment=total_investment,
                     fee_rate=DEFAULT_FEE_RATE,
                     objective=_smart_obj,
+                    interval=interval,
                 )
                 st.session_state["lt_smart_result"] = _result
                 st.session_state["lt_smart_error"]  = None
