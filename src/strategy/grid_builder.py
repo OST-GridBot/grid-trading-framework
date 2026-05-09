@@ -392,16 +392,7 @@ def validate_grid_config(
     except ValueError as e:
         return False, [str(e)]
 
-    grid_lines      = calculate_grid_lines(lower_price, upper_price, num_grids)
-    profit_per_grid = _calculate_profit_per_grid(grid_lines, fee_rate)
-    usdt_per_grid   = total_investment / num_grids
-
-    if profit_per_grid <= 0:
-        warnings.append(
-            f"Gewinn pro Grid negativ ({profit_per_grid:.4f}%). "
-            f"Gebuehren hoeher als Grid-Abstand – mehr Grids oder groessere Range waehlen."
-        )
-        is_valid = False
+    usdt_per_grid = total_investment / num_grids
 
     if usdt_per_grid < 10:
         warnings.append(
