@@ -97,7 +97,7 @@ def render_metrics_row(
                    ins metrics-Dict geschmuggelt — jetzt sauber als Parameter.
     """
     roi        = metrics.get("roi_pct",            0) or 0
-    sharpe     = metrics.get("sharpe_ratio",       0) or 0
+    sharpe     = metrics.get("sharpe_ratio",       None)
     max_dd     = metrics.get("max_drawdown_pct",   0) or 0
     num_trades = metrics.get("num_trades",         0) or 0
     bh_roi     = metrics.get("benchmark_roi_pct",  None)
@@ -119,9 +119,9 @@ def render_metrics_row(
     with cols[1]:
         _metric_card(
             "Sharpe Ratio",
-            f"{sharpe:.2f}",
+            f"{sharpe:.2f}" if sharpe is not None else "–",
             delta = "gut ≥ 1.0",
-            color = _color_sharpe(sharpe),
+            color = _color_sharpe(sharpe or 0),
         )
     with cols[2]:
         _metric_card(

@@ -255,6 +255,74 @@ def calculate_volatility(
 
 
 # ---------------------------------------------------------------------------
+# Return-Statistiken pro Kerze
+# ---------------------------------------------------------------------------
+
+def calculate_return_stats(df: pd.DataFrame) -> dict:
+    """
+    Statistiken der prozentualen Rendite pro Kerze.
+
+    Args:
+        df: DataFrame mit Spalte [close]
+
+    Returns:
+        dict mit:
+            avg_pct: Durchschnittliche %-Rendite pro Kerze
+            mad_pct: Mean Absolute Deviation der %-Rendite
+            std_pct: Standardabweichung (= Vola pro Kerze)
+        Alle Werte None bei zu wenig Daten.
+    """
+    if "close" not in df.columns or len(df) < 2:
+        return {"avg_pct": None, "mad_pct": None, "std_pct": None}
+
+    returns = df["close"].pct_change().dropna() * 100
+    if len(returns) == 0:
+        return {"avg_pct": None, "mad_pct": None, "std_pct": None}
+
+    avg = float(returns.mean())
+    mad = float((returns - returns.mean()).abs().mean())
+    std = float(returns.std())
+    return {
+        "avg_pct": round(avg, 4),
+        "mad_pct": round(mad, 4),
+        "std_pct": round(std, 4),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Preis-Extremwerte
+# ---------------------------------------------------------------------------
+
+def get_price_extremes(df: pd.DataFrame) -> dict:
+    """
+    Max-/Min-Preis und Range im Zeitraum.
+
+    Args:
+        df: DataFrame mit Spalten [high, low]
+
+    Returns:
+        dict mit:
+            max_price : Hoechster High-Preis im Zeitraum
+            min_price : Tiefster Low-Preis im Zeitraum
+            range_usdt: Differenz max - min
+            range_pct : Range relativ zum Min-Preis (%)
+    """
+    if df is None or df.empty or "high" not in df.columns or "low" not in df.columns:
+        return {"max_price": 0.0, "min_price": 0.0, "range_usdt": 0.0, "range_pct": 0.0}
+
+    max_price = float(df["high"].max())
+    min_price = float(df["low"].min())
+    range_usdt = max_price - min_price
+    range_pct  = (range_usdt / min_price * 100) if min_price > 0 else 0.0
+    return {
+        "max_price":  round(max_price,  6),
+        "min_price":  round(min_price,  6),
+        "range_usdt": round(range_usdt, 6),
+        "range_pct":  round(range_pct,  4),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Bollinger Bands
 # ---------------------------------------------------------------------------
 

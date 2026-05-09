@@ -760,10 +760,9 @@ def show_backtesting():
         with col_obj:
             objective = st.radio(
                 "Optimierungsziel",
-                ["maximize_sharpe","maximize_roi","maximize_calmar","minimize_drawdown"],
+                ["maximize_roi","maximize_calmar","minimize_drawdown"],
                 horizontal=True,
                 format_func=lambda x: {
-                    "maximize_sharpe":   "Sharpe",
                     "maximize_roi":      "ROI",
                     "maximize_calmar":   "Calmar",
                     "minimize_drawdown": "Min. Drawdown",
@@ -800,7 +799,7 @@ def show_backtesting():
                     f"- Untere Grenze: **${best.get('lower_price', 0):,.2f}**\n"
                     f"- Obere Grenze: **${best.get('upper_price', 0):,.2f}**\n\n"
                     f"ROI: {best.get('roi_pct', 0):+.2f}% | "
-                    f"Sharpe: {best.get('sharpe', 0):.2f} | "
+                    f"Calmar: {best.get('calmar', 0):.2f} | "
                     f"Max DD: {best.get('max_dd_pct', 0):.2f}%"
                 )
                 _df_show = opt.all_results.copy()
@@ -810,10 +809,10 @@ def show_backtesting():
                 })
                 _df_show["enable_recentering"] = _df_show["enable_recentering"].map({True: "An", False: "Aus"})
                 st.dataframe(
-                    _df_show[["num_grids","grid_mode","enable_recentering","roi_pct","sharpe","max_dd_pct","num_trades","score"]
+                    _df_show[["num_grids","grid_mode","enable_recentering","roi_pct","calmar","max_dd_pct","num_trades","score"]
                     ].rename(columns={
                         "num_grids":"Grids","grid_mode":"Modus","enable_recentering":"Recenter",
-                        "roi_pct":"ROI %","sharpe":"Sharpe",
+                        "roi_pct":"ROI %","calmar":"Calmar",
                         "max_dd_pct":"Max DD %","num_trades":"Trades","score":"Score",
                     }),
                     use_container_width=True, hide_index=True,

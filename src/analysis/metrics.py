@@ -94,43 +94,25 @@ def calculate_calmar_ratio(
     return round(cagr_pct / max_drawdown_pct, 4)
 
 
-# ---------------------------------------------------------------------------
-# Risiko-adjustierte Rendite
-# ---------------------------------------------------------------------------
+def calculate_gross_pl(
+    initial_value: float,
+    final_value:   float,
+    fees_paid:     float,
+) -> dict:
+    """
+    Brutto-P/L vor Gebuehren.
 
-def calculate_sharpe_ratio(
-    daily_values:   dict,
-    risk_free_rate: float = 0.04,
-) -> Optional[float]:
-    """Sharpe = (mean_excess_return / std) * sqrt(365). Gut >= 1.0"""
-    if len(daily_values) < 2:
-        return None
-    series  = pd.Series(daily_values).sort_index()
-    returns = series.pct_change().dropna()
-    if returns.std() == 0:
-        return None
-    daily_rf = risk_free_rate / 365
-    excess   = returns - daily_rf
-    sharpe   = (excess.mean() / returns.std()) * np.sqrt(365)
-    return round(float(sharpe), 4)
-
-
-def calculate_sortino_ratio(
-    daily_values:   dict,
-    risk_free_rate: float = 0.04,
-) -> Optional[float]:
-    """Sortino = (mean_excess / downside_std) * sqrt(365). Gut >= 1.0"""
-    if len(daily_values) < 2:
-        return None
-    series   = pd.Series(daily_values).sort_index()
-    returns  = series.pct_change().dropna()
-    daily_rf = risk_free_rate / 365
-    excess   = returns - daily_rf
-    downside = excess[excess < 0]
-    if len(downside) == 0 or downside.std() == 0:
-        return None
-    sortino = (excess.mean() / downside.std()) * np.sqrt(365)
-    return round(float(sortino), 4)
+    USDT: profit_usdt + fees_paid (Gebuehren rueckgaengig machen)
+    Pct : (final + fees) / initial - 1, in %
+    """
+    if initial_value <= 0:
+        return {"usdt": 0.0, "pct": 0.0}
+    gross_usdt = (final_value - initial_value) + fees_paid
+    gross_pct  = ((final_value + fees_paid) / initial_value - 1) * 100
+    return {
+        "usdt": round(gross_usdt, 4),
+        "pct":  round(gross_pct,  4),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +199,24 @@ def calculate_benchmark_roi(
     return round((final_price - initial_price) / initial_price * 100, 4)
 
 
+def calculate_benchmark_roi_usdt(
+    initial_value: float,
+    initial_price: float,
+    final_price:   float,
+) -> Optional[float]:
+    """Buy & Hold absoluter Gewinn in USDT.
+
+    Annahme: Beim Start wird das gesamte initial_value in den Coin investiert.
+    Endwert = (initial_value / initial_price) * final_price. PnL = Endwert -
+    initial_value.
+    """
+    if initial_price <= 0 or initial_value <= 0:
+        return None
+    coin_amount = initial_value / initial_price
+    final_val   = coin_amount * final_price
+    return round(final_val - initial_value, 4)
+
+
 def calculate_kelly_fraction(trade_log: list) -> Optional[float]:
     """Kelly-Kriterium fuer optimale Positionsgrösse."""
     sells = [t for t in trade_log if t.get("type") == "SELL"]
@@ -253,64 +253,86 @@ def calculate_all_metrics(
     open_buys:        Optional[list]  = None,
     start_time                         = None,
     fee_rate:         float           = 0.001,
+    has_dynamic_capital: bool          = False,
 ) -> dict:
     """
     Berechnet alle Kennzahlen auf einmal.
     Einheitlicher Einstiegspunkt fuer alle Betriebsmodi.
 
     Pflicht-Felder (immer im Resultat):
-        roi_pct, cagr_pct, sharpe_ratio, sortino_ratio, calmar_ratio,
-        profit_factor, win_rate_pct, max_drawdown_pct, max_drawdown_usdt,
-        current_drawdown_pct, fee_impact_pct, benchmark_roi_pct,
+        roi_pct, cagr_pct, calmar_ratio, profit_factor, win_rate_pct,
+        max_drawdown_pct, max_drawdown_usdt, current_drawdown_pct,
+        fee_impact_pct, benchmark_roi_pct, benchmark_roi_usdt,
         outperformance_pct, kelly_fraction, avg_trade_duration_h,
         avg_profit_per_trade, num_trades, fees_paid, initial_investment,
-        final_value
+        final_value, gross_pl_usdt, gross_pl_pct, grid_profit_total_usdt,
+        grid_profit_total_pct
 
     Optional-Felder (nur wenn entsprechender Parameter uebergeben):
-        grid_efficiency : wenn num_grids gesetzt
-        current_price   : wenn current_price gesetzt
-        unrealized_pnl  : wenn open_buys + current_price gesetzt
-        runtime         : wenn start_time gesetzt
+        grid_efficiency, active_levels      : wenn num_grids gesetzt
+        capital_per_grid                    : wenn num_grids gesetzt
+                                              (None bei dynamischem Kapital)
+        avg_profit_per_trade_pct            : wenn capital_per_grid bekannt
+        current_price                       : wenn current_price gesetzt
+        unrealized_pnl                      : wenn open_buys + current_price gesetzt
+        runtime                             : wenn start_time gesetzt
+
+    Args:
+        has_dynamic_capital: True wenn variable Ordergroessen oder Drawdown-
+            Drosselung aktiv sind — dann ist capital_per_grid kein konstanter
+            Wert und wird als None geliefert.
     """
     roi    = calculate_roi(initial_value, final_value)
     cagr   = calculate_cagr(initial_value, final_value, num_days)
     dd     = calculate_drawdown(daily_values)
-    sharpe = calculate_sharpe_ratio(daily_values)
-    sortino= calculate_sortino_ratio(daily_values)
     calmar = calculate_calmar_ratio(cagr, dd.max_drawdown_pct)
     pf     = calculate_profit_factor(trade_log)
     wr     = calculate_win_rate(trade_log)
     fee_imp= calculate_fee_impact(trade_log, fees_paid)
     bh_roi = calculate_benchmark_roi(initial_price, final_price)
+    bh_usdt= calculate_benchmark_roi_usdt(initial_value, initial_price, final_price)
     kelly  = calculate_kelly_fraction(trade_log)
     dur    = calculate_avg_trade_duration(trade_log)
     avg_p  = calculate_avg_profit_per_trade(trade_log)
+    gross  = calculate_gross_pl(initial_value, final_value, fees_paid)
+    gprof  = calculate_grid_profit_total(trade_log, initial_value)
 
     result = {
-        "roi_pct":              roi,
-        "cagr_pct":             cagr,
-        "sharpe_ratio":         sharpe,
-        "sortino_ratio":        sortino,
-        "calmar_ratio":         calmar,
-        "profit_factor":        pf,
-        "win_rate_pct":         wr,
-        "max_drawdown_pct":     dd.max_drawdown_pct,
-        "max_drawdown_usdt":    dd.max_drawdown_usdt,
-        "current_drawdown_pct": dd.current_drawdown_pct,
-        "fee_impact_pct":       fee_imp,
-        "benchmark_roi_pct":    bh_roi,
-        "outperformance_pct":   round(roi - bh_roi, 4) if bh_roi is not None else None,
-        "kelly_fraction":       kelly,
-        "avg_trade_duration_h": dur,
-        "avg_profit_per_trade": avg_p,
-        "num_trades":           len(trade_log),
-        "fees_paid":            round(float(fees_paid), 4),
-        "initial_investment":   float(initial_value),
-        "final_value":          float(final_value),
+        "roi_pct":                roi,
+        "cagr_pct":               cagr,
+        "calmar_ratio":           calmar,
+        "profit_factor":          pf,
+        "win_rate_pct":           wr,
+        "max_drawdown_pct":       dd.max_drawdown_pct,
+        "max_drawdown_usdt":      dd.max_drawdown_usdt,
+        "current_drawdown_pct":   dd.current_drawdown_pct,
+        "fee_impact_pct":         fee_imp,
+        "benchmark_roi_pct":      bh_roi,
+        "benchmark_roi_usdt":     bh_usdt,
+        "outperformance_pct":     round(roi - bh_roi, 4) if bh_roi is not None else None,
+        "kelly_fraction":         kelly,
+        "avg_trade_duration_h":   dur,
+        "avg_profit_per_trade":   avg_p,
+        "num_trades":             len(trade_log),
+        "fees_paid":              round(float(fees_paid), 4),
+        "initial_investment":     float(initial_value),
+        "final_value":            float(final_value),
+        "gross_pl_usdt":          gross["usdt"],
+        "gross_pl_pct":           gross["pct"],
+        "grid_profit_total_usdt": gprof["usdt"],
+        "grid_profit_total_pct":  gprof["pct"],
     }
 
     if num_grids is not None:
-        result["grid_efficiency"] = calculate_grid_efficiency(trade_log, num_grids)
+        result["grid_efficiency"]  = calculate_grid_efficiency(trade_log, num_grids)
+        result["active_levels"]    = calculate_active_levels_ratio(trade_log, num_grids)
+        cap_per_grid               = calculate_capital_per_grid(
+            initial_value, num_grids, has_dynamic_capital
+        )
+        result["capital_per_grid"] = cap_per_grid
+        result["avg_profit_per_trade_pct"] = calculate_avg_profit_per_trade_pct(
+            avg_p, cap_per_grid
+        )
 
     if current_price is not None:
         result["current_price"] = float(current_price)
@@ -372,6 +394,65 @@ def calculate_avg_profit_per_trade(trade_log: list) -> Optional[float]:
         return None
     total_profit = sum(t.get("profit", 0) for t in sells)
     return round(total_profit / len(sells), 4)
+
+
+def calculate_avg_profit_per_trade_pct(
+    avg_profit_usdt:  Optional[float],
+    capital_per_grid: Optional[float],
+) -> Optional[float]:
+    """Avg Profit pro Trade in % vom Kapital pro Grid-Linie."""
+    if avg_profit_usdt is None or capital_per_grid is None or capital_per_grid <= 0:
+        return None
+    return round(avg_profit_usdt / capital_per_grid * 100, 4)
+
+
+def calculate_capital_per_grid(
+    total_investment:    float,
+    num_grids:           int,
+    has_dynamic_capital: bool,
+) -> Optional[float]:
+    """
+    Investierter Betrag pro Grid-Linie.
+
+    None wenn dynamisches Kapital aktiv (variable Ordergroessen oder
+    Drawdown-Drosselung) — dann ist der Wert nicht konstant.
+    """
+    if has_dynamic_capital or num_grids <= 0:
+        return None
+    return round(total_investment / num_grids, 4)
+
+
+def calculate_active_levels_ratio(
+    trade_log: list,
+    num_grids: int,
+) -> dict:
+    """Anzahl aktiv gehandelter Grid-Levels vs. Total."""
+    if num_grids <= 0:
+        return {"active": 0, "total": 0}
+    unique_prices = set(
+        f"{t.get('price', 0):.6g}"
+        for t in trade_log if t.get("price", 0) > 0
+    )
+    return {
+        "active": min(len(unique_prices), num_grids),
+        "total":  num_grids,
+    }
+
+
+def calculate_grid_profit_total(
+    trade_log:     list,
+    initial_value: float,
+) -> dict:
+    """Realisierter Gesamtgewinn aus geschlossenen Grid-Trades.
+
+    Summe aller SELL.profit (Profit nach Fee). Pct = total / initial * 100.
+    """
+    total = sum(t.get("profit", 0) for t in trade_log if t.get("type") == "SELL")
+    pct   = (total / initial_value * 100) if initial_value > 0 else 0.0
+    return {
+        "usdt": round(total, 4),
+        "pct":  round(pct,   4),
+    }
 
 
 def calculate_runtime(start_time) -> dict:

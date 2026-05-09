@@ -254,7 +254,7 @@ def run_multi_coin_backtest(
                     "Coin":          coin.upper(),
                     "ROI_%":         round(result["roi_pct"], 2),
                     "CAGR_%":        result["cagr_pct"],
-                    "Sharpe":        result["sharpe_ratio"],
+                    "Calmar":        result["calmar_ratio"],
                     "Max_DD_%":      result["max_drawdown_pct"],
                     "Trades":        result["num_trades"],
                     "Profit_Factor": result["profit_factor"],
@@ -282,8 +282,6 @@ def _error_result(message: str) -> dict:
         # Standard-Schema (calculate_all_metrics)
         "roi_pct":              0.0,
         "cagr_pct":             None,
-        "sharpe_ratio":         None,
-        "sortino_ratio":        None,
         "calmar_ratio":         None,
         "profit_factor":        None,
         "win_rate_pct":         None,

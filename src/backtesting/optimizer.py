@@ -12,7 +12,6 @@ Optimierungsarten:
 
 Optimierungsziele (waehlbar):
     - maximize_roi         : Hoechster Gewinn
-    - maximize_sharpe      : Bestes Risiko/Rendite-Verhaeltnis
     - maximize_calmar      : Beste Rendite pro Drawdown
     - minimize_drawdown    : Geringstes Risiko
 
@@ -42,7 +41,7 @@ from src.data.cache_manager import get_price_data
 from src.strategy.grid_bot import simulate_grid_bot
 from src.analysis.metrics import calculate_drawdown
 from src.analysis.metrics import (
-    calculate_roi, calculate_cagr, calculate_sharpe_ratio,
+    calculate_roi, calculate_cagr,
     calculate_calmar_ratio, calculate_profit_factor,
     calculate_win_rate, get_num_days,
 )
@@ -125,7 +124,7 @@ def optimize_num_grids(
         results.append({
             "num_grids":     num_grids,
             "roi_pct":       round(sim["profit_pct"], 4),
-            "sharpe":        calculate_sharpe_ratio(sim["daily_values"]),
+            "calmar":        calculate_calmar_ratio(calculate_cagr(total_investment, sim["final_value"], num_days), dd.max_drawdown_pct),
             "max_dd_pct":    dd.max_drawdown_pct,
             "num_trades":    sim["num_trades"],
             "fees_paid":     round(sim["fees_paid"], 2),
@@ -149,7 +148,7 @@ def optimize_full_grid_search(
     modes:            list  = None,
     test_recentering: bool  = True,
     recenter_threshold: float = 0.05,
-    objective:        str   = "maximize_sharpe",
+    objective:        str   = "maximize_roi",
     interval:         str   = "1h",
 ) -> OptimizationResult:
     """
@@ -206,7 +205,7 @@ def optimize_full_grid_search(
                     "lower_price":        round(lower_price, 4),
                     "upper_price":        round(upper_price, 4),
                     "roi_pct":            round(sim["profit_pct"], 4),
-                    "sharpe":             calculate_sharpe_ratio(sim["daily_values"]),
+                    "calmar":             calculate_calmar_ratio(calculate_cagr(total_investment, sim["final_value"], num_days), dd.max_drawdown_pct),
                     "max_dd_pct":         dd.max_drawdown_pct,
                     "num_trades":         sim["num_trades"],
                     "fees_paid":          round(sim["fees_paid"], 2),
@@ -256,7 +255,6 @@ def smart_grid_setup(
 
     Pro Ziel zusaetzlich:
         - maximize_roi:        Recentering ⊕ Trailing
-        - maximize_sharpe:     Recentering ⊕ Trailing + Variable Orders
         - maximize_calmar:     Recentering ⊕ Trailing + DD-Drosselung
         - minimize_drawdown:   Stop-Loss + DD-Drosselung (kein Recenter/Trailing)
     """
@@ -281,11 +279,6 @@ def smart_grid_setup(
         sl_options   = [None]
         dd_options   = [False, True]
         vo_options   = [False]
-    elif objective == "maximize_sharpe":
-        mech_options = [0, 1, 2]
-        sl_options   = [None]
-        dd_options   = [False]
-        vo_options   = [False, True]
     else:  # maximize_roi
         mech_options = [0, 1, 2]
         sl_options   = [None]
@@ -391,7 +384,7 @@ def optimize_grid_range(
     grid_mode:        str    = DEFAULT_GRID_MODE,
     fee_rate:         float  = DEFAULT_FEE_RATE,
     range_pcts:       list   = None,
-    objective:        str    = "maximize_sharpe",
+    objective:        str    = "maximize_roi",
     interval:         str    = "1h",
 ) -> OptimizationResult:
     """
@@ -440,7 +433,7 @@ def optimize_grid_range(
             "lower_price":   round(lower, 2),
             "upper_price":   round(upper, 2),
             "roi_pct":       round(sim["profit_pct"], 4),
-            "sharpe":        calculate_sharpe_ratio(sim["daily_values"]),
+            "calmar":        calculate_calmar_ratio(calculate_cagr(total_investment, sim["final_value"], num_days), dd.max_drawdown_pct),
             "max_dd_pct":    dd.max_drawdown_pct,
             "num_trades":    sim["num_trades"],
             "score":         score,
@@ -460,7 +453,7 @@ def compare_grid_modes(
     total_investment: float = 10_000.0,
     num_grids:        int   = 20,
     fee_rate:         float = DEFAULT_FEE_RATE,
-    objective:        str   = "maximize_sharpe",
+    objective:        str   = "maximize_roi",
     interval:         str   = "1h",
 ) -> dict:
     """
@@ -498,7 +491,7 @@ def compare_grid_modes(
         results[mode] = {
             "roi_pct":    round(sim["profit_pct"], 4),
             "cagr_pct":   cagr,
-            "sharpe":     calculate_sharpe_ratio(sim["daily_values"]),
+            "calmar":     calculate_calmar_ratio(cagr, dd.max_drawdown_pct),
             "max_dd_pct": dd.max_drawdown_pct,
             "num_trades": sim["num_trades"],
             "fees_paid":  round(sim["fees_paid"], 2),
@@ -530,7 +523,7 @@ def grid_search(
     grid_counts:      list   = None,
     range_pcts:       list   = None,
     modes:            list   = None,
-    objective:        str    = "maximize_sharpe",
+    objective:        str    = "maximize_roi",
     max_combinations: int    = 100,
     interval:         str    = "1h",
 ) -> OptimizationResult:
@@ -595,7 +588,7 @@ def grid_search(
             "lower_price": round(lower, 2),
             "upper_price": round(upper, 2),
             "roi_pct":     round(sim["profit_pct"], 4),
-            "sharpe":      calculate_sharpe_ratio(sim["daily_values"]),
+            "calmar":      calculate_calmar_ratio(calculate_cagr(total_investment, sim["final_value"], num_days), dd.max_drawdown_pct),
             "max_dd_pct":  dd.max_drawdown_pct,
             "num_trades":  sim["num_trades"],
             "fees_paid":   round(sim["fees_paid"], 2),
@@ -618,7 +611,7 @@ def optimize_by_regime(
     total_investment: float = 10_000.0,
     fee_rate:         float = DEFAULT_FEE_RATE,
     interval:         str   = "1h",
-    objective:        str   = "maximize_sharpe",
+    objective:        str   = "maximize_roi",
 ) -> dict:
     """
     Gibt optimale Parameter basierend auf dem aktuellen Marktregime zurueck.
@@ -696,9 +689,6 @@ def _calculate_score(
     if objective == "maximize_roi":
         return sim.get("profit_pct")
 
-    elif objective == "maximize_sharpe":
-        return calculate_sharpe_ratio(daily_values)
-
     elif objective == "maximize_calmar":
         cagr = calculate_cagr(total_investment, final_value, num_days)
         dd   = calculate_drawdown(daily_values)
@@ -735,7 +725,7 @@ def _build_result(
         best_params = {param_key: best_row[param_key]}
 
     # Zusaetzliche Kennzahlen in best_params aufnehmen
-    for col in ["roi_pct", "sharpe", "max_dd_pct", "num_trades"]:
+    for col in ["roi_pct", "calmar", "max_dd_pct", "num_trades"]:
         if col in best_row:
             best_params[col] = best_row[col]
 
