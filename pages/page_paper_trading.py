@@ -836,7 +836,7 @@ def _show_bots_overview(bots: list):
         trades  = len(bot.get("trade_log", []))
         runtime = metrics.get("runtime", {})
         if not isinstance(runtime, dict) or not runtime.get("formatted"):
-            from src.metrics import calculate_runtime
+            from src.analysis.metrics import calculate_runtime
             runtime = calculate_runtime(bot.get("created_at", ""))
         rt_str = runtime.get("formatted", "–") if isinstance(runtime, dict) else "–"
         color   = "#34D399" if roi >= 0 else "#F87171"

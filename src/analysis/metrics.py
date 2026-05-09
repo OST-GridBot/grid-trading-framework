@@ -1,6 +1,6 @@
 """
-src/metrics.py
-==============
+src/analysis/metrics.py
+=======================
 Zentrale Kennzahlen-Bibliothek fuer das Grid-Trading-Framework.
 
 Wird von allen Betriebsmodi verwendet:

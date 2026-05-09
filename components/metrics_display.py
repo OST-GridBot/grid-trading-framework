@@ -8,7 +8,7 @@ Enthaelt:
     render_trade_log()   -> Trade-Log als formatierte Tabelle
 
 Schicht 3 des Metriken-Refactors: liest ausschliesslich Standard-Schluessel
-aus calculate_all_metrics (src/metrics.py). Keine eigene Berechnungslogik.
+aus calculate_all_metrics (src/analysis/metrics.py). Keine eigene Berechnungslogik.
 
 Autor: Enes Eryilmaz
 Projekt: Grid-Trading-Framework (Bachelorarbeit OST)

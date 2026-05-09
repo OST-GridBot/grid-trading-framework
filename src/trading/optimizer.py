@@ -23,7 +23,7 @@ from typing import Optional
 
 from config.settings import DEFAULT_FEE_RATE
 from src.strategy.grid_bot import simulate_grid_bot
-from src.metrics import (
+from src.analysis.metrics import (
     calculate_drawdown, calculate_sharpe_ratio,
     calculate_calmar_ratio, calculate_cagr, get_num_days,
 )

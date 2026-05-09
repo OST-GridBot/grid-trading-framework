@@ -26,7 +26,7 @@ from config.settings import (
 from src.data.cache_manager import get_price_data
 from src.strategy.grid_bot import simulate_grid_bot
 from src.strategy.grid_builder import build_grid_config, validate_grid_config
-from src.metrics import (
+from src.analysis.metrics import (
     calculate_all_metrics,
     calculate_drawdown,
     calculate_position_size,
@@ -143,7 +143,7 @@ def run_backtest(
     if sim.get("error"):
         return _error_result(sim["error"])
 
-    # --- Kennzahlen (Standard-Schema aus src/metrics.py) ---
+    # --- Kennzahlen (Standard-Schema aus src/analysis/metrics.py) ---
     num_days_real = get_num_days(df, interval)
     metrics = calculate_all_metrics(
         trade_log     = sim["trade_log"],

@@ -20,7 +20,7 @@ from config.settings import DEFAULT_FEE_RATE
 from src.data.binance_api import fetch_klines_df
 from src.strategy.grid_bot import GridBot
 from src.trading.bot_store import BotStore, store as default_store
-from src.metrics import calculate_all_metrics
+from src.analysis.metrics import calculate_all_metrics
 
 
 # Kerzen pro Intervall fuer den initialen Abruf
