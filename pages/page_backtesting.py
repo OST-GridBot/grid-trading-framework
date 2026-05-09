@@ -8,7 +8,7 @@ import pandas as pd
 from datetime import date, timedelta
 
 from components.chart_v2 import plot_grid_chart_v2
-from components.metrics_display import render_metrics_row, render_trade_log
+from components.metrics_display import render_metrics_tabs, render_trade_log
 
 from src.backtesting.engine import run_backtest
 from src.backtesting.optimizer import optimize_num_grids, optimize_full_grid_search, smart_grid_setup
@@ -698,9 +698,8 @@ def show_backtesting():
     if result and not result.get("error"):
         # Schicht 2 (run_backtest) liefert das Standard-Schluesselschema —
         # die Page reicht es direkt an Schicht 3 weiter, ohne Umbau.
-        render_metrics_row(
+        render_metrics_tabs(
             result,
-            mode      = "backtest",
             trade_log = result.get("trade_log", []),
         )
         st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)

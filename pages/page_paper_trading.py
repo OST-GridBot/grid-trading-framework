@@ -959,7 +959,7 @@ def _show_bot_detail(bot: dict):
 
     st.divider()
 
-    from components.metrics_display import render_metrics_row
+    from components.metrics_display import render_metrics_tabs
 
     # Bot-State enthaelt das Standard-Schluesselschema bereits in bot["metrics"].
     # Felder die nicht aus calculate_all_metrics kommen (Startkapital, Fees aus
@@ -968,7 +968,7 @@ def _show_bot_detail(bot: dict):
     bot_metrics.setdefault("initial_investment", cfg.get("total_investment", 0))
     bot_metrics.setdefault("fees_paid", sum(t.get("fee", 0) for t in trade_log))
 
-    render_metrics_row(bot_metrics, mode="backtest", trade_log=trade_log)
+    render_metrics_tabs(bot_metrics, trade_log=trade_log)
     st.divider()
 
     tab1, tab2, tab3 = st.tabs(["📈 Chart", "📋 Trade-Log", "⚙️ Konfiguration"])

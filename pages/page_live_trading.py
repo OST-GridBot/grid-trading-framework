@@ -1050,15 +1050,15 @@ def _show_bot_detail(bot: dict):
 
     st.divider()
 
-    # Metriken — gleich wie Backtesting via render_metrics_row
-    from components.metrics_display import render_metrics_row
+    # Metriken — gleich wie Backtesting via render_metrics_tabs
+    from components.metrics_display import render_metrics_tabs
 
     # Bot-State enthaelt das Standard-Schluesselschema bereits in bot["metrics"].
     bot_metrics = dict(metrics)
     bot_metrics.setdefault("initial_investment", cfg.get("total_investment", 0))
     bot_metrics.setdefault("fees_paid", sum(t.get("fee", 0) for t in trade_log))
 
-    render_metrics_row(bot_metrics, mode="backtest", trade_log=trade_log)
+    render_metrics_tabs(bot_metrics, trade_log=trade_log)
 
     st.divider()
 

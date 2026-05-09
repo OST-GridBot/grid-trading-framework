@@ -1,14 +1,15 @@
 """
 components/metrics_display.py
 ==============================
-Kennzahlen-Anzeige Komponenten fuer Streamlit.
+Kennzahlen-Anzeige Komponenten fuer Streamlit (3-Tab-Layout).
 
 Enthaelt:
-    render_metrics_row() -> Kennzahlen-Karten in einer Reihe
-    render_trade_log()   -> Trade-Log als formatierte Tabelle
+    render_metrics_tabs() -> 3-Tab-Anzeige (Performance/Marktdaten/Indikatoren)
+    render_trade_log()    -> Trade-Log als formatierte Tabelle
 
 Schicht 3 des Metriken-Refactors: liest ausschliesslich Standard-Schluessel
-aus calculate_all_metrics (src/analysis/metrics.py). Keine eigene Berechnungslogik.
+aus calculate_all_metrics (src/analysis/metrics.py) plus die in der Engine
+ergaenzten Indikator-/Marktdaten-Felder. Keine eigene Berechnungslogik.
 
 Autor: Enes Eryilmaz
 Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
@@ -20,37 +21,34 @@ from typing import Optional
 
 
 # ---------------------------------------------------------------------------
-# Farben und Styles
+# Farben und Hilfsfunktionen
 # ---------------------------------------------------------------------------
 
-def _color_roi(value: float) -> str:
-    if value > 0:   return "#34D399"
-    if value < 0:   return "#F87171"
+def _color_roi(value) -> str:
+    if value is None: return "#94A3B8"
+    if value > 0:     return "#34D399"
+    if value < 0:     return "#F87171"
     return "#94A3B8"
 
-def _color_sharpe(value: float) -> str:
-    if value >= 1:  return "#34D399"
-    if value >= 0:  return "#FBBF24"
+def _color_calmar(value) -> str:
+    if value is None: return "#94A3B8"
+    if value >= 1:    return "#34D399"
+    if value >= 0:    return "#FBBF24"
     return "#F87171"
 
-def _arrow(value: float) -> str:
-    if value > 0: return "▲"
-    if value < 0: return "▼"
-    return "–"
+def _color_dd(value: float) -> str:
+    if value > 20: return "#F87171"
+    if value > 10: return "#FBBF24"
+    return "#34D399"
 
-
-# ---------------------------------------------------------------------------
-# Metric Card (einzelne Kachel)
-# ---------------------------------------------------------------------------
 
 def _metric_card(
-    label:    str,
-    value:    str,
-    delta:    Optional[str] = None,
-    color:    str           = "#E2E8F0",
-    help_txt: Optional[str] = None,
+    label:   str,
+    value:   str,
+    delta:   Optional[str] = None,
+    color:   str           = "#E2E8F0",
 ) -> None:
-    """Rendert eine einzelne Kennzahlen-Kachel."""
+    """Eine einzelne Kennzahlen-Kachel."""
     delta_html = f'''
         <div style="font-size:0.75rem; color:{color}; margin-top:2px;">
             {delta}
@@ -74,195 +72,365 @@ def _metric_card(
     ''', unsafe_allow_html=True)
 
 
+def _empty_cell() -> None:
+    """Platzhalter-Karte fuer leere Spalten."""
+    st.markdown("&nbsp;", unsafe_allow_html=True)
+
+
 # ---------------------------------------------------------------------------
-# Kennzahlen-Reihe
+# Haupt-Render-Funktion: 3-Tab-Layout
 # ---------------------------------------------------------------------------
 
-def render_metrics_row(
+def render_metrics_tabs(
     metrics:   dict,
-    mode:      str  = "backtest",
     trade_log: Optional[list] = None,
 ) -> None:
     """
-    Rendert die wichtigsten Kennzahlen in einer Reihe von Kacheln.
+    Drei Tabs: Grid-Bot-Performance / Marktdaten / Indikatoren.
 
-    Liest ausschliesslich das Standard-Schluesselschema aus
-    calculate_all_metrics (src/metrics.py).
+    Liest ausschliesslich Standard-Schluessel aus dem Metrics-Dict.
 
     Args:
-        metrics  : Dictionary mit Kennzahlen aus calculate_all_metrics
-        mode     : "backtest" oder "live"
-        trade_log: Optionale Trade-Liste fuer Buy/Sell-Counts in der
-                   Trades-Kachel. Frueher unter dem Schluessel "_trade_log"
-                   ins metrics-Dict geschmuggelt — jetzt sauber als Parameter.
+        metrics  : Dict aus run_backtest() oder bot["metrics"]
+        trade_log: Optional. Fuer Buy/Sell-Counts in der Trades-Karte.
     """
-    roi        = metrics.get("roi_pct",            0) or 0
-    sharpe     = metrics.get("sharpe_ratio",       None)
-    max_dd     = metrics.get("max_drawdown_pct",   0) or 0
-    num_trades = metrics.get("num_trades",         0) or 0
-    bh_roi     = metrics.get("benchmark_roi_pct",  None)
-    outperf    = metrics.get("outperformance_pct", None)
-    cagr       = metrics.get("cagr_pct",           None)
-    calmar     = metrics.get("calmar_ratio",       None)
-    win_rate   = metrics.get("win_rate_pct",       None)
-    pf         = metrics.get("profit_factor",      None)
+    st.markdown(
+        '<div style="font-size:1.15rem; font-weight:600; color:#CBD5E1; '
+        'text-transform:uppercase; letter-spacing:0.06em; '
+        'margin: 16px 0 8px 0;">Metriken</div>',
+        unsafe_allow_html=True,
+    )
 
-    # Zeile 1: Haupt-Kennzahlen
+    tab_p, tab_m, tab_i = st.tabs(["Grid-Bot-Performance", "Marktdaten", "Indikatoren"])
+    with tab_p:
+        _render_tab_performance(metrics, trade_log or [])
+    with tab_m:
+        _render_tab_market(metrics)
+    with tab_i:
+        _render_tab_indicators(metrics)
+
+
+# ---------------------------------------------------------------------------
+# Tab 1: Grid-Bot-Performance
+# ---------------------------------------------------------------------------
+
+def _render_tab_performance(metrics: dict, trade_log: list) -> None:
+    initial      = metrics.get("initial_investment", 0) or 0
+    final        = metrics.get("final_value",        0) or 0
+    pl_usdt      = final - initial
+
+    roi          = metrics.get("roi_pct",            0) or 0
+    bh_pct       = metrics.get("benchmark_roi_pct")
+    bh_usdt      = metrics.get("benchmark_roi_usdt")
+    gross_pct    = metrics.get("gross_pl_pct",       0) or 0
+    gross_usdt   = metrics.get("gross_pl_usdt",      0) or 0
+    outperf      = metrics.get("outperformance_pct")
+
+    cagr         = metrics.get("cagr_pct")
+    calmar       = metrics.get("calmar_ratio")
+    max_dd_pct   = metrics.get("max_drawdown_pct",   0) or 0
+    max_dd_usdt  = metrics.get("max_drawdown_usdt",  0) or 0
+    win_rate     = metrics.get("win_rate_pct")
+
+    num_t        = metrics.get("num_trades",         0) or 0
+    pf           = metrics.get("profit_factor")
+    grid_eff     = metrics.get("grid_efficiency")
+    active       = metrics.get("active_levels", {"active": 0, "total": 0})
+    cap_per_grid = metrics.get("capital_per_grid")
+
+    avg_p_usdt   = metrics.get("avg_profit_per_trade")
+    avg_p_pct    = metrics.get("avg_profit_per_trade_pct")
+    g_total_u    = metrics.get("grid_profit_total_usdt", 0) or 0
+    g_total_p    = metrics.get("grid_profit_total_pct",  0) or 0
+    upnl         = metrics.get("unrealized_pnl",     {})
+    upnl_u       = upnl.get("usdt", 0) if isinstance(upnl, dict) else 0
+    upnl_p       = upnl.get("pct",  0) if isinstance(upnl, dict) else 0
+
+    fees         = metrics.get("fees_paid",          0) or 0
+    fee_imp      = metrics.get("fee_impact_pct")
+    runtime      = metrics.get("runtime", {})
+    rt_str       = runtime.get("formatted", "–") if isinstance(runtime, dict) else "–"
+
+    # ── Block A: P/L-Top ───────────────────────────────────────────────
     cols = st.columns(4)
     with cols[0]:
         _metric_card(
-            "ROI",
+            "Total Net P/L",
             f"{roi:+.2f}%",
-            delta = f"BnH: {bh_roi:+.2f}%" if bh_roi is not None else None,
+            delta = f"{pl_usdt:+,.2f} USDT",
             color = _color_roi(roi),
         )
     with cols[1]:
         _metric_card(
-            "Sharpe Ratio",
-            f"{sharpe:.2f}" if sharpe is not None else "–",
+            "Buy & Hold",
+            f"{bh_pct:+.2f}%" if bh_pct is not None else "–",
+            delta = f"{bh_usdt:+,.2f} USDT" if bh_usdt is not None else None,
+            color = _color_roi(bh_pct),
+        )
+    with cols[2]:
+        _metric_card(
+            "Brutto P/L",
+            f"{gross_pct:+.2f}%",
+            delta = f"{gross_usdt:+,.2f} USDT",
+            color = _color_roi(gross_pct),
+        )
+    with cols[3]:
+        _metric_card(
+            "Outperformance",
+            f"{outperf:+.2f}%" if outperf is not None else "–",
+            delta = "vs. Buy & Hold" if outperf is not None else None,
+            color = _color_roi(outperf),
+        )
+
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+
+    # ── Block B: Risiko/Rendite ────────────────────────────────────────
+    cols = st.columns(4)
+    with cols[0]:
+        _metric_card(
+            "CAGR",
+            f"{cagr:+.2f}%" if cagr is not None else "–",
+            color = _color_roi(cagr),
+        )
+    with cols[1]:
+        _metric_card(
+            "Calmar Ratio",
+            f"{calmar:.2f}" if calmar is not None else "–",
             delta = "gut ≥ 1.0",
-            color = _color_sharpe(sharpe or 0),
+            color = _color_calmar(calmar),
         )
     with cols[2]:
         _metric_card(
             "Max Drawdown",
-            f"{max_dd:.2f}%",
-            color = "#F87171" if max_dd > 20 else "#FBBF24" if max_dd > 10 else "#34D399",
+            f"{max_dd_pct:.2f}%",
+            delta = f"{max_dd_usdt:,.2f} USDT",
+            color = _color_dd(max_dd_pct),
         )
     with cols[3]:
-        if trade_log:
-            buys  = sum(1 for t in trade_log if "BUY"  in str(t.get("type", "")).upper())
-            sells = sum(1 for t in trade_log if "SELL" in str(t.get("type", "")).upper())
-            buy_sell_str = f"B:{buys} / S:{sells}"
-        else:
-            buy_sell_str = None
         _metric_card(
-            "Trades",
-            str(num_trades),
-            delta = buy_sell_str,
+            "Win-Rate",
+            f"{win_rate:.1f}%" if win_rate is not None else "–",
+            color = "#34D399" if (win_rate or 0) > 50 else "#FBBF24",
+        )
+
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+
+    # ── Block C: Trades + Grid ─────────────────────────────────────────
+    cols = st.columns(4)
+    with cols[0]:
+        buys  = sum(1 for t in trade_log if "BUY"  in str(t.get("type", "")).upper())
+        sells = sum(1 for t in trade_log if "SELL" in str(t.get("type", "")).upper())
+        bs    = f"B:{buys} / S:{sells}" if trade_log else None
+        _metric_card("Anzahl Trades", str(num_t), delta=bs, color="#E2E8F0")
+    with cols[1]:
+        # Profit-Faktor: "–" statt "∞" wenn keine Verluste
+        _metric_card(
+            "Profit-Faktor",
+            f"{pf:.2f}" if pf is not None else "–",
+            delta = "gut ≥ 1.5",
+            color = "#34D399" if (pf or 0) >= 1.5
+                    else "#FBBF24" if (pf or 0) >= 1
+                    else "#F87171",
+        )
+    with cols[2]:
+        ratio = (
+            f"{active['active']}/{active['total']}"
+            if isinstance(active, dict) else "–"
+        )
+        _metric_card(
+            "Grid Efficiency",
+            f"{grid_eff:.1f}%" if grid_eff is not None else "–",
+            delta = ratio,
+            color = "#34D399" if (grid_eff or 0) >= 50 else "#FBBF24",
+        )
+    with cols[3]:
+        _metric_card(
+            "Investiert pro Grid",
+            f"{cap_per_grid:,.2f} USDT" if cap_per_grid is not None else "–",
             color = "#E2E8F0",
         )
 
-    # Zeile 2: Erweiterte Kennzahlen (nur Backtest)
-    if mode == "backtest":
-        st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
-        cols2 = st.columns(4)
-        with cols2[0]:
-            _metric_card(
-                "CAGR",
-                f"{cagr:+.2f}%" if cagr is not None else "–",
-                color = _color_roi(cagr or 0),
-            )
-        with cols2[1]:
-            _metric_card(
-                "Calmar Ratio",
-                f"{calmar:.2f}" if calmar is not None else "–",
-                delta = "gut ≥ 1.0",
-                color = _color_sharpe(calmar or 0),
-            )
-        with cols2[2]:
-            _metric_card(
-                "Win-Rate",
-                f"{win_rate:.1f}%" if win_rate is not None else "–",
-                color = "#34D399" if (win_rate or 0) > 50 else "#FBBF24",
-            )
-        with cols2[3]:
-            _metric_card(
-                "Profit-Faktor",
-                f"{pf:.2f}" if pf is not None else "∞",
-                delta = "gut ≥ 1.5",
-                color = "#34D399" if pf is None or (pf or 0) >= 1.5 else "#FBBF24" if (pf or 0) >= 1 else "#F87171",
-            )
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
-    # Zeile 3: Grid-/Live-Kennzahlen
-    if mode == "backtest":
-        st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
-        cols_new = st.columns(4)
-        grid_eff   = metrics.get("grid_efficiency",      None)
-        avg_profit = metrics.get("avg_profit_per_trade", None)
-        runtime    = metrics.get("runtime",              None)
-        upnl       = metrics.get("unrealized_pnl",       None)
-        with cols_new[0]:
+    # ── Block D: Profit pro Trade/Grid ─────────────────────────────────
+    cols = st.columns(4)
+    with cols[0]:
+        _metric_card(
+            "Ø Profit/Trade",
+            f"{avg_p_usdt:+,.2f} USDT" if avg_p_usdt is not None else "–",
+            delta = f"{avg_p_pct:+.2f}%" if avg_p_pct is not None else None,
+            color = _color_roi(avg_p_usdt),
+        )
+    with cols[1]:
+        _metric_card(
+            "Grid Profit Total",
+            f"{g_total_u:+,.2f} USDT",
+            delta = f"{g_total_p:+.2f}%",
+            color = _color_roi(g_total_u),
+        )
+    with cols[2]:
+        if isinstance(upnl, dict) and upnl.get("num_positions", 0) > 0:
             _metric_card(
-                "Grid Efficiency",
-                f"{grid_eff:.1f}%" if grid_eff is not None else "–",
-                delta = "gut ≥ 50%",
-                color = "#34D399" if (grid_eff or 0) >= 50 else "#FBBF24",
+                "Floating Profit",
+                f"{upnl_u:+,.2f} USDT",
+                delta = f"{upnl_p:+.2f}%",
+                color = _color_roi(upnl_u),
             )
-        with cols_new[1]:
-            _metric_card(
-                "Ø Profit/Trade",
-                f"${avg_profit:+.2f}" if avg_profit is not None else "–",
-                color = _color_roi(avg_profit or 0),
-            )
-        with cols_new[2]:
-            rt_str = runtime.get("formatted", "–") if isinstance(runtime, dict) else "–"
-            _metric_card(
-                "Laufzeit",
-                rt_str,
-                color = "#E2E8F0",
-            )
-        with cols_new[3]:
-            if upnl is not None and isinstance(upnl, dict):
-                _metric_card(
-                    "Unrealisiert",
-                    f"${upnl.get('usdt', 0):+.2f}",
-                    delta = f"{upnl.get('pct', 0):+.2f}%",
-                    color = _color_roi(upnl.get('usdt', 0)),
-                )
-            else:
-                _metric_card("Unrealisiert", "–", color="#94A3B8")
+        else:
+            _metric_card("Floating Profit", "–", color="#94A3B8")
+    with cols[3]:
+        _empty_cell()
 
-    # Zeile 4: Kapital-Übersicht
-    if mode == "backtest":
-        st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
-        cols3 = st.columns(4)
-        initial = metrics.get("initial_investment", None)
-        final   = metrics.get("final_value",        None)
-        fees    = metrics.get("fees_paid",          0) or 0
-        with cols3[0]:
-            _metric_card(
-                "Startkapital",
-                f"${initial:,.2f}" if initial else "–",
-                color="#E2E8F0",
-            )
-        with cols3[1]:
-            _metric_card(
-                "Endwert",
-                f"${final:,.2f}" if final else "–",
-                color=_color_roi(roi),
-            )
-        with cols3[2]:
-            _metric_card(
-                "Gezahlte Gebühren",
-                f"${fees:,.2f}",
-                color="#F87171" if fees > 0 else "#94A3B8",
-            )
-        with cols3[3]:
-            _metric_card(
-                "Gewinn / Verlust",
-                f"${((final or 0) - (initial or 0)):+,.2f}" if initial and final else "–",
-                color=_color_roi(roi),
-            )
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
-    # Outperformance Banner
-    if outperf is not None:
-        color = "#34D399" if outperf > 0 else "#F87171"
-        arrow = _arrow(outperf)
-        st.markdown(f'''
-            <div style="
-                margin-top: 10px;
-                padding: 8px 14px;
-                background: rgba(255,255,255,0.03);
-                border-left: 3px solid {color};
-                border-radius: 4px;
-                font-size: 0.85rem;
-                color: {color};
-            ">
-                {arrow} Grid Bot outperformt Buy &amp; Hold um
-                <strong>{outperf:+.2f}%</strong>
-            </div>
-        ''', unsafe_allow_html=True)
+    # ── Block E: Fees ──────────────────────────────────────────────────
+    cols = st.columns(4)
+    with cols[0]:
+        _metric_card(
+            "Trading Fees",
+            f"{fees:,.2f} USDT",
+            color = "#F87171" if fees > 0 else "#94A3B8",
+        )
+    with cols[1]:
+        _metric_card(
+            "Fee Impact",
+            f"{fee_imp:.1f}%" if fee_imp is not None else "–",
+            color = "#94A3B8",
+        )
+    with cols[2]: _empty_cell()
+    with cols[3]: _empty_cell()
+
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+
+    # ── Block F: Meta ──────────────────────────────────────────────────
+    cols = st.columns(4)
+    with cols[0]:
+        _metric_card("Startkapital", f"{initial:,.2f} USDT", color="#E2E8F0")
+    with cols[1]:
+        _metric_card("Endkapital", f"{final:,.2f} USDT", color=_color_roi(roi))
+    with cols[2]:
+        _metric_card("P/L", f"{pl_usdt:+,.2f} USDT", color=_color_roi(roi))
+    with cols[3]:
+        _metric_card("Laufzeit", rt_str, color="#E2E8F0")
+
+
+# ---------------------------------------------------------------------------
+# Tab 2: Marktdaten
+# ---------------------------------------------------------------------------
+
+def _render_tab_market(metrics: dict) -> None:
+    cur_price = metrics.get("current_price")
+    extr      = metrics.get("price_extremes", {}) or {}
+    max_p     = extr.get("max_price",  0) or 0
+    min_p     = extr.get("min_price",  0) or 0
+    range_u   = extr.get("range_usdt", 0) or 0
+    range_p   = extr.get("range_pct",  0) or 0
+
+    cols = st.columns(4)
+    with cols[0]:
+        _metric_card(
+            "Aktueller Preis",
+            f"{cur_price:,.4f} USDT" if cur_price else "–",
+            color = "#E2E8F0",
+        )
+    with cols[1]:
+        _metric_card("Max Preis", f"{max_p:,.4f} USDT", color="#34D399")
+    with cols[2]:
+        _metric_card("Min Preis", f"{min_p:,.4f} USDT", color="#F87171")
+    with cols[3]:
+        _metric_card(
+            "Max-Min Intervall",
+            f"{range_u:,.4f} USDT",
+            delta = f"{range_p:.2f}%",
+            color = "#94A3B8",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tab 3: Indikatoren
+# ---------------------------------------------------------------------------
+
+def _render_tab_indicators(metrics: dict) -> None:
+    rs    = metrics.get("return_stats", {}) or {}
+    avg_r = rs.get("avg_pct")
+    mad_r = rs.get("mad_pct")
+    std_r = rs.get("std_pct")
+    vola_m = metrics.get("vola_monthly_pct")
+    vola_y = metrics.get("vola_yearly_pct")
+    atr_u  = metrics.get("atr_usdt")
+    atr_p  = metrics.get("atr_pct")
+    adx14  = metrics.get("adx14")
+    adx30  = metrics.get("adx30")
+
+    # ── Zeile 1: Return-Stats pro Kerze ────────────────────────────────
+    cols = st.columns(4)
+    with cols[0]:
+        _metric_card(
+            "Ø % Rendite/Kerze",
+            f"{avg_r:+.4f}%" if avg_r is not None else "–",
+            color = _color_roi(avg_r),
+        )
+    with cols[1]:
+        _metric_card(
+            "MAD % Rendite/Kerze",
+            f"{mad_r:.4f}%" if mad_r is not None else "–",
+            color = "#94A3B8",
+        )
+    with cols[2]:
+        _metric_card(
+            "Vola % Rendite/Kerze",
+            f"{std_r:.4f}%" if std_r is not None else "–",
+            color = "#94A3B8",
+        )
+    with cols[3]: _empty_cell()
+
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+
+    # ── Zeile 2: Vola + ATR ────────────────────────────────────────────
+    cols = st.columns(4)
+    with cols[0]:
+        _metric_card(
+            "Monatliche Vola",
+            f"{vola_m:.2f}%" if vola_m is not None else "–",
+            color = "#94A3B8",
+        )
+    with cols[1]:
+        _metric_card(
+            "Jährliche Vola",
+            f"{vola_y:.2f}%" if vola_y is not None else "–",
+            color = "#94A3B8",
+        )
+    with cols[2]:
+        _metric_card(
+            "Ø ATR (USDT)",
+            f"{atr_u:,.2f} USDT" if atr_u is not None else "–",
+            color = "#94A3B8",
+        )
+    with cols[3]:
+        _metric_card(
+            "Ø ATR (%)",
+            f"{atr_p:.2f}%" if atr_p is not None else "–",
+            color = "#94A3B8",
+        )
+
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+
+    # ── Zeile 3: ADX ───────────────────────────────────────────────────
+    cols = st.columns(4)
+    with cols[0]:
+        _metric_card(
+            "ADX 14",
+            f"{adx14:.1f}" if adx14 is not None else "–",
+            color = "#94A3B8",
+        )
+    with cols[1]:
+        _metric_card(
+            "ADX 30",
+            f"{adx30:.1f}" if adx30 is not None else "–",
+            color = "#94A3B8",
+        )
+    with cols[2]: _empty_cell()
+    with cols[3]: _empty_cell()
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +471,6 @@ def render_trade_log(trade_log: list, max_rows: int = 100000) -> None:
 
     df = pd.DataFrame(rows[::-1])  # Neueste zuerst
 
-    # Farben via Pandas Styler
     def color_type(val):
         if "SELL" in str(val).upper(): return "color: #F87171"
         if "BUY"  in str(val).upper(): return "color: #34D399"
