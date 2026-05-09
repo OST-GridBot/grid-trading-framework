@@ -54,8 +54,8 @@ def _metric_card(
 
     Layout pro Karte (alle Werte explizit gesetzt, keine impliziten Defaults):
         Label : 0.7rem,  Inter,     uppercase, letter-spacing 0.08em, #64748B
-        Value : 1.25rem, monospace, weight 400, line-height 1.2
-        Delta : 0.75rem, Inter,     weight 400, line-height 1.2, margin-top 8px
+        Value : 1.25rem, monospace, weight 700, line-height 1.2
+        Delta : 0.75rem, Inter,     weight 400, line-height 1.2, margin-top 10px
 
     Lange Werte werden mit ellipsis abgeschnitten statt umzubrechen, damit
     die Karten-Hoehe konstant 95px bleibt.
@@ -63,7 +63,7 @@ def _metric_card(
     delta_html = f'''
         <div style="font-family:Inter,-apple-system,sans-serif;
                     font-size:0.75rem; font-weight:400; line-height:1.2;
-                    color:{color}; margin-top:8px;
+                    color:{color}; margin-top:10px;
                     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
             {delta}
         </div>
@@ -86,7 +86,7 @@ def _metric_card(
                 {label}
             </div>
             <div style="font-family:monospace;
-                        font-size:1.25rem; font-weight:400; line-height:1.2;
+                        font-size:1.25rem; font-weight:700; line-height:1.2;
                         color:{color};
                         white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                 {value}
