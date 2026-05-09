@@ -959,33 +959,15 @@ def _show_bot_detail(bot: dict):
     st.divider()
 
     from components.metrics_display import render_metrics_row
-    upnl    = metrics.get("unrealized_pnl", {})
-    runtime = metrics.get("runtime", {})
-    if not isinstance(runtime, dict) or not runtime.get("formatted"):
-        from src.metrics import calculate_runtime
-        runtime = calculate_runtime(bot.get("created_at", ""))
 
-    metrics_dict = {
-        "roi_pct":              roi,
-        "sharpe":               metrics.get("sharpe_ratio", 0),
-        "max_dd_pct":           metrics.get("max_drawdown_pct", 0),
-        "num_trades":           len(trade_log),
-        "bh_roi_pct":           metrics.get("benchmark_roi_pct", 0),
-        "outperformance":       metrics.get("outperformance_pct", 0),
-        "cagr_pct":             metrics.get("cagr_pct", 0),
-        "calmar":               metrics.get("calmar_ratio", 0),
-        "win_rate":             metrics.get("win_rate_pct", 0),
-        "profit_factor":        metrics.get("profit_factor", 0),
-        "fees_paid":            sum(t.get("fee",0) for t in trade_log),
-        "initial_investment":   cfg.get("total_investment", 0),
-        "final_value":          metrics.get("final_value", cfg.get("total_investment", 0)),
-        "grid_efficiency":      metrics.get("grid_efficiency"),
-        "avg_profit_per_trade": metrics.get("avg_profit_per_trade"),
-        "runtime":              runtime,
-        "unrealized_pnl":       upnl,
-        "_trade_log":           trade_log,
-    }
-    render_metrics_row(metrics_dict, mode="backtest")
+    # Bot-State enthaelt das Standard-Schluesselschema bereits in bot["metrics"].
+    # Felder die nicht aus calculate_all_metrics kommen (Startkapital, Fees aus
+    # Trade-Log) werden hier ergaenzt.
+    bot_metrics = dict(metrics)
+    bot_metrics.setdefault("initial_investment", cfg.get("total_investment", 0))
+    bot_metrics.setdefault("fees_paid", sum(t.get("fee", 0) for t in trade_log))
+
+    render_metrics_row(bot_metrics, mode="backtest", trade_log=trade_log)
     st.divider()
 
     tab1, tab2, tab3 = st.tabs(["📈 Chart", "📋 Trade-Log", "⚙️ Konfiguration"])

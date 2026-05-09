@@ -198,15 +198,8 @@ def run_backtest(
         "error":               None,
     })
 
-    # Rückwärtskompatible Aliase (werden in Schritt D entfernt, sobald
-    # Pages auf das Standard-Schema umgestellt sind)
-    result["profit_pct"]       = result["roi_pct"]
-    result["cagr"]             = result["cagr_pct"]
-    result["win_rate"]         = result["win_rate_pct"]
-    result["price_change_pct"] = result["benchmark_roi_pct"]
-    result["current_drawdown"] = result["current_drawdown_pct"]
-    result["kelly"]            = result["kelly_fraction"]
-    result["recovery_days"]    = calculate_drawdown(sim["daily_values"]).recovery_days
+    # Drawdown-Recovery-Days separat (nicht im Standard-Schema)
+    result["recovery_days"] = calculate_drawdown(sim["daily_values"]).recovery_days
 
     return result
 
@@ -264,13 +257,13 @@ def run_multi_coin_backtest(
             if not result.get("error"):
                 results.append({
                     "Coin":          coin.upper(),
-                    "ROI_%":         round(result["profit_pct"], 2),
-                    "CAGR_%":        result["cagr"],
+                    "ROI_%":         round(result["roi_pct"], 2),
+                    "CAGR_%":        result["cagr_pct"],
                     "Sharpe":        result["sharpe_ratio"],
                     "Max_DD_%":      result["max_drawdown_pct"],
                     "Trades":        result["num_trades"],
                     "Profit_Factor": result["profit_factor"],
-                    "Win_Rate_%":    result["win_rate"],
+                    "Win_Rate_%":    result["win_rate_pct"],
                     "Regime":        result["regime"].regime,
                 })
         except Exception as e:
@@ -334,13 +327,6 @@ def _error_result(message: str) -> dict:
         "warnings":             [],
         "df":                   None,
         "position_size":        None,
-        # Rueckwaertskompatible Aliase (werden in Schritt D entfernt)
-        "profit_pct":           0.0,
-        "cagr":                 None,
-        "win_rate":             None,
-        "price_change_pct":     None,
-        "current_drawdown":     0.0,
-        "kelly":                None,
         "recovery_days":        0,
         "error":                message,
     }
