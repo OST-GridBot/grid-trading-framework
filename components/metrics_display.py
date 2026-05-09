@@ -4,11 +4,11 @@ components/metrics_display.py
 Kennzahlen-Anzeige Komponenten fuer Streamlit.
 
 Enthaelt:
-    render_metrics_row()    -> Kennzahlen-Karten in einer Reihe
-    render_backtest_summary() -> Vollstaendige Backtest-Zusammenfassung
-    render_live_metrics()   -> Live-Trading Kennzahlen
-    render_trade_log()      -> Trade-Log als formatierte Tabelle
-    render_regime_badge()   -> Marktregime-Badge
+    render_metrics_row() -> Kennzahlen-Karten in einer Reihe
+    render_trade_log()   -> Trade-Log als formatierte Tabelle
+
+Schicht 3 des Metriken-Refactors: liest ausschliesslich Standard-Schluessel
+aus calculate_all_metrics (src/metrics.py). Keine eigene Berechnungslogik.
 
 Autor: Enes Eryilmaz
 Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
@@ -37,13 +37,6 @@ def _arrow(value: float) -> str:
     if value > 0: return "▲"
     if value < 0: return "▼"
     return "–"
-
-REGIME_COLORS = {
-    "range":      ("#34D399", "Range-Markt ✓"),
-    "trend_up":   ("#FBBF24", "Aufwärtstrend ↑"),
-    "trend_down": ("#F87171", "Abwärtstrend ↓"),
-    "unknown":    ("#64748B", "Regime: Nicht erkannt"),
-}
 
 
 # ---------------------------------------------------------------------------
@@ -85,24 +78,34 @@ def _metric_card(
 # Kennzahlen-Reihe
 # ---------------------------------------------------------------------------
 
-def render_metrics_row(metrics: dict, mode: str = "backtest") -> None:
+def render_metrics_row(
+    metrics:   dict,
+    mode:      str  = "backtest",
+    trade_log: Optional[list] = None,
+) -> None:
     """
     Rendert die wichtigsten Kennzahlen in einer Reihe von Kacheln.
 
+    Liest ausschliesslich das Standard-Schluesselschema aus
+    calculate_all_metrics (src/metrics.py).
+
     Args:
-        metrics : Dictionary mit Kennzahlen (aus calculate_all_metrics)
-        mode    : "backtest" oder "live"
+        metrics  : Dictionary mit Kennzahlen aus calculate_all_metrics
+        mode     : "backtest" oder "live"
+        trade_log: Optionale Trade-Liste fuer Buy/Sell-Counts in der
+                   Trades-Kachel. Frueher unter dem Schluessel "_trade_log"
+                   ins metrics-Dict geschmuggelt — jetzt sauber als Parameter.
     """
-    roi        = metrics.get("roi_pct",    0) or 0
-    sharpe     = metrics.get("sharpe",     0) or 0
-    max_dd     = metrics.get("max_dd_pct", 0) or 0
-    num_trades = metrics.get("num_trades", 0) or 0
-    bh_roi     = metrics.get("bh_roi_pct", None)
-    outperf    = metrics.get("outperformance", None)
-    cagr       = metrics.get("cagr_pct",   None)
-    calmar     = metrics.get("calmar",     None)
-    win_rate   = metrics.get("win_rate",   None)
-    pf         = metrics.get("profit_factor", None)
+    roi        = metrics.get("roi_pct",            0) or 0
+    sharpe     = metrics.get("sharpe_ratio",       0) or 0
+    max_dd     = metrics.get("max_drawdown_pct",   0) or 0
+    num_trades = metrics.get("num_trades",         0) or 0
+    bh_roi     = metrics.get("benchmark_roi_pct",  None)
+    outperf    = metrics.get("outperformance_pct", None)
+    cagr       = metrics.get("cagr_pct",           None)
+    calmar     = metrics.get("calmar_ratio",       None)
+    win_rate   = metrics.get("win_rate_pct",       None)
+    pf         = metrics.get("profit_factor",      None)
 
     # Zeile 1: Haupt-Kennzahlen
     cols = st.columns(4)
@@ -110,27 +113,29 @@ def render_metrics_row(metrics: dict, mode: str = "backtest") -> None:
         _metric_card(
             "ROI",
             f"{roi:+.2f}%",
-            delta   = f"BnH: {bh_roi:+.2f}%" if bh_roi is not None else None,
-            color   = _color_roi(roi),
+            delta = f"BnH: {bh_roi:+.2f}%" if bh_roi is not None else None,
+            color = _color_roi(roi),
         )
     with cols[1]:
         _metric_card(
             "Sharpe Ratio",
             f"{sharpe:.2f}",
-            delta   = "gut ≥ 1.0",
-            color   = _color_sharpe(sharpe),
+            delta = "gut ≥ 1.0",
+            color = _color_sharpe(sharpe),
         )
     with cols[2]:
         _metric_card(
             "Max Drawdown",
             f"{max_dd:.2f}%",
-            color   = "#F87171" if max_dd > 20 else "#FBBF24" if max_dd > 10 else "#34D399",
+            color = "#F87171" if max_dd > 20 else "#FBBF24" if max_dd > 10 else "#34D399",
         )
     with cols[3]:
-        trade_log = metrics.get("_trade_log", [])
-        buys  = sum(1 for t in trade_log if "BUY"  in str(t.get("type","")).upper())
-        sells = sum(1 for t in trade_log if "SELL" in str(t.get("type","")).upper())
-        buy_sell_str = f"B:{buys} / S:{sells}" if trade_log else None
+        if trade_log:
+            buys  = sum(1 for t in trade_log if "BUY"  in str(t.get("type", "")).upper())
+            sells = sum(1 for t in trade_log if "SELL" in str(t.get("type", "")).upper())
+            buy_sell_str = f"B:{buys} / S:{sells}"
+        else:
+            buy_sell_str = None
         _metric_card(
             "Trades",
             str(num_trades),
@@ -169,14 +174,14 @@ def render_metrics_row(metrics: dict, mode: str = "backtest") -> None:
                 color = "#34D399" if pf is None or (pf or 0) >= 1.5 else "#FBBF24" if (pf or 0) >= 1 else "#F87171",
             )
 
-    # Zeile 3: Neue Metriken
+    # Zeile 3: Grid-/Live-Kennzahlen
     if mode == "backtest":
         st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
         cols_new = st.columns(4)
-        grid_eff    = metrics.get("grid_efficiency",      None)
-        avg_profit  = metrics.get("avg_profit_per_trade", None)
-        runtime     = metrics.get("runtime",              None)
-        upnl        = metrics.get("unrealized_pnl",       None)
+        grid_eff   = metrics.get("grid_efficiency",      None)
+        avg_profit = metrics.get("avg_profit_per_trade", None)
+        runtime    = metrics.get("runtime",              None)
+        upnl       = metrics.get("unrealized_pnl",       None)
         with cols_new[0]:
             _metric_card(
                 "Grid Efficiency",
@@ -213,9 +218,8 @@ def render_metrics_row(metrics: dict, mode: str = "backtest") -> None:
         st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
         cols3 = st.columns(4)
         initial = metrics.get("initial_investment", None)
-        final   = metrics.get("final_value", None)
-        fees    = metrics.get("fees_paid", 0) or 0
-        profit  = metrics.get("roi_pct", 0) or 0
+        final   = metrics.get("final_value",        None)
+        fees    = metrics.get("fees_paid",          0) or 0
         with cols3[0]:
             _metric_card(
                 "Startkapital",
@@ -226,7 +230,7 @@ def render_metrics_row(metrics: dict, mode: str = "backtest") -> None:
             _metric_card(
                 "Endwert",
                 f"${final:,.2f}" if final else "–",
-                color=_color_roi(profit),
+                color=_color_roi(roi),
             )
         with cols3[2]:
             _metric_card(
@@ -238,7 +242,7 @@ def render_metrics_row(metrics: dict, mode: str = "backtest") -> None:
             _metric_card(
                 "Gewinn / Verlust",
                 f"${((final or 0) - (initial or 0)):+,.2f}" if initial and final else "–",
-                color=_color_roi(profit),
+                color=_color_roi(roi),
             )
 
     # Outperformance Banner
@@ -259,98 +263,6 @@ def render_metrics_row(metrics: dict, mode: str = "backtest") -> None:
                 <strong>{outperf:+.2f}%</strong>
             </div>
         ''', unsafe_allow_html=True)
-
-
-# ---------------------------------------------------------------------------
-# Backtest-Zusammenfassung
-# ---------------------------------------------------------------------------
-
-def render_backtest_summary(result: dict) -> None:
-    """
-    Vollstaendige Backtest-Zusammenfassung mit allen Kennzahlen.
-
-    Args:
-        result : Rueckgabe von run_backtest()
-    """
-    if not result or result.get("error"):
-        st.error(f"Backtest-Fehler: {result.get('error', 'Unbekannt')}")
-        return
-
-    metrics = result.get("metrics", {})
-    regime  = result.get("regime",  {})
-
-    # Regime-Badge
-    if regime:
-        render_regime_badge(regime.get("regime", "unknown"), regime.get("confidence", 0))
-        st.markdown("<div style='margin-bottom:12px'></div>", unsafe_allow_html=True)
-
-    # Kennzahlen
-    render_metrics_row(metrics, mode="backtest")
-
-    # Details in Expander
-    with st.expander("Details anzeigen"):
-        col1, col2 = st.columns(2)
-        with col1:
-            st.caption("Portfolio")
-            st.write(f"Startkapital : {result.get('total_investment', 0):,.2f} USDT")
-            st.write(f"Endwert      : {result.get('final_value', 0):,.2f} USDT")
-            st.write(f"Fees gezahlt : {metrics.get('fees_paid', 0):,.2f} USDT")
-            st.write(f"Fee Impact   : {metrics.get('fee_impact', 0):.1f}%")
-        with col2:
-            st.caption("Trades")
-            st.write(f"Anzahl Trades: {metrics.get('num_trades', 0)}")
-            st.write(f"Recentering  : {result.get('recentering_count', 0)}x")
-            st.write(f"Stop-Loss    : {'Ausgeloest' if result.get('stop_loss_hit') else 'Nicht ausgeloest'}")
-            st.write(f"Sortino      : {metrics.get('sortino', 0):.2f}")
-
-
-# ---------------------------------------------------------------------------
-# Live-Metriken
-# ---------------------------------------------------------------------------
-
-def render_live_metrics(metrics: dict) -> None:
-    """
-    Live-Trading Kennzahlen mit Echtzeit-Updates.
-
-    Args:
-        metrics : Rueckgabe von get_live_metrics()
-    """
-    if not metrics:
-        st.info("Bot noch nicht gestartet.")
-        return
-
-    # Status-Anzeige
-    is_running   = metrics.get("is_running", False)
-    stop_loss    = metrics.get("stop_loss_hit", False)
-    last_update  = metrics.get("last_update", "–")[:19].replace("T", " ")
-
-    status_color = "#34D399" if is_running and not stop_loss else "#F87171"
-    status_text  = "LAEUFT" if is_running and not stop_loss else "STOP-LOSS" if stop_loss else "GESTOPPT"
-
-    st.markdown(f'''
-        <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
-            <div style="width:8px; height:8px; border-radius:50%;
-                        background:{status_color}; box-shadow:0 0 6px {status_color};"></div>
-            <span style="color:{status_color}; font-weight:700; font-size:0.9rem;">{status_text}</span>
-            <span style="color:#64748B; font-size:0.8rem;">| Update: {last_update}</span>
-        </div>
-    ''', unsafe_allow_html=True)
-
-    # Kennzahlen
-    render_metrics_row(metrics, mode="live")
-
-    # Position
-    position = metrics.get("position", {})
-    if position:
-        st.markdown("<div style='margin-top:10px'></div>", unsafe_allow_html=True)
-        cols = st.columns(3)
-        with cols[0]:
-            _metric_card("USDT", f"{position.get('usdt', 0):,.2f}", color="#E2E8F0")
-        with cols[1]:
-            coin_bal = position.get("coin", 0)
-            _metric_card("Coin", f"{coin_bal:.6f}", color="#E2E8F0")
-        with cols[2]:
-            _metric_card("Kerzen", str(metrics.get("num_candles", 0)), color="#94A3B8")
 
 
 # ---------------------------------------------------------------------------
@@ -409,32 +321,3 @@ def render_trade_log(trade_log: list, max_rows: int = 100000) -> None:
     styled = df.style.applymap(color_type, subset=["Typ"])
     styled = styled.applymap(color_profit, subset=["Profit"])
     st.dataframe(styled, use_container_width=True, hide_index=True)
-
-
-# ---------------------------------------------------------------------------
-# Regime Badge
-# ---------------------------------------------------------------------------
-
-def render_regime_badge(regime: str, confidence: float = 0) -> None:
-    """
-    Zeigt das aktuelle Marktregime als farbiges Badge an.
-
-    Args:
-        regime     : "range", "trend_up", "trend_down", "unknown"
-        confidence : Konfidenz in % (0-100)
-    """
-    color, label = REGIME_COLORS.get(regime, REGIME_COLORS["unknown"])
-    conf_text    = f" ({confidence:.0f}%)" if confidence > 0 else ""
-
-    st.markdown(f'''
-        <div style="
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 20px;
-            background: {color}22;
-            border: 1px solid {color}66;
-            color: {color};
-            font-size: 0.8rem;
-            font-weight: 600;
-        ">{label}{conf_text}</div>
-    ''', unsafe_allow_html=True)
