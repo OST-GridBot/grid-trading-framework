@@ -15,8 +15,7 @@ Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
 """
 
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta, date
+from datetime import date
 from typing import Optional
 
 from config.settings import (
@@ -26,15 +25,14 @@ from config.settings import (
 )
 from src.data.cache_manager import get_price_data
 from src.strategy.grid_bot import simulate_grid_bot
-from src.strategy.grid_builder import build_grid_config, suggest_grid_range, validate_grid_config
+from src.strategy.grid_builder import build_grid_config, validate_grid_config
 from src.metrics import (
     calculate_all_metrics,
     calculate_drawdown,
-    calculate_kelly_fraction,
     calculate_position_size,
     get_num_days,
 )
-from src.analysis.indicators import get_adx_value, get_atr_stats, calculate_volatility
+from src.analysis.indicators import get_atr_stats
 from src.analysis.regime import detect_regime
 
 
