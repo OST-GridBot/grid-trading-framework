@@ -48,9 +48,23 @@ def _metric_card(
     delta:   Optional[str] = None,
     color:   str           = "#E2E8F0",
 ) -> None:
-    """Eine einzelne Kennzahlen-Kachel."""
+    """
+    Eine einzelne Kennzahlen-Kachel. Schriftparameter sind ueber alle
+    Karten in allen 3 Tabs identisch — Referenz-Karte: "Total Net P/L".
+
+    Layout pro Karte (alle Werte explizit gesetzt, keine impliziten Defaults):
+        Label : 0.7rem,  Inter,     uppercase, letter-spacing 0.08em, #64748B
+        Value : 1.35rem, monospace, weight 700, line-height 1.2
+        Delta : 0.75rem, Inter,     weight 400, line-height 1.2
+
+    Lange Werte werden mit ellipsis abgeschnitten statt umzubrechen, damit
+    die Karten-Hoehe konstant 95px bleibt.
+    """
     delta_html = f'''
-        <div style="font-size:0.75rem; color:{color}; margin-top:2px;">
+        <div style="font-family:Inter,-apple-system,sans-serif;
+                    font-size:0.75rem; font-weight:400; line-height:1.2;
+                    color:{color}; margin-top:2px;
+                    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
             {delta}
         </div>
     ''' if delta else ""
@@ -62,11 +76,21 @@ def _metric_card(
             border-radius: 8px;
             padding: 12px 14px;
             height: 95px;
+            overflow: hidden;
         ">
-            <div style="font-size:0.7rem; color:#64748B; text-transform:uppercase;
-                        letter-spacing:0.08em; margin-bottom:4px;">{label}</div>
-            <div style="font-size:1.35rem; font-weight:700; color:{color};
-                        font-family:monospace;">{value}</div>
+            <div style="font-family:Inter,-apple-system,sans-serif;
+                        font-size:0.7rem; font-weight:500;
+                        color:#64748B; text-transform:uppercase;
+                        letter-spacing:0.08em; margin-bottom:4px;
+                        white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                {label}
+            </div>
+            <div style="font-family:monospace;
+                        font-size:1.35rem; font-weight:700; line-height:1.2;
+                        color:{color};
+                        white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                {value}
+            </div>
             {delta_html}
         </div>
     ''', unsafe_allow_html=True)
@@ -151,7 +175,7 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
     runtime      = metrics.get("runtime", {})
     rt_str       = runtime.get("formatted", "–") if isinstance(runtime, dict) else "–"
 
-    # ── Block A: P/L-Top ───────────────────────────────────────────────
+    # ── Reihe 1: P/L-Top ───────────────────────────────────────────────
     cols = st.columns(4)
     with cols[0]:
         _metric_card(
@@ -169,7 +193,7 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
         )
     with cols[2]:
         _metric_card(
-            "Brutto P/L",
+            "Total Gross P/L",
             f"{gross_pct:+.2f}%",
             delta = f"{gross_usdt:+,.2f} USDT",
             color = _color_roi(gross_pct),
@@ -184,7 +208,46 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
-    # ── Block B: Risiko/Rendite ────────────────────────────────────────
+    # ── Reihe 2: Profit-Quellen + Profit-Faktor ────────────────────────
+    cols = st.columns(4)
+    with cols[0]:
+        _metric_card(
+            "Ø Profit/Trade",
+            f"{avg_p_usdt:+,.2f} USDT" if avg_p_usdt is not None else "–",
+            delta = f"{avg_p_pct:+.2f}%" if avg_p_pct is not None else None,
+            color = _color_roi(avg_p_usdt),
+        )
+    with cols[1]:
+        _metric_card(
+            "Grid Profit Total",
+            f"{g_total_u:+,.2f} USDT",
+            delta = f"{g_total_p:+.2f}%",
+            color = _color_roi(g_total_u),
+        )
+    with cols[2]:
+        if isinstance(upnl, dict) and upnl.get("num_positions", 0) > 0:
+            _metric_card(
+                "Floating Profit",
+                f"{upnl_u:+,.2f} USDT",
+                delta = f"{upnl_p:+.2f}%",
+                color = _color_roi(upnl_u),
+            )
+        else:
+            _metric_card("Floating Profit", "–", color="#94A3B8")
+    with cols[3]:
+        # Profit-Faktor: "–" statt "∞" wenn keine Verluste
+        _metric_card(
+            "Profit-Faktor",
+            f"{pf:.2f}" if pf is not None else "–",
+            delta = "gut ≥ 1.5",
+            color = "#34D399" if (pf or 0) >= 1.5
+                    else "#FBBF24" if (pf or 0) >= 1
+                    else "#F87171",
+        )
+
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+
+    # ── Reihe 3: Risiko/Rendite ────────────────────────────────────────
     cols = st.columns(4)
     with cols[0]:
         _metric_card(
@@ -215,24 +278,9 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
-    # ── Block C: Trades + Grid ─────────────────────────────────────────
+    # ── Reihe 4: Grid + Fees ───────────────────────────────────────────
     cols = st.columns(4)
     with cols[0]:
-        buys  = sum(1 for t in trade_log if "BUY"  in str(t.get("type", "")).upper())
-        sells = sum(1 for t in trade_log if "SELL" in str(t.get("type", "")).upper())
-        bs    = f"B:{buys} / S:{sells}" if trade_log else None
-        _metric_card("Anzahl Trades", str(num_t), delta=bs, color="#E2E8F0")
-    with cols[1]:
-        # Profit-Faktor: "–" statt "∞" wenn keine Verluste
-        _metric_card(
-            "Profit-Faktor",
-            f"{pf:.2f}" if pf is not None else "–",
-            delta = "gut ≥ 1.5",
-            color = "#34D399" if (pf or 0) >= 1.5
-                    else "#FBBF24" if (pf or 0) >= 1
-                    else "#F87171",
-        )
-    with cols[2]:
         ratio = (
             f"{active['active']}/{active['total']}"
             if isinstance(active, dict) else "–"
@@ -243,75 +291,40 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
             delta = ratio,
             color = "#34D399" if (grid_eff or 0) >= 50 else "#FBBF24",
         )
-    with cols[3]:
+    with cols[1]:
         _metric_card(
             "Investiert pro Grid",
             f"{cap_per_grid:,.2f} USDT" if cap_per_grid is not None else "–",
             color = "#E2E8F0",
         )
-
-    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
-
-    # ── Block D: Profit pro Trade/Grid ─────────────────────────────────
-    cols = st.columns(4)
-    with cols[0]:
-        _metric_card(
-            "Ø Profit/Trade",
-            f"{avg_p_usdt:+,.2f} USDT" if avg_p_usdt is not None else "–",
-            delta = f"{avg_p_pct:+.2f}%" if avg_p_pct is not None else None,
-            color = _color_roi(avg_p_usdt),
-        )
-    with cols[1]:
-        _metric_card(
-            "Grid Profit Total",
-            f"{g_total_u:+,.2f} USDT",
-            delta = f"{g_total_p:+.2f}%",
-            color = _color_roi(g_total_u),
-        )
     with cols[2]:
-        if isinstance(upnl, dict) and upnl.get("num_positions", 0) > 0:
-            _metric_card(
-                "Floating Profit",
-                f"{upnl_u:+,.2f} USDT",
-                delta = f"{upnl_p:+.2f}%",
-                color = _color_roi(upnl_u),
-            )
-        else:
-            _metric_card("Floating Profit", "–", color="#94A3B8")
-    with cols[3]:
-        _empty_cell()
-
-    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
-
-    # ── Block E: Fees ──────────────────────────────────────────────────
-    cols = st.columns(4)
-    with cols[0]:
         _metric_card(
             "Trading Fees",
             f"{fees:,.2f} USDT",
             color = "#F87171" if fees > 0 else "#94A3B8",
         )
-    with cols[1]:
+    with cols[3]:
         _metric_card(
             "Fee Impact",
             f"{fee_imp:.1f}%" if fee_imp is not None else "–",
             color = "#94A3B8",
         )
-    with cols[2]: _empty_cell()
-    with cols[3]: _empty_cell()
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
-    # ── Block F: Meta ──────────────────────────────────────────────────
+    # ── Reihe 5: Meta ──────────────────────────────────────────────────
     cols = st.columns(4)
     with cols[0]:
         _metric_card("Startkapital", f"{initial:,.2f} USDT", color="#E2E8F0")
     with cols[1]:
         _metric_card("Endkapital", f"{final:,.2f} USDT", color=_color_roi(roi))
     with cols[2]:
-        _metric_card("P/L", f"{pl_usdt:+,.2f} USDT", color=_color_roi(roi))
-    with cols[3]:
         _metric_card("Laufzeit", rt_str, color="#E2E8F0")
+    with cols[3]:
+        buys  = sum(1 for t in trade_log if "BUY"  in str(t.get("type", "")).upper())
+        sells = sum(1 for t in trade_log if "SELL" in str(t.get("type", "")).upper())
+        bs    = f"B:{buys} / S:{sells}" if trade_log else None
+        _metric_card("Anzahl Trades", str(num_t), delta=bs, color="#E2E8F0")
 
 
 # ---------------------------------------------------------------------------
@@ -353,7 +366,6 @@ def _render_tab_market(metrics: dict) -> None:
 def _render_tab_indicators(metrics: dict) -> None:
     rs    = metrics.get("return_stats", {}) or {}
     avg_r = rs.get("avg_pct")
-    mad_r = rs.get("mad_pct")
     std_r = rs.get("std_pct")
     vola_m = metrics.get("vola_monthly_pct")
     vola_y = metrics.get("vola_yearly_pct")
@@ -362,7 +374,7 @@ def _render_tab_indicators(metrics: dict) -> None:
     adx14  = metrics.get("adx14")
     adx30  = metrics.get("adx30")
 
-    # ── Zeile 1: Return-Stats pro Kerze ────────────────────────────────
+    # ── Reihe 1: Returns pro Kerze + Vola ──────────────────────────────
     cols = st.columns(4)
     with cols[0]:
         _metric_card(
@@ -372,65 +384,51 @@ def _render_tab_indicators(metrics: dict) -> None:
         )
     with cols[1]:
         _metric_card(
-            "MAD % Rendite/Kerze",
-            f"{mad_r:.4f}%" if mad_r is not None else "–",
-            color = "#94A3B8",
-        )
-    with cols[2]:
-        _metric_card(
             "Vola % Rendite/Kerze",
             f"{std_r:.4f}%" if std_r is not None else "–",
             color = "#94A3B8",
         )
-    with cols[3]: _empty_cell()
-
-    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
-
-    # ── Zeile 2: Vola + ATR ────────────────────────────────────────────
-    cols = st.columns(4)
-    with cols[0]:
+    with cols[2]:
         _metric_card(
             "Monatliche Vola",
             f"{vola_m:.2f}%" if vola_m is not None else "–",
             color = "#94A3B8",
         )
-    with cols[1]:
+    with cols[3]:
         _metric_card(
             "Jährliche Vola",
             f"{vola_y:.2f}%" if vola_y is not None else "–",
             color = "#94A3B8",
         )
-    with cols[2]:
+
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+
+    # ── Reihe 2: ATR + ADX ─────────────────────────────────────────────
+    cols = st.columns(4)
+    with cols[0]:
         _metric_card(
             "Ø ATR (USDT)",
             f"{atr_u:,.2f} USDT" if atr_u is not None else "–",
             color = "#94A3B8",
         )
-    with cols[3]:
+    with cols[1]:
         _metric_card(
             "Ø ATR (%)",
             f"{atr_p:.2f}%" if atr_p is not None else "–",
             color = "#94A3B8",
         )
-
-    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
-
-    # ── Zeile 3: ADX ───────────────────────────────────────────────────
-    cols = st.columns(4)
-    with cols[0]:
+    with cols[2]:
         _metric_card(
             "ADX 14",
             f"{adx14:.1f}" if adx14 is not None else "–",
             color = "#94A3B8",
         )
-    with cols[1]:
+    with cols[3]:
         _metric_card(
             "ADX 30",
             f"{adx30:.1f}" if adx30 is not None else "–",
             color = "#94A3B8",
         )
-    with cols[2]: _empty_cell()
-    with cols[3]: _empty_cell()
 
 
 # ---------------------------------------------------------------------------

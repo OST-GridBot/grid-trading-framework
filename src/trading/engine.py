@@ -23,10 +23,16 @@ from src.trading.bot_store import BotStore, store as default_store
 from src.analysis.metrics import calculate_all_metrics
 
 
-# Kerzen pro Intervall fuer den initialen Abruf
-_INTERVAL_CANDLES = {
-    "1m": 60, "5m": 60, "15m": 60,
-    "1h": 48, "4h": 24, "1d": 30,
+# Lookback in Tagen pro Intervall — gross genug fuer ADX30 (~60 Kerzen).
+# Wird sowohl beim initialen Abruf in initialize() als auch bei run_update()
+# verwendet, damit beide Pfade konsistent sind.
+_INTERVAL_DAYS = {
+    "1m":  1,    # 1440 Kerzen
+    "5m":  1,    # 288 Kerzen
+    "15m": 2,    # 192 Kerzen
+    "1h":  7,    # 168 Kerzen
+    "4h":  10,   # 60 Kerzen — knapp fuer ADX30
+    "1d":  40,   # 40 Kerzen — ADX30 stabil
 }
 
 
@@ -62,11 +68,11 @@ class BotRunner:
         cfg      = self._bot["config"]
         coin     = self._bot["coin"]
         interval = self._bot["interval"]
-        n_candles = _INTERVAL_CANDLES.get(interval, 48)
+        n_days   = _INTERVAL_DAYS.get(interval, 7)
 
         # Preisdaten laden
         from src.data.cache_manager import get_price_data
-        df, _ = get_price_data(coin, days=max(1, n_candles // 24 + 1), interval=interval)
+        df, _ = get_price_data(coin, days=n_days, interval=interval)
         if df is None or df.empty:
             return False, f"Keine Preisdaten für {coin} verfügbar"
 
@@ -272,7 +278,7 @@ class BotRunner:
 
         # Aktuelle Kerzen laden
         from src.data.cache_manager import get_price_data
-        n_days = {"1m":1,"5m":1,"15m":1,"1h":2,"4h":5,"1d":14}.get(interval, 2)
+        n_days = _INTERVAL_DAYS.get(interval, 7)
         df, _ = get_price_data(coin, days=n_days, interval=interval)
         if df is None or df.empty:
             return {"error": f"Keine Preisdaten für {coin}"}
