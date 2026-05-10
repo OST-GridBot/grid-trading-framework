@@ -138,13 +138,18 @@ def calculate_win_rate(trade_log: list) -> Optional[float]:
     return round(len(wins) / len(sells) * 100, 2)
 
 
-def calculate_fee_impact(trade_log: list, fees_paid: float) -> Optional[float]:
-    """Fee-Impact = Gebühren / Bruttogewinn * 100"""
-    sells        = [t for t in trade_log if t.get("type") == "SELL"]
-    gross_profit = sum(t["profit"] + t.get("fee", 0) for t in sells if t["profit"] > 0)
-    if gross_profit <= 0:
+def calculate_fee_impact(fees_paid: float, gross_pl_usdt: float) -> Optional[float]:
+    """
+    Fee Impact = Trading Fees / Total Gross P/L * 100.
+
+    Gibt den Anteil der Gebuehren am Brutto-Gewinn (vor Fees) in % an.
+    Werte > 100% sind moeglich und korrekt (Fees haben mehr gefressen als
+    Brutto-Gewinn war). Bei Brutto-Verlust (gross_pl_usdt <= 0) ist die
+    Kennzahl nicht definiert → None.
+    """
+    if gross_pl_usdt <= 0:
         return None
-    return round(fees_paid / gross_profit * 100, 2)
+    return round(fees_paid / gross_pl_usdt * 100, 2)
 
 
 def calculate_avg_trade_duration(trade_log: list) -> Optional[float]:
@@ -288,7 +293,6 @@ def calculate_all_metrics(
     calmar = calculate_calmar_ratio(cagr, dd.max_drawdown_pct)
     pf     = calculate_profit_factor(trade_log)
     wr     = calculate_win_rate(trade_log)
-    fee_imp= calculate_fee_impact(trade_log, fees_paid)
     bh_roi = calculate_benchmark_roi(initial_price, final_price)
     bh_usdt= calculate_benchmark_roi_usdt(initial_value, initial_price, final_price)
     kelly  = calculate_kelly_fraction(trade_log)
@@ -296,6 +300,7 @@ def calculate_all_metrics(
     avg_p  = calculate_avg_profit_per_trade(trade_log)
     gross  = calculate_gross_pl(initial_value, final_value, fees_paid)
     gprof  = calculate_grid_profit_total(trade_log, initial_value)
+    fee_imp= calculate_fee_impact(fees_paid, gross["usdt"])
 
     result = {
         "roi_pct":                roi,
