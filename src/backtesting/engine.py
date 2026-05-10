@@ -193,6 +193,13 @@ def run_backtest(
         "trailing_count":      sim.get("trailing_count", 0),
         "stop_loss_triggered": sim["stop_loss_triggered"],
         "take_profit_triggered": sim.get("take_profit_triggered", False),
+        # Mechanismus-Aktivierung (fuer Tab "Mechanisms")
+        "mechanism_active":    {
+            "recentering": enable_recentering,
+            "trailing":    enable_trailing_up or enable_trailing_down,
+            "stop_loss":   stop_loss_pct is not None,
+            "take_profit": take_profit_pct is not None,
+        },
         # Slippage existiert in der Backtest-Simulation nicht (Trade laeuft am
         # exakten Grid-Preis). Sobald PaperBroker/LiveBroker aktiv ist, kommt
         # der Wert ueber den BotRunner, nicht ueber run_backtest.
@@ -255,6 +262,10 @@ def _error_result(message: str) -> dict:
         "trailing_count":       0,
         "stop_loss_triggered":  False,
         "take_profit_triggered": False,
+        "mechanism_active":     {
+            "recentering": False, "trailing": False,
+            "stop_loss":   False, "take_profit": False,
+        },
         "regime":               None,
         "atr_usdt":             0.0,
         "atr_pct":              0.0,

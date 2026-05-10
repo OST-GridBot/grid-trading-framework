@@ -215,6 +215,22 @@ class BotRunner:
         metrics.setdefault("slippage_usdt",    None)
         metrics.setdefault("slippage_avg_pct", None)
 
+        # Mechanismus-Aktivierung (fuer Tab "Mechanisms" — counts kommen aus
+        # bot.state, hier nur die "ist aktiviert"-Flags aus der Config)
+        metrics["mechanism_active"] = {
+            "recentering": cfg.get("enable_recentering", False),
+            "trailing":    cfg.get("enable_trailing_up", False)
+                           or cfg.get("enable_trailing_down", False),
+            "stop_loss":   cfg.get("stop_loss_pct")   is not None,
+            "take_profit": cfg.get("take_profit_pct") is not None,
+        }
+        # Stop-Loss / Take-Profit Trigger-Status aus bot
+        metrics["stop_loss_triggered"]   = self._grid_bot.stop_loss_hit
+        metrics["take_profit_triggered"] = self._grid_bot.take_profit_hit
+        # Counter aus Bot-State
+        metrics["recentering_count"] = self._grid_bot.recentering_count
+        metrics["trailing_count"]    = self._grid_bot.trailing_count
+
         # Indikatoren / Marktdaten — nur wenn df gegeben (am Ende von run_update)
         if df is not None and not df.empty:
             try:

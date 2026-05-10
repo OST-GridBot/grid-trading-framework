@@ -128,7 +128,7 @@ def render_metrics_tabs(
     trade_log: Optional[list] = None,
 ) -> None:
     """
-    Drei Tabs: Grid-Bot-Performance / Marktdaten / Indikatoren.
+    Vier Tabs: Grid Bot Performance / Market Data / Indicators / Mechanisms.
 
     Liest ausschliesslich Standard-Schluessel aus dem Metrics-Dict.
 
@@ -143,13 +143,17 @@ def render_metrics_tabs(
         unsafe_allow_html=True,
     )
 
-    tab_p, tab_m, tab_i = st.tabs(["Grid Bot Performance", "Market Data", "Indicators"])
+    tab_p, tab_m, tab_i, tab_x = st.tabs(
+        ["Grid Bot Performance", "Market Data", "Indicators", "Mechanisms"]
+    )
     with tab_p:
         _render_tab_performance(metrics, trade_log or [])
     with tab_m:
         _render_tab_market(metrics)
     with tab_i:
         _render_tab_indicators(metrics)
+    with tab_x:
+        _render_tab_mechanisms(metrics)
 
 
 # ---------------------------------------------------------------------------
@@ -455,6 +459,65 @@ def _render_tab_indicators(metrics: dict) -> None:
             f"{adx30:.1f}" if adx30 is not None else "–",
             color = "#94A3B8",
         )
+
+
+# ---------------------------------------------------------------------------
+# Tab 4: Mechanisms
+# ---------------------------------------------------------------------------
+
+def _render_tab_mechanisms(metrics: dict) -> None:
+    """
+    Aktivitaet der dynamischen Mechanismen: Recentering, Trailing, Stop-Loss,
+    Take-Profit. Zeigt fuer jeden ob er aktiviert war und ob er ausgeloest hat.
+    """
+    active = metrics.get("mechanism_active", {}) or {}
+    rc_on  = active.get("recentering", False)
+    tr_on  = active.get("trailing",    False)
+    sl_on  = active.get("stop_loss",   False)
+    tp_on  = active.get("take_profit", False)
+
+    rc_count = metrics.get("recentering_count", 0) or 0
+    tr_count = metrics.get("trailing_count",    0) or 0
+    sl_hit   = metrics.get("stop_loss_triggered",   False)
+    tp_hit   = metrics.get("take_profit_triggered", False)
+
+    cols = st.columns(4)
+
+    # ── Recentering Events ─────────────────────────────────────────────
+    with cols[0]:
+        if not rc_on:
+            _metric_card("Recentering Events", "–", delta="Inactive", color="#64748B")
+        elif rc_count == 0:
+            _metric_card("Recentering Events", "0", delta="Never triggered", color="#94A3B8")
+        else:
+            _metric_card("Recentering Events", str(rc_count), delta="Triggered", color="#94A3B8")
+
+    # ── Trailing Events ────────────────────────────────────────────────
+    with cols[1]:
+        if not tr_on:
+            _metric_card("Trailing Events", "–", delta="Inactive", color="#64748B")
+        elif tr_count == 0:
+            _metric_card("Trailing Events", "0", delta="Never triggered", color="#94A3B8")
+        else:
+            _metric_card("Trailing Events", str(tr_count), delta="Triggered", color="#94A3B8")
+
+    # ── Stop-Loss ──────────────────────────────────────────────────────
+    with cols[2]:
+        if not sl_on:
+            _metric_card("Stop-Loss", "–", delta="Inactive", color="#64748B")
+        elif sl_hit:
+            _metric_card("Stop-Loss", "Triggered", delta=None, color="#F87171")
+        else:
+            _metric_card("Stop-Loss", "Not triggered", delta=None, color="#94A3B8")
+
+    # ── Take-Profit ────────────────────────────────────────────────────
+    with cols[3]:
+        if not tp_on:
+            _metric_card("Take-Profit", "–", delta="Inactive", color="#64748B")
+        elif tp_hit:
+            _metric_card("Take-Profit", "Triggered", delta=None, color="#34D399")
+        else:
+            _metric_card("Take-Profit", "Not triggered", delta=None, color="#94A3B8")
 
 
 # ---------------------------------------------------------------------------
