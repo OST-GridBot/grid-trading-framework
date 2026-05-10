@@ -345,11 +345,22 @@ class BotRunner:
         # Vola/Returns/Marktdaten-Extremes ins metrics-Dict landen
         if not df.empty:
             self._save_state(current_price, df=df)
+
+        # Marktregime fuer die Page (wird neben dem Bot-Update angezeigt).
+        regime = None
+        if not df.empty:
+            try:
+                from src.analysis.regime import detect_regime
+                regime = detect_regime(df, self._bot["interval"])
+            except Exception as e:
+                print(f"BotRunner: Regime-Fehler: {e}")
+
         return {
             "error":             None,
             "current_price":     current_price,
             "new_trades":        new_trades,
             "candles_processed": candles_processed,
+            "regime":            regime,
         }
 
     # ── Aktuellen Stand abrufen ──────────────────────────────────────────────
