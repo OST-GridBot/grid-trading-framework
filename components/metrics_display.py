@@ -42,6 +42,24 @@ def _color_dd(value: float) -> str:
     return "#34D399"
 
 
+def _fmt_price(price, with_unit: bool = True) -> str:
+    """
+    Formatiert einen Preis kompakt — 2 Nachkommastellen bei normalen Preisen,
+    6 signifikante Stellen bei niedrigpreisigen Coins (SHIB ~0.000023, PEPE).
+
+    Args:
+        price     : Preis in USDT (kann None sein)
+        with_unit : True → " USDT" anhaengen
+    """
+    if price is None or price <= 0:
+        return "–"
+    if price >= 1:
+        s = f"{price:,.2f}"
+    else:
+        s = f"{price:.6g}"
+    return f"{s} USDT" if with_unit else s
+
+
 def _metric_card(
     label:   str,
     value:   str,
@@ -344,17 +362,17 @@ def _render_tab_market(metrics: dict) -> None:
     with cols[0]:
         _metric_card(
             "Current Price",
-            f"{cur_price:,.4f} USDT" if cur_price else "–",
+            _fmt_price(cur_price),
             color = "#E2E8F0",
         )
     with cols[1]:
-        _metric_card("Max Price", f"{max_p:,.4f} USDT", color="#34D399")
+        _metric_card("Max Price", _fmt_price(max_p), color="#34D399")
     with cols[2]:
-        _metric_card("Min Price", f"{min_p:,.4f} USDT", color="#F87171")
+        _metric_card("Min Price", _fmt_price(min_p), color="#F87171")
     with cols[3]:
         _metric_card(
             "Max-Min Range",
-            f"{range_u:,.4f} USDT",
+            _fmt_price(range_u),
             delta = f"{range_p:.2f}%",
             color = "#94A3B8",
         )
@@ -376,17 +394,19 @@ def _render_tab_indicators(metrics: dict) -> None:
     adx30  = metrics.get("adx30")
 
     # ── Reihe 1: Returns pro Kerze + Vola ──────────────────────────────
+    # Hinweis: bei sehr kleinen Renditen kann die Anzeige auf +0.00% gerundet
+    # werden — akzeptiert fuer kompakte UI, keine Sonder-Behandlung.
     cols = st.columns(4)
     with cols[0]:
         _metric_card(
             "Avg % Return / Candle",
-            f"{avg_r:+.4f}%" if avg_r is not None else "–",
+            f"{avg_r:+.2f}%" if avg_r is not None else "–",
             color = _color_roi(avg_r),
         )
     with cols[1]:
         _metric_card(
             "Vola % Return / Candle",
-            f"{std_r:.4f}%" if std_r is not None else "–",
+            f"{std_r:.2f}%" if std_r is not None else "–",
             color = "#94A3B8",
         )
     with cols[2]:
