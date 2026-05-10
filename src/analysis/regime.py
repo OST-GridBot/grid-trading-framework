@@ -34,6 +34,19 @@ from src.analysis.indicators import (
 
 
 # ---------------------------------------------------------------------------
+# Konstanten fuer die Direction-Override-Heuristik
+# ---------------------------------------------------------------------------
+
+# Mindestabweichung SMA20 vs SMA50 (in %), ab der die Richtung Vorrang vor der
+# ADX-basierten Range-Klassifikation erhaelt.
+SMA_TREND_THRESHOLD_PCT: float = 2.0
+
+# Abweichung (in %), ab der das Override maximale Konfidenz erreicht.
+# Skaliert die Konfidenz linear zwischen Schwelle (60%) und diesem Wert (95%).
+SMA_TREND_FULL_PCT: float = 10.0
+
+
+# ---------------------------------------------------------------------------
 # Datenklasse fuer Regime-Ergebnis
 # ---------------------------------------------------------------------------
 
@@ -110,8 +123,23 @@ def detect_regime(
     # --- Regime bestimmen ---
     regime, confidence = _determine_regime(signals)
 
-    # --- Trend-Richtung bestimmen ---
-    if regime == "trend":
+    # --- Direction-Override: SMA20 vs SMA50 hat Vorrang vor ADX-Range ---
+    # Bug-Fix: Niedriger ADX bedeutete bisher automatisch "range" - auch bei
+    # klaren linearen Trends. Wenn SMA20 deutlich von SMA50 abweicht, ist es
+    # ein Trend, unabhaengig vom ADX.
+    sma_20 = df["close"].rolling(20).mean().iloc[-1]
+    sma_50 = df["close"].rolling(50).mean().iloc[-1]
+    sma_diff_pct = 0.0
+    if not (pd.isna(sma_20) or pd.isna(sma_50)) and sma_50 > 0:
+        sma_diff_pct = (sma_20 - sma_50) / sma_50 * 100
+
+    if abs(sma_diff_pct) > SMA_TREND_THRESHOLD_PCT:
+        # Klare Richtung -> Trend-Override unabhaengig von ADX
+        regime    = "trend_up" if sma_diff_pct > 0 else "trend_down"
+        magnitude = min(abs(sma_diff_pct) / SMA_TREND_FULL_PCT, 1.0)
+        confidence = 60.0 + magnitude * 35.0   # 60..95
+    elif regime == "trend":
+        # ADX sagt Trend, SMA-Diff schwach -> Richtung via +DI/-DI-Fallback
         adx_result = _get_adx_dataframe(df)
         regime = _determine_trend_direction(df, adx_result)
 
