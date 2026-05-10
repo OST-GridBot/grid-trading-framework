@@ -128,7 +128,7 @@ def render_metrics_tabs(
     trade_log: Optional[list] = None,
 ) -> None:
     """
-    Vier Tabs: Grid Bot Performance / Market Data / Indicators / Mechanisms.
+    Drei Tabs: Performance & Risk / Bot Details / Market Data & Indicators.
 
     Liest ausschliesslich Standard-Schluessel aus dem Metrics-Dict.
 
@@ -143,24 +143,22 @@ def render_metrics_tabs(
         unsafe_allow_html=True,
     )
 
-    tab_p, tab_m, tab_i, tab_x = st.tabs(
-        ["Grid Bot Performance", "Market Data", "Indicators", "Mechanisms"]
+    tab_pr, tab_bd, tab_mi = st.tabs(
+        ["Performance & Risk", "Bot Details", "Market Data & Indicators"]
     )
-    with tab_p:
-        _render_tab_performance(metrics, trade_log or [])
-    with tab_m:
-        _render_tab_market(metrics)
-    with tab_i:
-        _render_tab_indicators(metrics)
-    with tab_x:
-        _render_tab_mechanisms(metrics)
+    with tab_pr:
+        _render_tab_performance(metrics)
+    with tab_bd:
+        _render_tab_bot_details(metrics, trade_log or [])
+    with tab_mi:
+        _render_tab_market_indicators(metrics)
 
 
 # ---------------------------------------------------------------------------
-# Tab 1: Grid-Bot-Performance
+# Tab 1: Performance & Risk
 # ---------------------------------------------------------------------------
 
-def _render_tab_performance(metrics: dict, trade_log: list) -> None:
+def _render_tab_performance(metrics: dict) -> None:
     initial      = metrics.get("initial_investment", 0) or 0
     final        = metrics.get("final_value",        0) or 0
     pl_usdt      = final - initial
@@ -178,11 +176,7 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
     max_dd_pct   = metrics.get("max_drawdown_pct",   0) or 0
     max_dd_usdt  = metrics.get("max_drawdown_usdt",  0) or 0
 
-    num_t        = metrics.get("num_trades",         0) or 0
     pf           = metrics.get("profit_factor")
-    grid_eff     = metrics.get("grid_efficiency")
-    active       = metrics.get("active_levels", {"active": 0, "total": 0})
-    cap_per_grid = metrics.get("capital_per_grid")
 
     avg_p_usdt   = metrics.get("avg_profit_per_trade")
     avg_p_pct    = metrics.get("avg_profit_per_trade_pct")
@@ -296,33 +290,16 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
-    # ── Reihe 4: Grid + Trade-Stats ────────────────────────────────────
+    # ── Reihe 4: Avg Profit / Profit Factor / Slippage / leer ──────────
     cols = st.columns(4)
     with cols[0]:
-        ratio = (
-            f"{active['active']}/{active['total']}"
-            if isinstance(active, dict) else "–"
-        )
-        _metric_card(
-            "Grid Efficiency",
-            f"{grid_eff:.1f}%" if grid_eff is not None else "–",
-            delta = ratio,
-            color = "#34D399" if (grid_eff or 0) >= 50 else "#FBBF24",
-        )
-    with cols[1]:
-        _metric_card(
-            "Invest / Grid",
-            f"{cap_per_grid:,.2f} USDT" if cap_per_grid is not None else "–",
-            color = "#E2E8F0",
-        )
-    with cols[2]:
         _metric_card(
             "Avg Profit / Trade",
             f"{avg_p_usdt:+,.2f} USDT" if avg_p_usdt is not None else "–",
             delta = f"{avg_p_pct:+.2f}%" if avg_p_pct is not None else None,
             color = _color_roi(avg_p_usdt),
         )
-    with cols[3]:
+    with cols[1]:
         # Profit Factor: "–" statt "∞" wenn keine Verluste
         _metric_card(
             "Profit Factor",
@@ -332,15 +309,6 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
                     else "#FBBF24" if (pf or 0) >= 1
                     else "#F87171",
         )
-
-    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
-
-    # ── Reihe 5: Meta + Slippage ───────────────────────────────────────
-    cols = st.columns(4)
-    with cols[0]:
-        _metric_card("Initial Capital", f"{initial:,.2f} USDT", color="#E2E8F0")
-    with cols[1]:
-        _metric_card("Current Capital", f"{final:,.2f} USDT", color=_color_roi(roi))
     with cols[2]:
         # Slippage: aktuell "–" in allen Modi (Brokers nicht aktiv).
         # Sobald LiveBroker / PaperBroker aktiv ist, fliesst der Wert
@@ -349,17 +317,117 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
         slip_delta = f"{slip_pct:.4f}%"   if slip_pct  is not None else None
         _metric_card("Total Slippage", slip_main, delta=slip_delta, color="#94A3B8")
     with cols[3]:
+        _empty_cell()
+
+
+# ---------------------------------------------------------------------------
+# Tab 2: Bot Details
+# ---------------------------------------------------------------------------
+
+def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
+    """
+    Bot Details: Mechanismen + Kapital/Aktivität + Konfiguration.
+    """
+    # ── Reihe 1: Mechanismen ───────────────────────────────────────────
+    active = metrics.get("mechanism_active", {}) or {}
+    rc_on  = active.get("recentering", False)
+    tr_on  = active.get("trailing",    False)
+    sl_on  = active.get("stop_loss",   False)
+    tp_on  = active.get("take_profit", False)
+
+    rc_count = metrics.get("recentering_count", 0) or 0
+    tr_count = metrics.get("trailing_count",    0) or 0
+    sl_hit   = metrics.get("stop_loss_triggered",   False)
+    tp_hit   = metrics.get("take_profit_triggered", False)
+
+    cols = st.columns(4)
+    with cols[0]:
+        if not rc_on:
+            _metric_card("Recentering Events", "–", delta="Inactive", color="#64748B")
+        elif rc_count == 0:
+            _metric_card("Recentering Events", "0", delta="Never triggered", color="#94A3B8")
+        else:
+            _metric_card("Recentering Events", str(rc_count), delta="Triggered", color="#94A3B8")
+    with cols[1]:
+        if not tr_on:
+            _metric_card("Trailing Events", "–", delta="Inactive", color="#64748B")
+        elif tr_count == 0:
+            _metric_card("Trailing Events", "0", delta="Never triggered", color="#94A3B8")
+        else:
+            _metric_card("Trailing Events", str(tr_count), delta="Triggered", color="#94A3B8")
+    with cols[2]:
+        if not sl_on:
+            _metric_card("Stop-Loss", "–", delta="Inactive", color="#64748B")
+        elif sl_hit:
+            _metric_card("Stop-Loss", "Triggered", delta=None, color="#F87171")
+        else:
+            _metric_card("Stop-Loss", "Not triggered", delta=None, color="#94A3B8")
+    with cols[3]:
+        if not tp_on:
+            _metric_card("Take-Profit", "–", delta="Inactive", color="#64748B")
+        elif tp_hit:
+            _metric_card("Take-Profit", "Triggered", delta=None, color="#34D399")
+        else:
+            _metric_card("Take-Profit", "Not triggered", delta=None, color="#94A3B8")
+
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+
+    # ── Reihe 2: Kapital + Aktivität ───────────────────────────────────
+    initial   = metrics.get("initial_investment", 0) or 0
+    final     = metrics.get("final_value",        0) or 0
+    roi       = metrics.get("roi_pct",            0) or 0
+    num_t     = metrics.get("num_trades",         0) or 0
+    grid_eff  = metrics.get("grid_efficiency")
+    active_lv = metrics.get("active_levels", {"active": 0, "total": 0})
+
+    cols = st.columns(4)
+    with cols[0]:
+        _metric_card("Initial Capital", f"{initial:,.2f} USDT", color="#E2E8F0")
+    with cols[1]:
+        _metric_card("Current Capital", f"{final:,.2f} USDT", color=_color_roi(roi))
+    with cols[2]:
         buys  = sum(1 for t in trade_log if "BUY"  in str(t.get("type", "")).upper())
         sells = sum(1 for t in trade_log if "SELL" in str(t.get("type", "")).upper())
         bs    = f"B:{buys} / S:{sells}" if trade_log else None
         _metric_card("Number of Trades", str(num_t), delta=bs, color="#E2E8F0")
+    with cols[3]:
+        ratio = (
+            f"{active_lv['active']}/{active_lv['total']}"
+            if isinstance(active_lv, dict) else "–"
+        )
+        _metric_card(
+            "Grid Efficiency",
+            f"{grid_eff:.1f}%" if grid_eff is not None else "–",
+            delta = ratio,
+            color = "#34D399" if (grid_eff or 0) >= 50 else "#FBBF24",
+        )
+
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+
+    # ── Reihe 3: Konfiguration (Invest / Grid + leere Slots) ───────────
+    cap_per_grid = metrics.get("capital_per_grid")
+
+    cols = st.columns(4)
+    with cols[0]:
+        _metric_card(
+            "Invest / Grid",
+            f"{cap_per_grid:,.2f} USDT" if cap_per_grid is not None else "–",
+            color = "#E2E8F0",
+        )
+    with cols[1]: _empty_cell()
+    with cols[2]: _empty_cell()
+    with cols[3]: _empty_cell()
 
 
 # ---------------------------------------------------------------------------
-# Tab 2: Marktdaten
+# Tab 3: Market Data & Indicators (zusammengelegt)
 # ---------------------------------------------------------------------------
 
-def _render_tab_market(metrics: dict) -> None:
+def _render_tab_market_indicators(metrics: dict) -> None:
+    """
+    Market Data + technische Indikatoren in einem Tab.
+    """
+    # ── Reihe 1: Market Data ───────────────────────────────────────────
     cur_price = metrics.get("current_price")
     extr      = metrics.get("price_extremes", {}) or {}
     max_p     = extr.get("max_price",  0) or 0
@@ -369,11 +437,7 @@ def _render_tab_market(metrics: dict) -> None:
 
     cols = st.columns(4)
     with cols[0]:
-        _metric_card(
-            "Current Price",
-            _fmt_price(cur_price),
-            color = "#E2E8F0",
-        )
+        _metric_card("Current Price", _fmt_price(cur_price), color="#E2E8F0")
     with cols[1]:
         _metric_card("Max Price", _fmt_price(max_p), color="#34D399")
     with cols[2]:
@@ -386,25 +450,17 @@ def _render_tab_market(metrics: dict) -> None:
             color = "#94A3B8",
         )
 
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
-# ---------------------------------------------------------------------------
-# Tab 3: Indikatoren
-# ---------------------------------------------------------------------------
-
-def _render_tab_indicators(metrics: dict) -> None:
-    rs    = metrics.get("return_stats", {}) or {}
-    avg_r = rs.get("avg_pct")
-    std_r = rs.get("std_pct")
-    vola_m = metrics.get("vola_monthly_pct")
-    vola_y = metrics.get("vola_yearly_pct")
-    atr_u  = metrics.get("atr_usdt")
-    atr_p  = metrics.get("atr_pct")
-    adx14  = metrics.get("adx14")
-    adx30  = metrics.get("adx30")
-
-    # ── Reihe 1: Returns pro Kerze + Vola ──────────────────────────────
+    # ── Reihe 2: Returns + Vola ────────────────────────────────────────
     # Hinweis: bei sehr kleinen Renditen kann die Anzeige auf +0.00% gerundet
     # werden — akzeptiert fuer kompakte UI, keine Sonder-Behandlung.
+    rs     = metrics.get("return_stats", {}) or {}
+    avg_r  = rs.get("avg_pct")
+    std_r  = rs.get("std_pct")
+    vola_m = metrics.get("vola_monthly_pct")
+    vola_y = metrics.get("vola_yearly_pct")
+
     cols = st.columns(4)
     with cols[0]:
         _metric_card(
@@ -433,7 +489,12 @@ def _render_tab_indicators(metrics: dict) -> None:
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
-    # ── Reihe 2: ATR + ADX ─────────────────────────────────────────────
+    # ── Reihe 3: ATR + ADX ─────────────────────────────────────────────
+    atr_u = metrics.get("atr_usdt")
+    atr_p = metrics.get("atr_pct")
+    adx14 = metrics.get("adx14")
+    adx30 = metrics.get("adx30")
+
     cols = st.columns(4)
     with cols[0]:
         _metric_card(
@@ -459,65 +520,6 @@ def _render_tab_indicators(metrics: dict) -> None:
             f"{adx30:.1f}" if adx30 is not None else "–",
             color = "#94A3B8",
         )
-
-
-# ---------------------------------------------------------------------------
-# Tab 4: Mechanisms
-# ---------------------------------------------------------------------------
-
-def _render_tab_mechanisms(metrics: dict) -> None:
-    """
-    Aktivitaet der dynamischen Mechanismen: Recentering, Trailing, Stop-Loss,
-    Take-Profit. Zeigt fuer jeden ob er aktiviert war und ob er ausgeloest hat.
-    """
-    active = metrics.get("mechanism_active", {}) or {}
-    rc_on  = active.get("recentering", False)
-    tr_on  = active.get("trailing",    False)
-    sl_on  = active.get("stop_loss",   False)
-    tp_on  = active.get("take_profit", False)
-
-    rc_count = metrics.get("recentering_count", 0) or 0
-    tr_count = metrics.get("trailing_count",    0) or 0
-    sl_hit   = metrics.get("stop_loss_triggered",   False)
-    tp_hit   = metrics.get("take_profit_triggered", False)
-
-    cols = st.columns(4)
-
-    # ── Recentering Events ─────────────────────────────────────────────
-    with cols[0]:
-        if not rc_on:
-            _metric_card("Recentering Events", "–", delta="Inactive", color="#64748B")
-        elif rc_count == 0:
-            _metric_card("Recentering Events", "0", delta="Never triggered", color="#94A3B8")
-        else:
-            _metric_card("Recentering Events", str(rc_count), delta="Triggered", color="#94A3B8")
-
-    # ── Trailing Events ────────────────────────────────────────────────
-    with cols[1]:
-        if not tr_on:
-            _metric_card("Trailing Events", "–", delta="Inactive", color="#64748B")
-        elif tr_count == 0:
-            _metric_card("Trailing Events", "0", delta="Never triggered", color="#94A3B8")
-        else:
-            _metric_card("Trailing Events", str(tr_count), delta="Triggered", color="#94A3B8")
-
-    # ── Stop-Loss ──────────────────────────────────────────────────────
-    with cols[2]:
-        if not sl_on:
-            _metric_card("Stop-Loss", "–", delta="Inactive", color="#64748B")
-        elif sl_hit:
-            _metric_card("Stop-Loss", "Triggered", delta=None, color="#F87171")
-        else:
-            _metric_card("Stop-Loss", "Not triggered", delta=None, color="#94A3B8")
-
-    # ── Take-Profit ────────────────────────────────────────────────────
-    with cols[3]:
-        if not tp_on:
-            _metric_card("Take-Profit", "–", delta="Inactive", color="#64748B")
-        elif tp_hit:
-            _metric_card("Take-Profit", "Triggered", delta=None, color="#34D399")
-        else:
-            _metric_card("Take-Profit", "Not triggered", delta=None, color="#94A3B8")
 
 
 # ---------------------------------------------------------------------------
