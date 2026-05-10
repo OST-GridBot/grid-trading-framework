@@ -755,12 +755,14 @@ def _show_new_bot_form():
     if enable_recentering:
         if "lt_new_recenter_up" not in st.session_state:
             st.session_state["lt_new_recenter_up"] = True
-        enable_recentering_up = st.checkbox(
-            "Recentering Up", key="lt_new_recenter_up",
-        )
-        enable_recentering_down = st.checkbox(
-            "Recentering Down", key="lt_new_recenter_down",
-        )
+        _lt_rc_col1, _lt_rc_col2 = st.columns([1, 17])
+        with _lt_rc_col2:
+            enable_recentering_up = st.checkbox(
+                "Recentering Up", key="lt_new_recenter_up",
+            )
+            enable_recentering_down = st.checkbox(
+                "Recentering Down", key="lt_new_recenter_down",
+            )
         st.markdown(_caption("Recentering-Schwelle (%)"), unsafe_allow_html=True)
         recenter_threshold = st.slider("", 1.0, 20.0, 5.0, 1.0,
                                         key="lt_recenter_thr",

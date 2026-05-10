@@ -519,12 +519,14 @@ def show_backtesting():
     enable_recentering_down = False
     recenter_threshold = 0.05
     if enable_recentering:
-        enable_recentering_up = st.sidebar.checkbox(
-            "Recentering Up", value=True, key="bt_recenter_up",
-        )
-        enable_recentering_down = st.sidebar.checkbox(
-            "Recentering Down", value=False, key="bt_recenter_down",
-        )
+        _bt_rc_col1, _bt_rc_col2 = st.sidebar.columns([1, 17])
+        with _bt_rc_col2:
+            enable_recentering_up = st.checkbox(
+                "Recentering Up", value=True, key="bt_recenter_up",
+            )
+            enable_recentering_down = st.checkbox(
+                "Recentering Down", value=False, key="bt_recenter_down",
+            )
         st.sidebar.markdown(_caption("Recentering-Schwelle (%)"), unsafe_allow_html=True)
         recenter_threshold = st.sidebar.slider("", 1.0, 20.0, 5.0, 1.0, key="bt_recenter_thr",
                                             label_visibility="collapsed") / 100
