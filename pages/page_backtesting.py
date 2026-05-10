@@ -711,7 +711,7 @@ def show_backtesting():
         st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
 
     # Tabs
-    tab1, tab2 = st.tabs(["Chart", "Trades"])
+    tab1, tab2, tab3 = st.tabs(["Chart", "Trades", "⚙️ Configuration"])
     trade_log    = result.get("trade_log",    []) if result else []
     grid_lines   = result.get("grid_lines",   []) if result else []
     daily_values = result.get("daily_values", {}) if result else {}
@@ -752,6 +752,63 @@ def show_backtesting():
 
     with tab2:
         render_trade_log(trade_log)
+
+    with tab3:
+        # Helper für dynamische Mechanismen — analog zu LT, nutzt aber die
+        # lokalen BT-Sidebar-Variablen statt cfg.get(...).
+        def _sl():
+            return f"Aktiv ({stop_loss_pct*100:.0f}%)" if stop_loss_pct else "Inaktiv"
+        def _tp():
+            return f"Aktiv ({take_profit_pct*100:.0f}%)" if take_profit_pct else "Inaktiv"
+        def _dd():
+            if enable_dd_throttle:
+                return f"Aktiv (Schwelle 1: {dd_threshold_1*100:.0f}% / Schwelle 2: {dd_threshold_2*100:.0f}%)"
+            return "Inaktiv"
+        def _vo():
+            if enable_variable_orders:
+                return f"Aktiv (unten {weight_bottom}× / oben {weight_top}×)"
+            return "Inaktiv"
+        def _rc():
+            if enable_recentering:
+                return f"Aktiv ({recenter_threshold*100:.0f}%)"
+            return "Inaktiv"
+        def _atr():
+            if enable_atr_adjust:
+                mode = "dynamisch" if enable_atr_dynamic else "statisch"
+                return f"Aktiv (×{atr_multiplier}, {mode})"
+            return "Inaktiv"
+        def _tr():
+            if not (enable_trailing_up or enable_trailing_down):
+                return "Inaktiv"
+            parts = []
+            if enable_trailing_up:
+                _v = f"\\${trailing_up_stop:,.2f}" if isinstance(trailing_up_stop, (int, float)) else "–"
+                parts.append(f"Up Stop: {_v}")
+            if enable_trailing_down:
+                _v = f"\\${trailing_down_stop:,.2f}" if isinstance(trailing_down_stop, (int, float)) else "–"
+                parts.append(f"Down Stop: {_v}")
+            return f"Aktiv ({' / '.join(parts)})"
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.markdown(f"- **Coin:** {coin}/USDT")
+            st.markdown(f"- **Intervall:** {interval}")
+            st.markdown(f"- **Zeitraum:** {start_date} – {end_date} ({days}d)")
+            st.markdown(f"- **Startkapital:** ${total_investment:,.2f}")
+            st.markdown(f"- **Kapitalreserve:** {reserve_pct*100:.0f}%")
+            st.markdown(f"- **Grid-Modus:** {grid_mode}")
+            st.markdown(f"- **Stop-Loss:** {_sl()}")
+            st.markdown(f"- **Take-Profit:** {_tp()}")
+            st.markdown(f"- **Variable Orders:** {_vo()}")
+            st.markdown(f"- **ATR-Anpassung:** {_atr()}")
+        with col_b:
+            st.markdown(f"- **Anzahl Grids:** {num_grids}")
+            st.markdown(f"- **Untere Grenze:** ${lower_price:,.2f}")
+            st.markdown(f"- **Obere Grenze:** ${upper_price:,.2f}")
+            st.markdown(f"- **Gebührenrate:** {fee_rate*100:.3f}%")
+            st.markdown(f"- **DD-Drosselung:** {_dd()}")
+            st.markdown(f"- **Recentering:** {_rc()}")
+            st.markdown(f"- **Trailing:** {_tr()}")
 
     # -----------------------------------------------------------------------
     # Optimizer
