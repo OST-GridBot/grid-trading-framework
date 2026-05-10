@@ -13,7 +13,7 @@ from components.metrics_display import render_metrics_tabs, render_trade_log
 from src.backtesting.engine import run_backtest
 from src.backtesting.optimizer import optimize_full_grid_search, smart_grid_setup
 from src.data.cache_manager import get_price_data
-from src.strategy.grid_builder import build_grid_config
+from src.strategy.grid_builder import build_grid_config, suggest_atr_grid_counts
 from config.settings import DEFAULT_NUM_GRIDS, DEFAULT_GRID_MODE, DEFAULT_FEE_RATE, DEFAULT_RESERVE_PCT
 
 COINS = ["BTC","ETH","BNB","SOL","XRP","ADA","DOGE","AVAX","DOT","MATIC",
@@ -391,12 +391,11 @@ def show_backtesting():
     # ATR-Infofeld (dynamisch nach Coin + Zeitraum) — als Expander
     try:
         if df_tmp_atr is not None:
-            from src.analysis.indicators import get_atr_stats
-            _atr, _ = get_atr_stats(df_tmp_atr)
-            _rng    = upper_price - lower_price
-            _s05 = max(2, round(_rng / (_atr * 0.5)))
-            _s10 = max(2, round(_rng / (_atr * 1.0)))
-            _s15 = max(2, round(_rng / (_atr * 1.5)))
+            atr_info = suggest_atr_grid_counts(df_tmp_atr, upper_price - lower_price)
+            _atr  = atr_info["atr_usdt"]
+            _s05  = atr_info["suggestions"][0.5]
+            _s10  = atr_info["suggestions"][1.0]
+            _s15  = atr_info["suggestions"][1.5]
             with st.sidebar.expander("Volatilitätsbasierte Vorschläge"):
                 st.markdown(
                     f"<div style='font-size:0.75rem; color:#94A3B8;'>"

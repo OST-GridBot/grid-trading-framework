@@ -22,7 +22,9 @@ Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
 """
 
 import numpy as np
+import pandas as pd
 from dataclasses import dataclass, field
+from typing import Optional
 
 from config.settings import (
     DEFAULT_NUM_GRIDS,
@@ -31,6 +33,7 @@ from config.settings import (
     MIN_NUM_GRIDS,
     MAX_NUM_GRIDS,
 )
+from src.analysis.indicators import get_atr_stats
 
 
 # ---------------------------------------------------------------------------
@@ -282,3 +285,43 @@ def _calculate_profit_per_grid(
         profits.append(net * 100)
 
     return float(np.mean(profits))
+
+
+# ---------------------------------------------------------------------------
+# ATR-basierte Grid-Anzahl-Vorschlaege
+# ---------------------------------------------------------------------------
+
+def suggest_atr_grid_counts(
+    df:          pd.DataFrame,
+    range_usdt:  float,
+    multipliers: Optional[list] = None,
+) -> dict:
+    """
+    Schlaegt Grid-Anzahlen basierend auf ATR vor.
+
+    Fuer jeden Multiplikator wird berechnet, wie viele Grids in die gegebene
+    Range passen, wenn der Grid-Abstand = ATR × Multiplikator betraegt.
+
+    Args:
+        df          : OHLCV-DataFrame fuer die ATR-Berechnung
+        range_usdt  : Grid-Range in USDT (upper - lower)
+        multipliers : Liste der ATR-Multiplikatoren (Default: [0.5, 1.0, 1.5])
+
+    Returns:
+        dict mit:
+            atr_usdt    : ATR-Wert in USDT
+            suggestions : dict {multiplier: grid_count} fuer jeden Multiplikator
+    """
+    if multipliers is None:
+        multipliers = [0.5, 1.0, 1.5]
+
+    atr_usdt, _ = get_atr_stats(df)
+    if atr_usdt <= 0 or range_usdt <= 0:
+        return {"atr_usdt": atr_usdt, "suggestions": {m: 0 for m in multipliers}}
+
+    return {
+        "atr_usdt":    atr_usdt,
+        "suggestions": {
+            m: max(2, round(range_usdt / (atr_usdt * m))) for m in multipliers
+        },
+    }
