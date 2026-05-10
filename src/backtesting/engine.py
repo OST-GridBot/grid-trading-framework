@@ -160,6 +160,7 @@ def run_backtest(
         num_days            = num_days_real,
         num_grids           = num_grids,
         current_price       = sim["final_price"],
+        open_buys           = sim.get("final_open_buys", []),
         has_dynamic_capital = has_dynamic_capital,
     )
 
@@ -320,6 +321,7 @@ def _error_result(message: str) -> dict:
         "initial_investment":   0.0,
         "final_value":          0.0,
         "grid_efficiency":      None,
+        "unrealized_pnl":       {"usdt": 0.0, "pct": 0.0, "num_positions": 0},
         # Backtest-spezifisch
         "coin":                 "",
         "interval":             "",

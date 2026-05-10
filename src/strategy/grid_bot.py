@@ -943,6 +943,16 @@ def simulate_grid_bot(
             if not pd.isna(v)
         }
 
+        # Offene Positionen am Ende des Backtests im open_buys-Format
+        # (Liste von Dicts), damit calculate_unrealized_pnl es direkt
+        # konsumieren kann.
+        # fee=0.0 weil coin_inventory die Original-Buy-Fee nicht speichert.
+        # Floating Profit ist dadurch minimal optimistisch (≤0.1% pro Position).
+        final_open_buys = [
+            {"price": float(p), "amount": float(a), "fee": 0.0}
+            for (a, p, _ts) in bot.coin_inventory
+        ]
+
         return {
             "initial_investment":  total_investment,
             "final_value":         final_value,
@@ -953,6 +963,7 @@ def simulate_grid_bot(
             "trade_log":           bot.trade_log,
             "grid_lines":          bot.grid_lines,
             "final_position":      dict(bot.position),
+            "final_open_buys":     final_open_buys,
             "initial_price":       initial_price,
             "final_price":         final_price,
             "price_change_pct":    ((final_price - initial_price) / initial_price) * 100,
@@ -975,6 +986,7 @@ def simulate_grid_bot(
             "trade_log":           [],
             "grid_lines":          [],
             "final_position":      {"usdt": total_investment, "coin": 0.0},
+            "final_open_buys":     [],
             "initial_price":       0.0,
             "final_price":         0.0,
             "price_change_pct":    0.0,
