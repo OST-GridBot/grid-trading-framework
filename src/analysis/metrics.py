@@ -25,6 +25,24 @@ from typing import Optional
 
 
 # ---------------------------------------------------------------------------
+# Trade-Log Helfer
+# ---------------------------------------------------------------------------
+
+def _profit_gross(t: dict) -> float:
+    """
+    Liefert den Brutto-Profit eines Trades (Preisdifferenz × Menge, vor Fee).
+
+    Neue Trade-Logs (ab Brutto-Refactor) haben den Schluessel "profit_gross"
+    direkt. Alte Logs haben nur "profit" (netto, nach Sell-Fee). Fallback:
+    profit + fee rekonstruiert den Brutto-Wert exakt, weil bei SELLs nur die
+    Sell-Fee von profit abgezogen wurde und t["fee"] genau diese Sell-Fee ist.
+    """
+    if "profit_gross" in t:
+        return t["profit_gross"]
+    return t.get("profit", 0) + t.get("fee", 0)
+
+
+# ---------------------------------------------------------------------------
 # Drawdown
 # ---------------------------------------------------------------------------
 
@@ -120,10 +138,10 @@ def calculate_gross_pl(
 # ---------------------------------------------------------------------------
 
 def calculate_profit_factor(trade_log: list) -> Optional[float]:
-    """Profit-Faktor = Bruttogewinn / Bruttoverlust. Gut >= 1.5"""
+    """Profit-Faktor = Bruttogewinn / Bruttoverlust (auf Brutto-Basis). Gut >= 1.5"""
     sells        = [t for t in trade_log if t.get("type") == "SELL"]
-    gross_profit = sum(t["profit"] for t in sells if t["profit"] > 0)
-    gross_loss   = abs(sum(t["profit"] for t in sells if t["profit"] <= 0))
+    gross_profit = sum(_profit_gross(t) for t in sells if _profit_gross(t) > 0)
+    gross_loss   = abs(sum(_profit_gross(t) for t in sells if _profit_gross(t) < 0))
     if gross_loss <= 0:
         return None
     return round(gross_profit / gross_loss, 4)
@@ -391,14 +409,14 @@ def calculate_grid_efficiency(trade_log: list, num_grids: int) -> Optional[float
 
 def calculate_avg_profit_per_trade(trade_log: list) -> Optional[float]:
     """
-    Durchschnittlicher Gewinn pro abgeschlossenem SELL-Trade in USDT.
-    Zeigt ob einzelne Trades lohnenswert sind.
+    Durchschnittlicher Brutto-Gewinn pro abgeschlossenem SELL-Trade in USDT.
+    = Grid Profit Total (gross) / Anzahl SELLs. Konsistent mit der Brutto-Linie.
     """
     sells = [t for t in trade_log if t.get("type") == "SELL"]
     if not sells:
         return None
-    total_profit = sum(t.get("profit", 0) for t in sells)
-    return round(total_profit / len(sells), 4)
+    total_profit_gross = sum(_profit_gross(t) for t in sells)
+    return round(total_profit_gross / len(sells), 4)
 
 
 def calculate_avg_profit_per_trade_pct(
@@ -448,11 +466,13 @@ def calculate_grid_profit_total(
     trade_log:     list,
     initial_value: float,
 ) -> dict:
-    """Realisierter Gesamtgewinn aus geschlossenen Grid-Trades.
+    """Realisierter Brutto-Gesamtgewinn aus geschlossenen Grid-Trades.
 
-    Summe aller SELL.profit (Profit nach Fee). Pct = total / initial * 100.
+    Summe aller SELL.profit_gross (Preisdifferenz × Menge, vor Fee).
+    Pct = total / initial * 100. Brutto-Linie: Fees werden zentral ueber
+    Trading Fees abgezogen, nicht hier doppelt.
     """
-    total = sum(t.get("profit", 0) for t in trade_log if t.get("type") == "SELL")
+    total = sum(_profit_gross(t) for t in trade_log if t.get("type") == "SELL")
     pct   = (total / initial_value * 100) if initial_value > 0 else 0.0
     return {
         "usdt": round(total, 4),
@@ -506,39 +526,43 @@ def calculate_unrealized_pnl(
     fee_rate:      float = 0.001,
 ) -> dict:
     """
-    Unrealisierter Gewinn/Verlust der offenen BUY-Positionen.
-    
+    Unrealisierter Brutto-Gewinn/Verlust der offenen BUY-Positionen.
+
+    Brutto-Linie: Bewertung des Coin-Bestands zum Marktpreis vs. dem reinen
+    Buy-Preis × Menge — ohne hypothetische Sell-Fee, ohne Buy-Fee. Fees
+    werden zentral ueber Trading Fees abgezogen, nicht hier doppelt.
+
     Args:
         open_buys     : Liste offener BUY-Trades [{"price": x, "amount": y, "fee": z}]
         current_price : Aktueller Marktpreis
-        fee_rate      : Gebührenrate für hypothetischen Verkauf
-    
+        fee_rate      : Erhalten fuer Rueckwaertskompatibilitaet, wird nicht
+                        mehr verwendet (Brutto-Berechnung).
+
     Returns:
         dict mit usdt, pct, num_positions
     """
     if not open_buys or current_price <= 0:
         return {"usdt": 0.0, "pct": 0.0, "num_positions": 0}
-    
+
     total_cost   = 0.0
     total_value  = 0.0
-    
+
     for buy in open_buys:
         buy_price = buy.get("price", 0)
         amount    = buy.get("amount", 0)
-        buy_fee   = buy.get("fee", 0)
         if buy_price <= 0 or amount <= 0:
             continue
-        cost         = buy_price * amount + buy_fee
-        sell_value   = current_price * amount * (1 - fee_rate)
+        cost         = buy_price * amount       # brutto, ohne Buy-Fee
+        sell_value   = current_price * amount   # brutto, ohne Sell-Fee
         total_cost  += cost
         total_value += sell_value
-    
+
     if total_cost <= 0:
         return {"usdt": 0.0, "pct": 0.0, "num_positions": 0}
-    
+
     pnl_usdt = total_value - total_cost
     pnl_pct  = pnl_usdt / total_cost * 100
-    
+
     return {
         "usdt":          round(pnl_usdt, 4),
         "pct":           round(pnl_pct,  4),

@@ -424,9 +424,10 @@ class GridBot:
             grid  : GridState des auszufuehrenden Levels
             candle: Aktuelle Kerze fuer Timestamp und Preis
         """
-        fee    = 0.0
-        profit = 0.0
-        timestamp = candle["timestamp"]
+        fee          = 0.0
+        profit       = 0.0   # netto (nach Sell-Fee-Abzug)
+        profit_gross = 0.0   # brutto (reine Preisdifferenz × Menge)
+        timestamp    = candle["timestamp"]
 
         try:
             if grid.side == "sell":
@@ -473,9 +474,9 @@ class GridBot:
                 if self.position["coin"] < actual_sell_amt - 1e-10:
                     return
 
-                profit = (grid.price - buy_price) * actual_sell_amt
-                fee    = actual_sell_amt * grid.price * self.fee_rate
-                profit -= fee
+                profit_gross = (grid.price - buy_price) * actual_sell_amt
+                fee          = actual_sell_amt * grid.price * self.fee_rate
+                profit       = profit_gross - fee
 
                 self.coin_inventory.pop(matched_idx)
                 self.position["coin"] -= actual_sell_amt
@@ -501,13 +502,14 @@ class GridBot:
 
             # Trade loggen
             self.trade_log.append({
-                "timestamp": timestamp,
-                "type":      grid.side.upper(),
-                "cprice":    float(candle["close"]),
-                "price":     float(grid.price),
-                "amount":    float(grid.trade_amount),
-                "fee":       float(fee),
-                "profit":    float(profit),
+                "timestamp":    timestamp,
+                "type":         grid.side.upper(),
+                "cprice":       float(candle["close"]),
+                "price":        float(grid.price),
+                "amount":       float(grid.trade_amount),
+                "fee":          float(fee),
+                "profit":       float(profit),        # netto (nach Sell-Fee)
+                "profit_gross": float(profit_gross),  # brutto (Preisdifferenz × Menge)
             })
 
             # last_traded_price:
