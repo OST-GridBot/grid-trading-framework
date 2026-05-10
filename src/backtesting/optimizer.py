@@ -12,6 +12,7 @@ Optimierungsarten:
 
 Optimierungsziele (waehlbar):
     - maximize_roi         : Hoechster Gewinn
+    - maximize_sharpe      : Bestes Risiko/Rendite-Verhaeltnis
     - maximize_calmar      : Beste Rendite pro Drawdown
     - minimize_drawdown    : Geringstes Risiko
 
@@ -41,9 +42,9 @@ from src.data.cache_manager import get_price_data
 from src.strategy.grid_bot import simulate_grid_bot
 from src.analysis.metrics import calculate_drawdown
 from src.analysis.metrics import (
-    calculate_roi, calculate_cagr,
+    calculate_roi, calculate_cagr, calculate_sharpe_ratio,
     calculate_calmar_ratio, calculate_profit_factor,
-    calculate_win_rate, get_num_days,
+    get_num_days,
 )
 from src.analysis.regime import detect_regime
 
@@ -255,6 +256,7 @@ def smart_grid_setup(
 
     Pro Ziel zusaetzlich:
         - maximize_roi:        Recentering ⊕ Trailing
+        - maximize_sharpe:     Recentering ⊕ Trailing + Variable Orders
         - maximize_calmar:     Recentering ⊕ Trailing + DD-Drosselung
         - minimize_drawdown:   Stop-Loss + DD-Drosselung (kein Recenter/Trailing)
     """
@@ -279,6 +281,11 @@ def smart_grid_setup(
         sl_options   = [None]
         dd_options   = [False, True]
         vo_options   = [False]
+    elif objective == "maximize_sharpe":
+        mech_options = [0, 1, 2]
+        sl_options   = [None]
+        dd_options   = [False]
+        vo_options   = [False, True]
     else:  # maximize_roi
         mech_options = [0, 1, 2]
         sl_options   = [None]
@@ -688,6 +695,9 @@ def _calculate_score(
 
     if objective == "maximize_roi":
         return sim.get("profit_pct")
+
+    elif objective == "maximize_sharpe":
+        return calculate_sharpe_ratio(daily_values)
 
     elif objective == "maximize_calmar":
         cagr = calculate_cagr(total_investment, final_value, num_days)

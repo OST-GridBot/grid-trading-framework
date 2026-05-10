@@ -152,9 +152,9 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
 
     cagr         = metrics.get("cagr_pct")
     calmar       = metrics.get("calmar_ratio")
+    sharpe       = metrics.get("sharpe_ratio")
     max_dd_pct   = metrics.get("max_drawdown_pct",   0) or 0
     max_dd_usdt  = metrics.get("max_drawdown_usdt",  0) or 0
-    win_rate     = metrics.get("win_rate_pct")
 
     num_t        = metrics.get("num_trades",         0) or 0
     pf           = metrics.get("profit_factor")
@@ -175,28 +175,28 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
     runtime      = metrics.get("runtime", {})
     rt_str       = runtime.get("formatted", "–") if isinstance(runtime, dict) else "–"
 
-    # ── Reihe 1: P/L-Top ───────────────────────────────────────────────
+    # ── Reihe 1: P/L-Top (Gross zuerst, dann Net) ──────────────────────
     cols = st.columns(4)
     with cols[0]:
+        _metric_card(
+            "Total Gross P/L",
+            f"{gross_pct:+.2f}%",
+            delta = f"{gross_usdt:+,.2f} USDT",
+            color = _color_roi(gross_pct),
+        )
+    with cols[1]:
         _metric_card(
             "Total Net P/L",
             f"{roi:+.2f}%",
             delta = f"{pl_usdt:+,.2f} USDT",
             color = _color_roi(roi),
         )
-    with cols[1]:
+    with cols[2]:
         _metric_card(
             "Buy & Hold",
             f"{bh_pct:+.2f}%" if bh_pct is not None else "–",
             delta = f"{bh_usdt:+,.2f} USDT" if bh_usdt is not None else None,
             color = _color_roi(bh_pct),
-        )
-    with cols[2]:
-        _metric_card(
-            "Total Gross P/L",
-            f"{gross_pct:+.2f}%",
-            delta = f"{gross_usdt:+,.2f} USDT",
-            color = _color_roi(gross_pct),
         )
     with cols[3]:
         _metric_card(
@@ -208,23 +208,16 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
-    # ── Reihe 2: Profit-Quellen + Profit Factor ────────────────────────
+    # ── Reihe 2: Grid Profit + Floating + Fees ─────────────────────────
     cols = st.columns(4)
     with cols[0]:
-        _metric_card(
-            "Avg Profit / Trade",
-            f"{avg_p_usdt:+,.2f} USDT" if avg_p_usdt is not None else "–",
-            delta = f"{avg_p_pct:+.2f}%" if avg_p_pct is not None else None,
-            color = _color_roi(avg_p_usdt),
-        )
-    with cols[1]:
         _metric_card(
             "Grid Profit Total",
             f"{g_total_u:+,.2f} USDT",
             delta = f"{g_total_p:+.2f}%",
             color = _color_roi(g_total_u),
         )
-    with cols[2]:
+    with cols[1]:
         if isinstance(upnl, dict) and upnl.get("num_positions", 0) > 0:
             _metric_card(
                 "Floating Profit",
@@ -234,15 +227,17 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
             )
         else:
             _metric_card("Floating Profit", "–", color="#94A3B8")
-    with cols[3]:
-        # Profit Factor: "–" statt "∞" wenn keine Verluste
+    with cols[2]:
         _metric_card(
-            "Profit Factor",
-            f"{pf:.2f}" if pf is not None else "–",
-            delta = "good ≥ 1.5",
-            color = "#34D399" if (pf or 0) >= 1.5
-                    else "#FBBF24" if (pf or 0) >= 1
-                    else "#F87171",
+            "Trading Fees",
+            f"{fees:,.2f} USDT",
+            color = "#F87171" if fees > 0 else "#94A3B8",
+        )
+    with cols[3]:
+        _metric_card(
+            "Fee Impact",
+            f"{fee_imp:.1f}%" if fee_imp is not None else "–",
+            color = "#94A3B8",
         )
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
@@ -271,14 +266,15 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
         )
     with cols[3]:
         _metric_card(
-            "Win-Rate",
-            f"{win_rate:.1f}%" if win_rate is not None else "–",
-            color = "#34D399" if (win_rate or 0) > 50 else "#FBBF24",
+            "Sharpe Ratio",
+            f"{sharpe:.2f}" if sharpe is not None else "–",
+            delta = "good ≥ 1.0",
+            color = _color_calmar(sharpe),
         )
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
-    # ── Reihe 4: Grid + Fees ───────────────────────────────────────────
+    # ── Reihe 4: Grid + Trade-Stats ────────────────────────────────────
     cols = st.columns(4)
     with cols[0]:
         ratio = (
@@ -299,15 +295,20 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
         )
     with cols[2]:
         _metric_card(
-            "Trading Fees",
-            f"{fees:,.2f} USDT",
-            color = "#F87171" if fees > 0 else "#94A3B8",
+            "Avg Profit / Trade",
+            f"{avg_p_usdt:+,.2f} USDT" if avg_p_usdt is not None else "–",
+            delta = f"{avg_p_pct:+.2f}%" if avg_p_pct is not None else None,
+            color = _color_roi(avg_p_usdt),
         )
     with cols[3]:
+        # Profit Factor: "–" statt "∞" wenn keine Verluste
         _metric_card(
-            "Fee Impact",
-            f"{fee_imp:.1f}%" if fee_imp is not None else "–",
-            color = "#94A3B8",
+            "Profit Factor",
+            f"{pf:.2f}" if pf is not None else "–",
+            delta = "good ≥ 1.5",
+            color = "#34D399" if (pf or 0) >= 1.5
+                    else "#FBBF24" if (pf or 0) >= 1
+                    else "#F87171",
         )
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)

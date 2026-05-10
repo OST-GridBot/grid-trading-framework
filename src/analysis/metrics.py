@@ -134,6 +134,27 @@ def calculate_gross_pl(
 
 
 # ---------------------------------------------------------------------------
+# Risiko-adjustierte Rendite
+# ---------------------------------------------------------------------------
+
+def calculate_sharpe_ratio(
+    daily_values:   dict,
+    risk_free_rate: float = 0.04,
+) -> Optional[float]:
+    """Sharpe = (mean_excess_return / std) * sqrt(365). Gut >= 1.0"""
+    if len(daily_values) < 2:
+        return None
+    series  = pd.Series(daily_values).sort_index()
+    returns = series.pct_change().dropna()
+    if returns.std() == 0:
+        return None
+    daily_rf = risk_free_rate / 365
+    excess   = returns - daily_rf
+    sharpe   = (excess.mean() / returns.std()) * np.sqrt(365)
+    return round(float(sharpe), 4)
+
+
+# ---------------------------------------------------------------------------
 # Trade-Statistiken
 # ---------------------------------------------------------------------------
 
@@ -145,15 +166,6 @@ def calculate_profit_factor(trade_log: list) -> Optional[float]:
     if gross_loss <= 0:
         return None
     return round(gross_profit / gross_loss, 4)
-
-
-def calculate_win_rate(trade_log: list) -> Optional[float]:
-    """Win-Rate = Anzahl profitable SELLs / Anzahl alle SELLs * 100"""
-    sells = [t for t in trade_log if t.get("type") == "SELL"]
-    if not sells:
-        return None
-    wins = [t for t in sells if t["profit"] > 0]
-    return round(len(wins) / len(sells) * 100, 2)
 
 
 def calculate_fee_impact(fees_paid: float, gross_pl_usdt: float) -> Optional[float]:
@@ -283,7 +295,7 @@ def calculate_all_metrics(
     Einheitlicher Einstiegspunkt fuer alle Betriebsmodi.
 
     Pflicht-Felder (immer im Resultat):
-        roi_pct, cagr_pct, calmar_ratio, profit_factor, win_rate_pct,
+        roi_pct, cagr_pct, calmar_ratio, sharpe_ratio, profit_factor,
         max_drawdown_pct, max_drawdown_usdt, current_drawdown_pct,
         fee_impact_pct, benchmark_roi_pct, benchmark_roi_usdt,
         outperformance_pct, kelly_fraction, avg_trade_duration_h,
@@ -309,8 +321,8 @@ def calculate_all_metrics(
     cagr   = calculate_cagr(initial_value, final_value, num_days)
     dd     = calculate_drawdown(daily_values)
     calmar = calculate_calmar_ratio(cagr, dd.max_drawdown_pct)
+    sharpe = calculate_sharpe_ratio(daily_values)
     pf     = calculate_profit_factor(trade_log)
-    wr     = calculate_win_rate(trade_log)
     bh_roi = calculate_benchmark_roi(initial_price, final_price)
     bh_usdt= calculate_benchmark_roi_usdt(initial_value, initial_price, final_price)
     kelly  = calculate_kelly_fraction(trade_log)
@@ -324,8 +336,8 @@ def calculate_all_metrics(
         "roi_pct":                roi,
         "cagr_pct":               cagr,
         "calmar_ratio":           calmar,
+        "sharpe_ratio":           sharpe,
         "profit_factor":          pf,
-        "win_rate_pct":           wr,
         "max_drawdown_pct":       dd.max_drawdown_pct,
         "max_drawdown_usdt":      dd.max_drawdown_usdt,
         "current_drawdown_pct":   dd.current_drawdown_pct,

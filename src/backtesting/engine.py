@@ -280,7 +280,7 @@ def run_multi_coin_backtest(
                     "Max_DD_%":      result["max_drawdown_pct"],
                     "Trades":        result["num_trades"],
                     "Profit_Factor": result["profit_factor"],
-                    "Win_Rate_%":    result["win_rate_pct"],
+                    "Sharpe":        result["sharpe_ratio"],
                     "Regime":        result["regime"].regime,
                 })
         except Exception as e:
@@ -305,8 +305,8 @@ def _error_result(message: str) -> dict:
         "roi_pct":              0.0,
         "cagr_pct":             None,
         "calmar_ratio":         None,
+        "sharpe_ratio":         None,
         "profit_factor":        None,
-        "win_rate_pct":         None,
         "max_drawdown_pct":     0.0,
         "max_drawdown_usdt":    0.0,
         "current_drawdown_pct": 0.0,

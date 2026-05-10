@@ -759,10 +759,11 @@ def show_backtesting():
         with col_obj:
             objective = st.radio(
                 "Optimierungsziel",
-                ["maximize_roi","maximize_calmar","minimize_drawdown"],
+                ["maximize_roi","maximize_sharpe","maximize_calmar","minimize_drawdown"],
                 horizontal=True,
                 format_func=lambda x: {
                     "maximize_roi":      "ROI",
+                    "maximize_sharpe":   "Sharpe",
                     "maximize_calmar":   "Calmar",
                     "minimize_drawdown": "Min. Drawdown",
                 }.get(x, x),
