@@ -19,7 +19,7 @@ import pandas as pd
 from src.trading.bot_store import store as bot_store
 from src.trading.optimizer import smart_grid_setup
 from src.data.cache_manager import get_price_data
-from src.strategy.grid_builder import suggest_grid_range, build_grid_config
+from src.strategy.grid_builder import build_grid_config
 from src.utils.timezone import convert_df_timestamps, utc_to_zurich
 from components.chart_v2 import plot_grid_chart_v2
 from config.settings import (

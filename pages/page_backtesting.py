@@ -11,9 +11,9 @@ from components.chart_v2 import plot_grid_chart_v2
 from components.metrics_display import render_metrics_tabs, render_trade_log
 
 from src.backtesting.engine import run_backtest
-from src.backtesting.optimizer import optimize_num_grids, optimize_full_grid_search, smart_grid_setup
+from src.backtesting.optimizer import optimize_full_grid_search, smart_grid_setup
 from src.data.cache_manager import get_price_data
-from src.strategy.grid_builder import suggest_grid_range, build_grid_config
+from src.strategy.grid_builder import build_grid_config
 from config.settings import DEFAULT_NUM_GRIDS, DEFAULT_GRID_MODE, DEFAULT_FEE_RATE, DEFAULT_RESERVE_PCT
 
 COINS = ["BTC","ETH","BNB","SOL","XRP","ADA","DOGE","AVAX","DOT","MATIC",

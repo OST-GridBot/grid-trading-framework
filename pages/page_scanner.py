@@ -8,7 +8,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-from src.scanner.coin_scanner import run_scanner, format_scan_summary
+from src.scanner.coin_scanner import run_scanner
 from src.data.cache_manager import get_last_scan_time
 
 LABEL_STYLE = (
