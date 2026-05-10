@@ -115,8 +115,21 @@ def _metric_card(
 
 
 def _empty_cell() -> None:
-    """Platzhalter-Karte fuer leere Spalten."""
-    st.markdown("&nbsp;", unsafe_allow_html=True)
+    """
+    Platzhalter-Karte fuer leere Spalten — gleicher Box-Style wie
+    _metric_card, aber ohne Inhalt. Haelt das Karten-Raster optisch
+    geschlossen.
+    """
+    st.markdown(
+        '<div style="'
+        'background: rgba(255,255,255,0.04);'
+        'border: 1px solid rgba(255,255,255,0.08);'
+        'border-radius: 8px;'
+        'padding: 12px 14px;'
+        'height: 95px;'
+        '">&nbsp;</div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ---------------------------------------------------------------------------
