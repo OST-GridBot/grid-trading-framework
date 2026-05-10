@@ -190,8 +190,8 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
 
     fees         = metrics.get("fees_paid",          0) or 0
     fee_imp      = metrics.get("fee_impact_pct")
-    runtime      = metrics.get("runtime", {})
-    rt_str       = runtime.get("formatted", "–") if isinstance(runtime, dict) else "–"
+    slip_usdt    = metrics.get("slippage_usdt")
+    slip_pct     = metrics.get("slippage_avg_pct")
 
     # ── Reihe 1: P/L-Top (Gross zuerst, dann Net) ──────────────────────
     cols = st.columns(4)
@@ -331,14 +331,19 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
-    # ── Reihe 5: Meta ──────────────────────────────────────────────────
+    # ── Reihe 5: Meta + Slippage ───────────────────────────────────────
     cols = st.columns(4)
     with cols[0]:
         _metric_card("Initial Capital", f"{initial:,.2f} USDT", color="#E2E8F0")
     with cols[1]:
         _metric_card("Current Capital", f"{final:,.2f} USDT", color=_color_roi(roi))
     with cols[2]:
-        _metric_card("Runtime", rt_str, color="#E2E8F0")
+        # Slippage: aktuell "–" in allen Modi (Brokers nicht aktiv).
+        # Sobald LiveBroker / PaperBroker aktiv ist, fliesst der Wert
+        # automatisch ins Schema.
+        slip_main  = _fmt_price(slip_usdt) if slip_usdt is not None else "–"
+        slip_delta = f"{slip_pct:.4f}%"   if slip_pct  is not None else None
+        _metric_card("Total Slippage", slip_main, delta=slip_delta, color="#94A3B8")
     with cols[3]:
         buys  = sum(1 for t in trade_log if "BUY"  in str(t.get("type", "")).upper())
         sells = sum(1 for t in trade_log if "SELL" in str(t.get("type", "")).upper())

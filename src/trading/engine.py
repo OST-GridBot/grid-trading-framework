@@ -214,6 +214,12 @@ class BotRunner:
         except Exception as e:
             print(f"BotRunner: Metrik-Fehler: {e}")
 
+        # Slippage-Hook: aktuell None, weil PaperBroker/LiveBroker nicht im
+        # aktiven Code-Pfad sind. TODO: sobald BotRunner einen Broker nutzt,
+        # hier broker.state.total_slippage und avg slippage_pct lesen.
+        metrics.setdefault("slippage_usdt",    None)
+        metrics.setdefault("slippage_avg_pct", None)
+
         # Indikatoren / Marktdaten — nur wenn df gegeben (am Ende von run_update)
         if df is not None and not df.empty:
             try:

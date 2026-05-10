@@ -201,6 +201,11 @@ def run_backtest(
         "trailing_count":      sim.get("trailing_count", 0),
         "stop_loss_triggered": sim["stop_loss_triggered"],
         "profit_usdt":         sim["profit_usdt"],
+        # Slippage existiert in der Backtest-Simulation nicht (Trade laeuft am
+        # exakten Grid-Preis). Sobald PaperBroker/LiveBroker aktiv ist, kommt
+        # der Wert ueber den BotRunner, nicht ueber run_backtest.
+        "slippage_usdt":       None,
+        "slippage_avg_pct":    None,
         "regime":              regime,
         # Indikatoren / Marktdaten (Tabs "Marktdaten" und "Indikatoren")
         "atr_usdt":            atr_usdt,
@@ -322,6 +327,8 @@ def _error_result(message: str) -> dict:
         "final_value":          0.0,
         "grid_efficiency":      None,
         "unrealized_pnl":       {"usdt": 0.0, "pct": 0.0, "num_positions": 0},
+        "slippage_usdt":        None,
+        "slippage_avg_pct":     None,
         # Backtest-spezifisch
         "coin":                 "",
         "interval":             "",
