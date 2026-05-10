@@ -882,11 +882,13 @@ def _show_bot_detail(bot: dict):
     color     = "#34D399" if roi >= 0 else "#F87171"
 
     name = bot.get("name", f"{bot['coin']}/USDT")
+    runtime = metrics.get("runtime") or {}
+    rt_str  = runtime.get("formatted", "–") if isinstance(runtime, dict) else "–"
     st.markdown(
         f"<div style='margin-bottom:8px;'>"
         f"<span style='font-size:1.6rem; font-weight:700; color:#E2E8F0;'>{name}</span>"
         f"<span style='font-size:0.85rem; color:#64748B; margin-left:10px;'>"
-        f"{bot['coin']}/USDT · {bot['interval']} · ID: {bot['bot_id']}</span>"
+        f"{bot['coin']}/USDT · {bot['interval']} · ID: {bot['bot_id']} · Laufzeit {rt_str}</span>"
         f" &nbsp;&nbsp; {_status_badge(bot['status'])}"
         f"</div>",
         unsafe_allow_html=True
