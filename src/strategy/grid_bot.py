@@ -70,29 +70,6 @@ class GridState:
     trade_count:  int = 0
 
 
-@dataclass
-class TradeRecord:
-    """
-    Eintrag im Trade-Log.
-
-    Attributes:
-        timestamp   : Zeitpunkt des Trades
-        trade_type  : "Initial BUY", "BUY" oder "SELL"
-        grid_price  : Grid-Level an dem der Trade ausgeloest wurde
-        exec_price  : Tatsaechlicher Ausfuehrungspreis (Close der Kerze)
-        amount      : Gehandelte Coin-Menge
-        fee         : Bezahlte Gebuehr in USDT
-        profit      : Realisierter Gewinn in USDT (nur bei SELL)
-    """
-    timestamp:  pd.Timestamp
-    trade_type: str
-    grid_price: float
-    exec_price: float
-    amount:     float
-    fee:        float
-    profit:     float
-
-
 # ---------------------------------------------------------------------------
 # GridBot Hauptklasse
 # ---------------------------------------------------------------------------

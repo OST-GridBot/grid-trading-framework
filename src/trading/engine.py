@@ -13,7 +13,6 @@ Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
 """
 
 import pandas as pd
-from datetime import datetime, timezone
 from typing import Optional
 
 from config.settings import DEFAULT_FEE_RATE
@@ -33,10 +32,6 @@ _INTERVAL_DAYS = {
     "4h":  10,   # 60 Kerzen — knapp fuer ADX30
     "1d":  40,   # 40 Kerzen — ADX30 stabil
 }
-
-
-def _now_utc() -> datetime:
-    return datetime.now(tz=timezone.utc)
 
 
 class BotRunner:
@@ -385,14 +380,3 @@ class BotRunner:
         }
 
 
-# ---------------------------------------------------------------------------
-# Backward-Compatibility: alte Funktionen die noch genutzt werden könnten
-# ---------------------------------------------------------------------------
-
-def load_existing_state() -> Optional[dict]:
-    """Deprecated: Wird nicht mehr verwendet."""
-    return None
-
-def clear_state() -> None:
-    """Deprecated: Wird nicht mehr verwendet."""
-    pass

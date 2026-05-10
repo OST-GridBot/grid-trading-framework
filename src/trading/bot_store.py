@@ -94,10 +94,6 @@ class BotStore:
             print(f"BotStore: Lesefehler {bot_id}: {e}")
             return None
 
-    def bot_exists(self, bot_id: str) -> bool:
-        """Prüft ob ein Bot existiert."""
-        return _bot_path(bot_id).exists()
-
     def count_bots(self, mode: str) -> int:
         """Gibt die Anzahl der Bots eines Modus zurück."""
         return len(self.get_all_bots(mode=mode))
@@ -249,19 +245,6 @@ class BotStore:
         except Exception as e:
             print(f"BotStore: Löschfehler {bot_id}: {e}")
             return False
-
-    def save_trade_log(self, bot_id: str, trade_log: list) -> bool:
-        """Speichert den Trade-Log eines Bots."""
-        return self.update_bot(bot_id, {"trade_log": trade_log})
-
-    def save_metrics(self, bot_id: str, metrics: dict) -> bool:
-        """Speichert die Metriken eines Bots."""
-        return self.update_bot(bot_id, {"metrics": metrics})
-
-    def save_state(self, bot_id: str, state: dict) -> bool:
-        """Speichert den internen Bot-State (GridBot State)."""
-        return self.update_bot(bot_id, {"state": state})
-
 
 # ---------------------------------------------------------------------------
 # Singleton-Instanz

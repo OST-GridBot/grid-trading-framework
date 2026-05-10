@@ -182,48 +182,6 @@ def calculate_fee_impact(fees_paid: float, gross_pl_usdt: float) -> Optional[flo
     return round(fees_paid / gross_pl_usdt * 100, 2)
 
 
-def calculate_avg_trade_duration(trade_log: list) -> Optional[float]:
-    """Durchschnittliche Trade-Dauer in Stunden (BUY → matched SELL).
-
-    Matcht jeden SELL mit dem aeltesten offenen BUY, dessen Preis unter
-    dem SELL-Preis liegt — dieselbe FIFO-Logik wie im GridBot.
-    """
-    if not trade_log:
-        return None
-
-    # Chronologisch verarbeiten (trade_log kann ungeordnet sein)
-    sorted_trades = sorted(
-        trade_log,
-        key=lambda t: pd.to_datetime(t.get("timestamp"))
-    )
-
-    open_buys: list = []  # FIFO-Queue offener BUY-Trades
-    durations = []
-    for t in sorted_trades:
-        ttype = str(t.get("type", "")).upper()
-        if "BUY" in ttype:
-            open_buys.append(t)
-        elif "SELL" in ttype:
-            sell_price = float(t.get("price", 0))
-            matched_idx = None
-            for i, b in enumerate(open_buys):
-                if float(b.get("price", 0)) < sell_price - 1e-8:
-                    matched_idx = i
-                    break
-            if matched_idx is None:
-                continue
-            buy = open_buys.pop(matched_idx)
-            try:
-                diff = (pd.to_datetime(t["timestamp"]) -
-                        pd.to_datetime(buy["timestamp"])).total_seconds() / 3600
-                if diff >= 0:
-                    durations.append(diff)
-            except Exception:
-                continue
-
-    return round(float(np.mean(durations)), 2) if durations else None
-
-
 def calculate_benchmark_roi(
     initial_price: float,
     final_price:   float,
@@ -250,24 +208,6 @@ def calculate_benchmark_roi_usdt(
     coin_amount = initial_value / initial_price
     final_val   = coin_amount * final_price
     return round(final_val - initial_value, 4)
-
-
-def calculate_kelly_fraction(trade_log: list) -> Optional[float]:
-    """Kelly-Kriterium fuer optimale Positionsgrösse."""
-    sells = [t for t in trade_log if t.get("type") == "SELL"]
-    if not sells:
-        return None
-    wins   = [t["profit"] for t in sells if t["profit"] > 0]
-    losses = [abs(t["profit"]) for t in sells if t["profit"] < 0]
-    if not wins or not losses:
-        return None
-    win_rate  = len(wins) / len(sells)
-    avg_win   = np.mean(wins)
-    avg_loss  = np.mean(losses)
-    if avg_loss == 0:
-        return None
-    kelly = win_rate - (1 - win_rate) * (avg_win / avg_loss)
-    return round(max(0, kelly), 4)
 
 
 # ---------------------------------------------------------------------------
@@ -298,7 +238,7 @@ def calculate_all_metrics(
         roi_pct, cagr_pct, calmar_ratio, sharpe_ratio, profit_factor,
         max_drawdown_pct, max_drawdown_usdt, current_drawdown_pct,
         fee_impact_pct, benchmark_roi_pct, benchmark_roi_usdt,
-        outperformance_pct, kelly_fraction, avg_trade_duration_h,
+        outperformance_pct,
         avg_profit_per_trade, num_trades, fees_paid, initial_investment,
         final_value, gross_pl_usdt, gross_pl_pct, grid_profit_total_usdt,
         grid_profit_total_pct
@@ -325,8 +265,6 @@ def calculate_all_metrics(
     pf     = calculate_profit_factor(trade_log)
     bh_roi = calculate_benchmark_roi(initial_price, final_price)
     bh_usdt= calculate_benchmark_roi_usdt(initial_value, initial_price, final_price)
-    kelly  = calculate_kelly_fraction(trade_log)
-    dur    = calculate_avg_trade_duration(trade_log)
     avg_p  = calculate_avg_profit_per_trade(trade_log)
     gross  = calculate_gross_pl(initial_value, final_value, fees_paid)
     gprof  = calculate_grid_profit_total(trade_log, initial_value)
@@ -345,8 +283,6 @@ def calculate_all_metrics(
         "benchmark_roi_pct":      bh_roi,
         "benchmark_roi_usdt":     bh_usdt,
         "outperformance_pct":     round(roi - bh_roi, 4) if bh_roi is not None else None,
-        "kelly_fraction":         kelly,
-        "avg_trade_duration_h":   dur,
         "avg_profit_per_trade":   avg_p,
         "num_trades":             len(trade_log),
         "fees_paid":              round(float(fees_paid), 4),

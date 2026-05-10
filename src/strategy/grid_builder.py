@@ -22,15 +22,12 @@ Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
 """
 
 import numpy as np
-import pandas as pd
 from dataclasses import dataclass, field
-from typing import Optional
 
 from config.settings import (
     DEFAULT_NUM_GRIDS,
     DEFAULT_GRID_MODE,
     DEFAULT_FEE_RATE,
-    DEFAULT_GRID_RANGE_PCT,
     MIN_NUM_GRIDS,
     MAX_NUM_GRIDS,
 )
@@ -63,23 +60,6 @@ class GridConfig:
     grid_lines:      list  = field(default_factory=list)
     grid_spacing:    float = 0.0
     profit_per_grid: float = 0.0
-
-
-@dataclass
-class GridRangeSuggestion:
-    """
-    Vorgeschlagene Grid-Range basierend auf Marktdaten.
-
-    Attributes:
-        lower_price : Vorgeschlagene untere Grenze
-        upper_price : Vorgeschlagene obere Grenze
-        method      : Methode der Berechnung ("atr", "bb", "pct")
-        description : Beschreibung der Methode
-    """
-    lower_price: float
-    upper_price: float
-    method:      str
-    description: str
 
 
 # ---------------------------------------------------------------------------
@@ -184,152 +164,6 @@ def build_grid_config(
         grid_spacing    = grid_spacing,
         profit_per_grid = profit_per_grid,
     )
-
-
-# ---------------------------------------------------------------------------
-# Automatische Range-Berechnung
-# ---------------------------------------------------------------------------
-
-def suggest_grid_range(
-    df:            pd.DataFrame,
-    current_price: float,
-    method:        str   = "atr",
-    atr_multiplier: float = 2.0,
-) -> GridRangeSuggestion:
-    """
-    Schlaegt eine Grid-Range basierend auf Marktdaten vor.
-
-    Drei Methoden:
-        atr : Range = aktueller Preis +/- (ATR * Multiplikator)
-              Passt sich dynamisch der Volatilitaet an
-        bb  : Range = Bollinger Band (unteres bis oberes Band)
-              Nutzt statistische Preisgrenzen der letzten 20 Kerzen
-        pct : Range = aktueller Preis +/- DEFAULT_GRID_RANGE_PCT%
-              Einfache prozentuale Abschaetzung (Fallback)
-
-    Args:
-        df            : DataFrame mit OHLCV-Daten
-        current_price : Aktueller Marktpreis
-        method        : "atr", "bb" oder "pct"
-        atr_multiplier: Multiplikator fuer ATR-Range (Standard: 2.0)
-
-    Returns:
-        GridRangeSuggestion mit lower_price, upper_price und Beschreibung
-    """
-    if method == "atr":
-        return _suggest_atr_range(df, current_price, atr_multiplier)
-    elif method == "bb":
-        return _suggest_bb_range(df, current_price)
-    else:
-        return _suggest_pct_range(current_price)
-
-
-def _suggest_atr_range(
-    df:            pd.DataFrame,
-    current_price: float,
-    multiplier:    float,
-) -> GridRangeSuggestion:
-    """ATR-basierte Range-Berechnung."""
-    from src.analysis.indicators import get_atr_stats
-    atr_usdt, _ = get_atr_stats(df)
-
-    offset      = atr_usdt * multiplier
-    lower_price = max(current_price - offset, current_price * 0.5)
-    upper_price = current_price + offset
-
-    return GridRangeSuggestion(
-        lower_price = round(lower_price, 4),
-        upper_price = round(upper_price, 4),
-        method      = "atr",
-        description = (
-            f"ATR-basiert: aktueller Preis +/- {multiplier}x ATR "
-            f"({round(atr_usdt, 2)} USDT)"
-        ),
-    )
-
-
-def _suggest_bb_range(
-    df:            pd.DataFrame,
-    current_price: float,
-) -> GridRangeSuggestion:
-    """Bollinger-Band-basierte Range-Berechnung."""
-    from src.analysis.indicators import calculate_bollinger_bands
-    bb = calculate_bollinger_bands(df, period=20)
-
-    lower_price = float(bb["bb_lower"].iloc[-1])
-    upper_price = float(bb["bb_upper"].iloc[-1])
-
-    # Sicherheitspuffer: min. 5% Abstand zum aktuellen Preis
-    lower_price = min(lower_price, current_price * 0.95)
-    upper_price = max(upper_price, current_price * 1.05)
-
-    return GridRangeSuggestion(
-        lower_price = round(lower_price, 4),
-        upper_price = round(upper_price, 4),
-        method      = "bb",
-        description = "Bollinger-Band-basiert: unteres bis oberes Band (20 Perioden)",
-    )
-
-
-def _suggest_pct_range(current_price: float) -> GridRangeSuggestion:
-    """Prozentuale Range-Berechnung (Fallback)."""
-    pct         = DEFAULT_GRID_RANGE_PCT / 100
-    lower_price = current_price * (1 - pct)
-    upper_price = current_price * (1 + pct)
-
-    return GridRangeSuggestion(
-        lower_price = round(lower_price, 4),
-        upper_price = round(upper_price, 4),
-        method      = "pct",
-        description = f"Prozentual: aktueller Preis +/- {DEFAULT_GRID_RANGE_PCT}%",
-    )
-
-
-# ---------------------------------------------------------------------------
-# Gewinn-Vorschau
-# ---------------------------------------------------------------------------
-
-def calculate_profit_preview(
-    grid_lines: list[float],
-    fee_rate:   float = DEFAULT_FEE_RATE,
-) -> list[dict]:
-    """
-    Berechnet den erwarteten Gewinn pro Grid nach Fees.
-
-    Ein Grid-Zyklus besteht aus einem Kauf am unteren Level und
-    einem Verkauf am oberen Level. Der Gewinn ergibt sich aus der
-    Preisdifferenz abzueglich zweier Gebuehren (Kauf + Verkauf).
-
-    Args:
-        grid_lines: Liste der Grid-Preise
-        fee_rate  : Gebuehrenrate pro Trade
-
-    Returns:
-        Liste von Dictionaries:
-            buy_price  : Kaufpreis (unteres Level)
-            sell_price : Verkaufspreis (oberes Level)
-            profit_pct : Gewinn in % nach Fees
-            profit_usdt: Gewinn in USDT pro 1 USDT Investment
-            is_profitable: True wenn Gewinn > 0
-    """
-    preview = []
-    for i in range(len(grid_lines) - 1):
-        buy_price  = grid_lines[i]
-        sell_price = grid_lines[i + 1]
-
-        gross_return = (sell_price - buy_price) / buy_price
-        total_fees   = 2 * fee_rate
-        net_return   = gross_return - total_fees
-
-        preview.append({
-            "buy_price":    round(buy_price,  4),
-            "sell_price":   round(sell_price, 4),
-            "profit_pct":   round(net_return * 100, 4),
-            "profit_usdt":  round(net_return, 6),
-            "is_profitable": net_return > 0,
-        })
-
-    return preview
 
 
 # ---------------------------------------------------------------------------

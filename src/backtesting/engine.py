@@ -25,11 +25,9 @@ from config.settings import (
 )
 from src.data.cache_manager import get_price_data
 from src.strategy.grid_bot import simulate_grid_bot
-from src.strategy.grid_builder import build_grid_config, validate_grid_config
+from src.strategy.grid_builder import validate_grid_config
 from src.analysis.metrics import (
     calculate_all_metrics,
-    calculate_drawdown,
-    calculate_position_size,
     get_num_days,
 )
 from src.analysis.indicators import (
@@ -164,11 +162,8 @@ def run_backtest(
         has_dynamic_capital = has_dynamic_capital,
     )
 
-    # --- Risiko bewerten ---
-    atr_usdt, atr_pct = get_atr_stats(df)
-    pos               = calculate_position_size(total_investment, atr_pct)
-
-    # --- Indikatoren (fuer Tab "Indikatoren") ---
+    # --- Indikatoren (fuer Tabs "Marktdaten" + "Indikatoren") ---
+    atr_usdt, atr_pct         = get_atr_stats(df)
     vola_monthly, vola_yearly = calculate_volatility(df, interval)
     return_stats   = calculate_return_stats(df)
     price_extremes = get_price_extremes(df)
@@ -177,9 +172,6 @@ def run_backtest(
 
     # --- Marktregime ---
     regime = detect_regime(df, interval)
-
-    # --- Grid-Konfiguration ---
-    grid_cfg = build_grid_config(lower_price, upper_price, num_grids, grid_mode, fee_rate)
 
     # --- Result-Dict ---
     # Standard-Schema (Schritt B des Metriken-Refactors)
@@ -190,17 +182,14 @@ def run_backtest(
         "coin":                coin.upper(),
         "interval":            interval,
         "days":                days,
-        "from_cache":          from_cache,
         "trade_log":           sim["trade_log"],
         "grid_lines":          sim["grid_lines"],
-        "final_position":      sim["final_position"],
         "initial_price":       sim["initial_price"],
         "final_price":         sim["final_price"],
         "daily_values":        sim["daily_values"],
         "recentering_count":   sim["recentering_count"],
         "trailing_count":      sim.get("trailing_count", 0),
         "stop_loss_triggered": sim["stop_loss_triggered"],
-        "profit_usdt":         sim["profit_usdt"],
         # Slippage existiert in der Backtest-Simulation nicht (Trade laeuft am
         # exakten Grid-Preis). Sobald PaperBroker/LiveBroker aktiv ist, kommt
         # der Wert ueber den BotRunner, nicht ueber run_backtest.
@@ -216,87 +205,10 @@ def run_backtest(
         "vola_yearly_pct":     vola_yearly,
         "return_stats":        return_stats,
         "price_extremes":      price_extremes,
-        "grid_config":         grid_cfg,
-        "warnings":            warnings,
-        "df":                  df,
-        "position_size":       pos,
         "error":               None,
     })
 
     return result
-
-
-def run_multi_coin_backtest(
-    coins:            list,
-    range_pct:        float = 0.20,
-    total_investment: float = 10_000.0,
-    num_grids:        int   = DEFAULT_NUM_GRIDS,
-    grid_mode:        str   = DEFAULT_GRID_MODE,
-    fee_rate:         float = DEFAULT_FEE_RATE,
-    interval:         str   = DEFAULT_INTERVAL,
-    days:             int   = DEFAULT_BACKTEST_DAYS,
-) -> pd.DataFrame:
-    """
-    Fuehrt Backtests fuer mehrere Coins durch und vergleicht Ergebnisse.
-
-    Args:
-        coins            : Liste von Coin-Symbolen
-        range_pct        : Grid-Range in % vom aktuellen Preis
-        total_investment : Startkapital pro Coin
-        num_grids        : Anzahl Grids
-        grid_mode        : Grid-Modus
-        fee_rate         : Gebuehrenrate
-        interval         : Kerzen-Intervall
-        days             : Backtesting-Zeitraum
-
-    Returns:
-        DataFrame mit Vergleichsresultaten aller Coins
-    """
-    results = []
-
-    for coin in coins:
-        try:
-            df, _ = get_price_data(coin, days=days, interval=interval)
-            if df is None or df.empty:
-                continue
-
-            price       = float(df["close"].iloc[-1])
-            lower_price = price * (1 - range_pct)
-            upper_price = price * (1 + range_pct)
-
-            result = run_backtest(
-                coin             = coin,
-                lower_price      = lower_price,
-                upper_price      = upper_price,
-                total_investment = total_investment,
-                num_grids        = num_grids,
-                grid_mode        = grid_mode,
-                fee_rate         = fee_rate,
-                interval         = interval,
-                days             = days,
-            )
-
-            if not result.get("error"):
-                results.append({
-                    "Coin":          coin.upper(),
-                    "ROI_%":         round(result["roi_pct"], 2),
-                    "CAGR_%":        result["cagr_pct"],
-                    "Calmar":        result["calmar_ratio"],
-                    "Max_DD_%":      result["max_drawdown_pct"],
-                    "Trades":        result["num_trades"],
-                    "Profit_Factor": result["profit_factor"],
-                    "Sharpe":        result["sharpe_ratio"],
-                    "Regime":        result["regime"].regime,
-                })
-        except Exception as e:
-            print(f"Fehler bei {coin}: {e}")
-            continue
-
-    if not results:
-        return pd.DataFrame()
-
-    df_results = pd.DataFrame(results)
-    return df_results.sort_values("ROI_%", ascending=False).reset_index(drop=True)
 
 
 def _error_result(message: str) -> dict:
@@ -318,8 +230,6 @@ def _error_result(message: str) -> dict:
         "fee_impact_pct":       None,
         "benchmark_roi_pct":    None,
         "outperformance_pct":   None,
-        "kelly_fraction":       None,
-        "avg_trade_duration_h": None,
         "avg_profit_per_trade": None,
         "num_trades":           0,
         "fees_paid":            0.0,
@@ -333,17 +243,14 @@ def _error_result(message: str) -> dict:
         "coin":                 "",
         "interval":             "",
         "days":                 0,
-        "from_cache":           False,
         "trade_log":            [],
         "grid_lines":           [],
-        "final_position":       {"usdt": 0.0, "coin": 0.0},
         "initial_price":        0.0,
         "final_price":          0.0,
         "daily_values":         {},
         "recentering_count":    0,
         "trailing_count":       0,
         "stop_loss_triggered":  False,
-        "profit_usdt":          0.0,
         "regime":               None,
         "atr_usdt":             0.0,
         "atr_pct":              0.0,
@@ -353,9 +260,5 @@ def _error_result(message: str) -> dict:
         "vola_yearly_pct":      None,
         "return_stats":         {"avg_pct": None, "std_pct": None},
         "price_extremes":       {"max_price": 0.0, "min_price": 0.0, "range_usdt": 0.0, "range_pct": 0.0},
-        "grid_config":          None,
-        "warnings":             [],
-        "df":                   None,
-        "position_size":        None,
         "error":                message,
     }

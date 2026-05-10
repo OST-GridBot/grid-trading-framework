@@ -282,33 +282,3 @@ def _get_regime_color(regime: str, confidence: float) -> str:
     return COLOR_ORANGE
 
 
-# ---------------------------------------------------------------------------
-# Hilfsfunktion fuer UI
-# ---------------------------------------------------------------------------
-
-def regime_summary(result: RegimeResult) -> dict:
-    """
-    Gibt eine vereinfachte Zusammenfassung fuer die UI zurueck.
-
-    Args:
-        result: RegimeResult von detect_regime()
-
-    Returns:
-        Dictionary fuer direkte Anzeige in Streamlit
-    """
-    regime_labels = {
-        "range":      "Range-Markt (Seitwärts)",
-        "trend_up":   "Trend-Markt (Aufwaerts)",
-        "trend_down": "Trend-Markt (Abwaerts)",
-        "neutral":    "Unklare Marktlage",
-    }
-
-    return {
-        "label":          regime_labels.get(result.regime, result.regime),
-        "confidence":     result.confidence,
-        "recommendation": result.recommendation,
-        "color":          result.color,
-        "adx14":          result.adx14,
-        "adx30":          result.adx30,
-        "bb_width":       result.bb_width,
-    }

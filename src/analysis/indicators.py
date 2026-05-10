@@ -17,14 +17,6 @@ Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
 
 import numpy as np
 import pandas as pd
-from typing import Optional
-
-from config.settings import (
-    ADX14_SIDEWAYS_MAX, ADX14_WARNING_MAX,
-    ADX30_SIDEWAYS_MAX, ADX30_WARNING_MAX,
-    ATR_PCT_MIN, ATR_PCT_MAX,
-    COLOR_GREEN, COLOR_ORANGE, COLOR_RED,
-)
 
 
 # ---------------------------------------------------------------------------
@@ -112,60 +104,9 @@ def get_adx_value(df: pd.DataFrame, period: int = 14) -> float:
     return float(val) if not pd.isna(val) else 0.0
 
 
-def get_adx_color(adx_value: float, period: int = 14) -> str:
-    """
-    Gibt die Anzeigefarbe basierend auf dem ADX-Wert zurueck.
-
-    Args:
-        adx_value: ADX-Wert
-        period   : 14 (kurzfristig) oder 30 (langfristig)
-
-    Returns:
-        Farb-String (COLOR_GREEN / COLOR_ORANGE / COLOR_RED)
-    """
-    if period == 14:
-        if adx_value < ADX14_SIDEWAYS_MAX:
-            return COLOR_GREEN
-        elif adx_value < ADX14_WARNING_MAX:
-            return COLOR_ORANGE
-        return COLOR_RED
-    else:  # period == 30
-        if adx_value < ADX30_SIDEWAYS_MAX:
-            return COLOR_GREEN
-        elif adx_value < ADX30_WARNING_MAX:
-            return COLOR_ORANGE
-        return COLOR_RED
-
-
 # ---------------------------------------------------------------------------
 # ATR – Average True Range
 # ---------------------------------------------------------------------------
-
-def calculate_atr(
-    df:     pd.DataFrame,
-    period: int = 14,
-) -> pd.Series:
-    """
-    Berechnet die Average True Range (ATR) als Zeitreihe.
-
-    Die ATR misst die durchschnittliche Preisschwankung pro Kerze
-    in absoluten USDT-Werten.
-
-    Args:
-        df    : DataFrame mit Spalten [high, low, close]
-        period: Glaettungsperiode (Standard: 14)
-
-    Returns:
-        pd.Series mit ATR-Werten
-    """
-    tr = pd.concat([
-        df["high"] - df["low"],
-        (df["high"] - df["close"].shift()).abs(),
-        (df["low"]  - df["close"].shift()).abs(),
-    ], axis=1).max(axis=1)
-
-    return tr.rolling(period).mean()
-
 
 def get_atr_stats(df: pd.DataFrame) -> tuple:
     """
@@ -367,89 +308,3 @@ def calculate_bollinger_bands(
     })
 
 
-def get_bb_stats(df: pd.DataFrame) -> tuple:
-    """
-    Gibt aktuelle Bollinger Band Kennzahlen zurueck.
-
-    Args:
-        df: DataFrame mit OHLCV-Daten
-
-    Returns:
-        Tuple (bb_width, bb_pct, bb_upper, bb_lower):
-            bb_width : Aktuelle Bandbreite in %
-            bb_pct   : Position des Preises im Band (0-1)
-            bb_upper : Oberes Band (aktuell)
-            bb_lower : Unteres Band (aktuell)
-    """
-    bb = calculate_bollinger_bands(df)
-    return (
-        float(bb["bb_width"].iloc[-1]) if not pd.isna(bb["bb_width"].iloc[-1]) else 0.0,
-        float(bb["bb_pct"].iloc[-1])   if not pd.isna(bb["bb_pct"].iloc[-1])   else 0.5,
-        float(bb["bb_upper"].iloc[-1]) if not pd.isna(bb["bb_upper"].iloc[-1]) else 0.0,
-        float(bb["bb_lower"].iloc[-1]) if not pd.isna(bb["bb_lower"].iloc[-1]) else 0.0,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Scanner-Scoring
-# ---------------------------------------------------------------------------
-
-def calculate_grid_score(
-    adx14:    float,
-    atr_pct:  float,
-    volume:   float,
-    adx30:    Optional[float] = None,
-) -> tuple:
-    """
-    Berechnet den Grid-Eignung-Score fuer den Coin-Scanner.
-
-    Scoring (0-4 Punkte):
-        +1 Punkt: ADX14 < ADX14_SIDEWAYS_MAX  (kein kurzfristiger Trend)
-        +1 Punkt: ADX30 < ADX30_SIDEWAYS_MAX  (kein langfristiger Trend)
-        +1 Punkt: ATR% zwischen ATR_PCT_MIN und ATR_PCT_MAX (geeignete Vola)
-        +1 Punkt: Volumen > MIN_VOLUME_USDT   (genuegend Liquiditaet)
-
-    Args:
-        adx14   : ADX-Wert mit Periode 14
-        atr_pct : ATR in Prozent
-        volume  : 24h Handelsvolumen in USDT
-        adx30   : ADX-Wert mit Periode 30 (optional)
-
-    Returns:
-        Tuple (score, details):
-            score  : Gesamt-Score (0-4)
-            details: Dictionary mit Einzelbewertungen
-    """
-    from config.settings import MIN_VOLUME_USDT
-
-    score   = 0
-    details = {}
-
-    # ADX14
-    adx14_ok          = adx14 < ADX14_SIDEWAYS_MAX
-    details["adx14"]  = adx14_ok
-    if adx14_ok:
-        score += 1
-
-    # ADX30
-    if adx30 is not None:
-        adx30_ok         = adx30 < ADX30_SIDEWAYS_MAX
-        details["adx30"] = adx30_ok
-        if adx30_ok:
-            score += 1
-    else:
-        details["adx30"] = None
-
-    # ATR%
-    atr_ok           = ATR_PCT_MIN <= atr_pct <= ATR_PCT_MAX
-    details["atr"]   = atr_ok
-    if atr_ok:
-        score += 1
-
-    # Volumen
-    vol_ok            = volume >= MIN_VOLUME_USDT
-    details["volume"] = vol_ok
-    if vol_ok:
-        score += 1
-
-    return score, details
