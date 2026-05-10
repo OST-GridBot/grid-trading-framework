@@ -121,11 +121,11 @@ def render_metrics_tabs(
     st.markdown(
         '<div style="font-size:1.15rem; font-weight:600; color:#CBD5E1; '
         'text-transform:uppercase; letter-spacing:0.06em; '
-        'margin: 16px 0 8px 0;">Metriken</div>',
+        'margin: 16px 0 8px 0;">Metrics</div>',
         unsafe_allow_html=True,
     )
 
-    tab_p, tab_m, tab_i = st.tabs(["Grid-Bot-Performance", "Marktdaten", "Indikatoren"])
+    tab_p, tab_m, tab_i = st.tabs(["Grid Bot Performance", "Market Data", "Indicators"])
     with tab_p:
         _render_tab_performance(metrics, trade_log or [])
     with tab_m:
@@ -208,11 +208,11 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
-    # ── Reihe 2: Profit-Quellen + Profit-Faktor ────────────────────────
+    # ── Reihe 2: Profit-Quellen + Profit Factor ────────────────────────
     cols = st.columns(4)
     with cols[0]:
         _metric_card(
-            "Ø Profit/Trade",
+            "Avg Profit / Trade",
             f"{avg_p_usdt:+,.2f} USDT" if avg_p_usdt is not None else "–",
             delta = f"{avg_p_pct:+.2f}%" if avg_p_pct is not None else None,
             color = _color_roi(avg_p_usdt),
@@ -235,11 +235,11 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
         else:
             _metric_card("Floating Profit", "–", color="#94A3B8")
     with cols[3]:
-        # Profit-Faktor: "–" statt "∞" wenn keine Verluste
+        # Profit Factor: "–" statt "∞" wenn keine Verluste
         _metric_card(
-            "Profit-Faktor",
+            "Profit Factor",
             f"{pf:.2f}" if pf is not None else "–",
-            delta = "gut ≥ 1.5",
+            delta = "good ≥ 1.5",
             color = "#34D399" if (pf or 0) >= 1.5
                     else "#FBBF24" if (pf or 0) >= 1
                     else "#F87171",
@@ -259,7 +259,7 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
         _metric_card(
             "Calmar Ratio",
             f"{calmar:.2f}" if calmar is not None else "–",
-            delta = "gut ≥ 1.0",
+            delta = "good ≥ 1.0",
             color = _color_calmar(calmar),
         )
     with cols[2]:
@@ -293,7 +293,7 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
         )
     with cols[1]:
         _metric_card(
-            "Investiert pro Grid",
+            "Invest / Grid",
             f"{cap_per_grid:,.2f} USDT" if cap_per_grid is not None else "–",
             color = "#E2E8F0",
         )
@@ -315,16 +315,16 @@ def _render_tab_performance(metrics: dict, trade_log: list) -> None:
     # ── Reihe 5: Meta ──────────────────────────────────────────────────
     cols = st.columns(4)
     with cols[0]:
-        _metric_card("Startkapital", f"{initial:,.2f} USDT", color="#E2E8F0")
+        _metric_card("Initial Capital", f"{initial:,.2f} USDT", color="#E2E8F0")
     with cols[1]:
-        _metric_card("Endkapital", f"{final:,.2f} USDT", color=_color_roi(roi))
+        _metric_card("Current Capital", f"{final:,.2f} USDT", color=_color_roi(roi))
     with cols[2]:
-        _metric_card("Laufzeit", rt_str, color="#E2E8F0")
+        _metric_card("Runtime", rt_str, color="#E2E8F0")
     with cols[3]:
         buys  = sum(1 for t in trade_log if "BUY"  in str(t.get("type", "")).upper())
         sells = sum(1 for t in trade_log if "SELL" in str(t.get("type", "")).upper())
         bs    = f"B:{buys} / S:{sells}" if trade_log else None
-        _metric_card("Anzahl Trades", str(num_t), delta=bs, color="#E2E8F0")
+        _metric_card("Number of Trades", str(num_t), delta=bs, color="#E2E8F0")
 
 
 # ---------------------------------------------------------------------------
@@ -342,17 +342,17 @@ def _render_tab_market(metrics: dict) -> None:
     cols = st.columns(4)
     with cols[0]:
         _metric_card(
-            "Aktueller Preis",
+            "Current Price",
             f"{cur_price:,.4f} USDT" if cur_price else "–",
             color = "#E2E8F0",
         )
     with cols[1]:
-        _metric_card("Max Preis", f"{max_p:,.4f} USDT", color="#34D399")
+        _metric_card("Max Price", f"{max_p:,.4f} USDT", color="#34D399")
     with cols[2]:
-        _metric_card("Min Preis", f"{min_p:,.4f} USDT", color="#F87171")
+        _metric_card("Min Price", f"{min_p:,.4f} USDT", color="#F87171")
     with cols[3]:
         _metric_card(
-            "Max-Min Intervall",
+            "Max-Min Range",
             f"{range_u:,.4f} USDT",
             delta = f"{range_p:.2f}%",
             color = "#94A3B8",
@@ -378,25 +378,25 @@ def _render_tab_indicators(metrics: dict) -> None:
     cols = st.columns(4)
     with cols[0]:
         _metric_card(
-            "Ø % Rendite/Kerze",
+            "Avg % Return / Candle",
             f"{avg_r:+.4f}%" if avg_r is not None else "–",
             color = _color_roi(avg_r),
         )
     with cols[1]:
         _metric_card(
-            "Vola % Rendite/Kerze",
+            "Vola % Return / Candle",
             f"{std_r:.4f}%" if std_r is not None else "–",
             color = "#94A3B8",
         )
     with cols[2]:
         _metric_card(
-            "Monatliche Vola",
+            "Monthly Vola",
             f"{vola_m:.2f}%" if vola_m is not None else "–",
             color = "#94A3B8",
         )
     with cols[3]:
         _metric_card(
-            "Jährliche Vola",
+            "Yearly Vola",
             f"{vola_y:.2f}%" if vola_y is not None else "–",
             color = "#94A3B8",
         )
@@ -407,13 +407,13 @@ def _render_tab_indicators(metrics: dict) -> None:
     cols = st.columns(4)
     with cols[0]:
         _metric_card(
-            "Ø ATR (USDT)",
+            "Avg ATR (USDT)",
             f"{atr_u:,.2f} USDT" if atr_u is not None else "–",
             color = "#94A3B8",
         )
     with cols[1]:
         _metric_card(
-            "Ø ATR (%)",
+            "Avg ATR (%)",
             f"{atr_p:.2f}%" if atr_p is not None else "–",
             color = "#94A3B8",
         )
