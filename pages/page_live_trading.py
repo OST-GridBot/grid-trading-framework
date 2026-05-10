@@ -474,7 +474,16 @@ def _show_new_bot_form():
             "asymmetric_bottom":  "Bottom Heavy",
             "asymmetric_top":     "Top Heavy",
         }.get(_smart.grid_mode, _smart.grid_mode)
-        _rc_lbl = "Aktiv" if _smart.enable_recentering else "Inaktiv"
+        _rc_up = bool(_smart.enable_recentering_up)
+        _rc_dn = bool(_smart.enable_recentering_down)
+        if _rc_up and _rc_dn:
+            _rc_lbl = "Up + Down"
+        elif _rc_up:
+            _rc_lbl = "Nur Up"
+        elif _rc_dn:
+            _rc_lbl = "Nur Down"
+        else:
+            _rc_lbl = "Inaktiv"
         _tr_lbl = "Up + Down" if (_smart.enable_trailing_up or _smart.enable_trailing_down) else "Inaktiv"
         _sl_lbl = f"Aktiv ({int(_smart.stop_loss_pct*100)}%)" if _smart.stop_loss_pct else "Inaktiv"
         _dd_lbl = "Aktiv" if _smart.enable_dd_throttle else "Inaktiv"
@@ -520,7 +529,8 @@ def _show_new_bot_form():
                 else:
                     st.session_state["lt_gm_active"] = "Asymmetrisch"
                     st.session_state["lt_gm_asym"]   = "Bottom heavy" if _smart.grid_mode == "asymmetric_bottom" else "Top heavy"
-                st.session_state["lt_new_recenter"] = _smart.enable_recentering
+                st.session_state["lt_new_recenter_up"]   = _smart.enable_recentering_up
+                st.session_state["lt_new_recenter_down"] = _smart.enable_recentering_down
                 st.session_state["lt_trailing"]     = _smart.enable_trailing_up or _smart.enable_trailing_down
                 if _smart.enable_trailing_up:
                     st.session_state["lt_trailing_up"]      = True
@@ -731,13 +741,24 @@ def _show_new_bot_form():
     st.markdown(_label("Dynamische Grid-Mechanismen"), unsafe_allow_html=True)
 
     trailing_active_pt = st.session_state.get("lt_trailing", False)
-    enable_recentering = st.checkbox(
-        "Recentering aktivieren",
-        key="lt_new_recenter",
+    if "lt_new_recenter_up" not in st.session_state:
+        st.session_state["lt_new_recenter_up"] = True
+    enable_recentering_up = st.checkbox(
+        "Recentering Up aktivieren",
+        key="lt_new_recenter_up",
         disabled=trailing_active_pt,
         help="Nicht kombinierbar mit Grid Trailing" if trailing_active_pt else None,
     )
-    enable_recentering = enable_recentering and not trailing_active_pt
+    enable_recentering_down = st.checkbox(
+        "Recentering Down aktivieren",
+        key="lt_new_recenter_down",
+        disabled=trailing_active_pt,
+        help="Nicht kombinierbar mit Grid Trailing" if trailing_active_pt else None,
+    )
+    if trailing_active_pt:
+        enable_recentering_up   = False
+        enable_recentering_down = False
+    enable_recentering = enable_recentering_up or enable_recentering_down
     recenter_threshold = 0.05
     if enable_recentering:
         st.markdown(_caption("Recentering-Schwelle (%)"), unsafe_allow_html=True)
@@ -859,7 +880,8 @@ def _show_new_bot_form():
                     enable_variable_orders = enable_variable_orders,
                     weight_bottom          = weight_bottom,
                     weight_top             = weight_top,
-                    enable_recentering     = enable_recentering,
+                    enable_recentering_up   = enable_recentering_up,
+                    enable_recentering_down = enable_recentering_down,
                     recenter_threshold     = recenter_threshold,
                     enable_atr_adjust      = enable_atr_adjust,
                     atr_multiplier         = atr_multiplier,
@@ -1139,8 +1161,17 @@ def _show_bot_detail(bot: dict):
                 return f"Aktiv (unten {cfg.get('weight_bottom',1)}× / oben {cfg.get('weight_top',1)}×)"
             return "Inaktiv"
         def _rc():
-            if cfg.get("enable_recentering"):
-                return f"Aktiv ({cfg.get('recenter_threshold',0)*100:.0f}%)"
+            up = cfg.get("enable_recentering_up",
+                         cfg.get("enable_recentering", False))
+            dn = cfg.get("enable_recentering_down",
+                         cfg.get("enable_recentering", False))
+            pct = cfg.get('recenter_threshold', 0) * 100
+            if up and dn:
+                return f"Aktiv (Up + Down, {pct:.0f}%)"
+            if up:
+                return f"Aktiv (nur Up, {pct:.0f}%)"
+            if dn:
+                return f"Aktiv (nur Down, {pct:.0f}%)"
             return "Inaktiv"
         def _atr():
             if cfg.get("enable_atr_adjust"):

@@ -52,7 +52,8 @@ def run_backtest(
     end_date:   Optional[date] = None,
     stop_loss_pct:      Optional[float] = None,
     take_profit_pct:    Optional[float] = None,
-    enable_recentering: bool    = False,
+    enable_recentering_up:   bool    = False,
+    enable_recentering_down: bool    = False,
     recenter_threshold: float   = 0.05,
     enable_dd_throttle:  bool   = False,
     dd_threshold_1:      float  = 0.10,
@@ -93,7 +94,8 @@ def run_backtest(
         interval           : Kerzen-Intervall
         days               : Backtesting-Zeitraum in Tagen
         stop_loss_pct      : Stop-Loss Schwelle (None = deaktiviert)
-        enable_recentering : Recentering aktivieren
+        enable_recentering_up   : Recentering nach oben aktivieren
+        enable_recentering_down : Recentering nach unten aktivieren
         recenter_threshold : Recentering-Schwellenwert
         force_reload       : Cache ignorieren
 
@@ -125,7 +127,8 @@ def run_backtest(
         reserve_pct        = reserve_pct,
         stop_loss_pct      = stop_loss_pct,
         take_profit_pct    = take_profit_pct,
-        enable_recentering = enable_recentering,
+        enable_recentering_up   = enable_recentering_up,
+        enable_recentering_down = enable_recentering_down,
         recenter_threshold = recenter_threshold,
         enable_dd_throttle  = enable_dd_throttle,
         dd_threshold_1      = dd_threshold_1,
@@ -195,7 +198,7 @@ def run_backtest(
         "take_profit_triggered": sim.get("take_profit_triggered", False),
         # Mechanismus-Aktivierung (fuer Tab "Mechanisms")
         "mechanism_active":    {
-            "recentering": enable_recentering,
+            "recentering": enable_recentering_up or enable_recentering_down,
             "trailing":    enable_trailing_up or enable_trailing_down,
             "stop_loss":   stop_loss_pct is not None,
             "take_profit": take_profit_pct is not None,

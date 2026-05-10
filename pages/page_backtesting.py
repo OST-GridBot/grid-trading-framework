@@ -200,7 +200,16 @@ def show_backtesting():
             "asymmetric_bottom":  "Bottom Heavy",
             "asymmetric_top":     "Top Heavy",
         }.get(_smart.grid_mode, _smart.grid_mode)
-        _rc_lbl = "Aktiv" if _smart.enable_recentering else "Inaktiv"
+        _rc_up = bool(_smart.enable_recentering_up)
+        _rc_dn = bool(_smart.enable_recentering_down)
+        if _rc_up and _rc_dn:
+            _rc_lbl = "Up + Down"
+        elif _rc_up:
+            _rc_lbl = "Nur Up"
+        elif _rc_dn:
+            _rc_lbl = "Nur Down"
+        else:
+            _rc_lbl = "Inaktiv"
         if _smart.enable_trailing_up or _smart.enable_trailing_down:
             _tr_lbl = "Up + Down"
         else:
@@ -251,7 +260,8 @@ def show_backtesting():
                 else:
                     st.session_state["bt_gm_active"] = "Asymmetrisch"
                     st.session_state["bt_gm_asym"]   = "Bottom heavy" if _smart.grid_mode == "asymmetric_bottom" else "Top heavy"
-                st.session_state["bt_recenter"] = _smart.enable_recentering
+                st.session_state["bt_recenter_up"]   = _smart.enable_recentering_up
+                st.session_state["bt_recenter_down"] = _smart.enable_recentering_down
                 st.session_state["bt_trailing"] = _smart.enable_trailing_up or _smart.enable_trailing_down
                 if _smart.enable_trailing_up:
                     st.session_state["bt_trailing_up"]      = True
@@ -496,14 +506,22 @@ def show_backtesting():
     st.sidebar.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
     st.sidebar.markdown(_label("Dynamische Grid-Mechanismen"), unsafe_allow_html=True)
     trailing_active = st.session_state.get("bt_trailing", False)
-    enable_recentering = st.sidebar.checkbox(
-        "Recentering aktivieren",
-        value=False, key="bt_recenter",
+    enable_recentering_up = st.sidebar.checkbox(
+        "Recentering Up aktivieren",
+        value=True, key="bt_recenter_up",
         disabled=trailing_active,
         help="Nicht kombinierbar mit Grid Trailing" if trailing_active else None,
     )
-    if trailing_active and enable_recentering:
-        enable_recentering = False
+    enable_recentering_down = st.sidebar.checkbox(
+        "Recentering Down aktivieren",
+        value=False, key="bt_recenter_down",
+        disabled=trailing_active,
+        help="Nicht kombinierbar mit Grid Trailing" if trailing_active else None,
+    )
+    if trailing_active:
+        enable_recentering_up   = False
+        enable_recentering_down = False
+    enable_recentering = enable_recentering_up or enable_recentering_down
     recenter_threshold = 0.05
     if enable_recentering:
         st.sidebar.markdown(_caption("Recentering-Schwelle (%)"), unsafe_allow_html=True)
@@ -649,7 +667,8 @@ def show_backtesting():
                     end_date           = end_date,
                     stop_loss_pct      = stop_loss_pct,
                     take_profit_pct    = take_profit_pct,
-                    enable_recentering = enable_recentering,
+                    enable_recentering_up   = enable_recentering_up,
+                    enable_recentering_down = enable_recentering_down,
                     recenter_threshold = recenter_threshold,
                     enable_dd_throttle  = enable_dd_throttle,
                     dd_threshold_1      = dd_threshold_1,
@@ -769,8 +788,12 @@ def show_backtesting():
                 return f"Aktiv (unten {weight_bottom}× / oben {weight_top}×)"
             return "Inaktiv"
         def _rc():
-            if enable_recentering:
-                return f"Aktiv ({recenter_threshold*100:.0f}%)"
+            if enable_recentering_up and enable_recentering_down:
+                return f"Aktiv (Up + Down, {recenter_threshold*100:.0f}%)"
+            if enable_recentering_up:
+                return f"Aktiv (nur Up, {recenter_threshold*100:.0f}%)"
+            if enable_recentering_down:
+                return f"Aktiv (nur Down, {recenter_threshold*100:.0f}%)"
             return "Inaktiv"
         def _atr():
             if enable_atr_adjust:
@@ -853,7 +876,16 @@ def show_backtesting():
                     "asymmetric_bottom":  "Bottom Heavy",
                     "asymmetric_top":     "Top Heavy",
                 }.get(best.get("grid_mode",""), best.get("grid_mode",""))
-                _rc_lbl = "Aktiv" if best.get("enable_recentering") else "Inaktiv"
+                _rc_up = bool(best.get("enable_recentering_up"))
+                _rc_dn = bool(best.get("enable_recentering_down"))
+                if _rc_up and _rc_dn:
+                    _rc_lbl = "Up + Down"
+                elif _rc_up:
+                    _rc_lbl = "Nur Up"
+                elif _rc_dn:
+                    _rc_lbl = "Nur Down"
+                else:
+                    _rc_lbl = "Inaktiv"
                 st.success(
                     f"**Beste Parametrisierung gefunden:**\n"
                     f"- Anzahl Grids: **{int(best.get('num_grids', 0))}**\n"
@@ -870,11 +902,12 @@ def show_backtesting():
                     "arithmetic": "Arith.", "geometric": "Geom.",
                     "asymmetric_bottom": "Bottom", "asymmetric_top": "Top",
                 })
-                _df_show["enable_recentering"] = _df_show["enable_recentering"].map({True: "An", False: "Aus"})
+                # Optimizer testet Up+Down immer gemeinsam → eine Spalte reicht.
+                _df_show["recentering"] = _df_show["enable_recentering_up"].map({True: "An", False: "Aus"})
                 st.dataframe(
-                    _df_show[["num_grids","grid_mode","enable_recentering","roi_pct","calmar","max_dd_pct","num_trades","score"]
+                    _df_show[["num_grids","grid_mode","recentering","roi_pct","calmar","max_dd_pct","num_trades","score"]
                     ].rename(columns={
-                        "num_grids":"Grids","grid_mode":"Modus","enable_recentering":"Recenter",
+                        "num_grids":"Grids","grid_mode":"Modus","recentering":"Recenter",
                         "roi_pct":"ROI %","calmar":"Calmar",
                         "max_dd_pct":"Max DD %","num_trades":"Trades","score":"Score",
                     }),

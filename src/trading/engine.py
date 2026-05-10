@@ -98,7 +98,10 @@ class BotRunner:
             enable_trailing_down   = cfg.get("enable_trailing_down", False),
             trailing_up_stop       = cfg.get("trailing_up_stop"),
             trailing_down_stop     = cfg.get("trailing_down_stop"),
-            enable_recentering     = cfg.get("enable_recentering", False),
+            enable_recentering_up   = cfg.get("enable_recentering_up",
+                                              cfg.get("enable_recentering", False)),
+            enable_recentering_down = cfg.get("enable_recentering_down",
+                                              cfg.get("enable_recentering", False)),
             recenter_threshold     = cfg.get("recenter_threshold", 0.05),
             df                     = df,
             initial_price          = initial_price,
@@ -218,7 +221,10 @@ class BotRunner:
         # Mechanismus-Aktivierung (fuer Tab "Mechanisms" — counts kommen aus
         # bot.state, hier nur die "ist aktiviert"-Flags aus der Config)
         metrics["mechanism_active"] = {
-            "recentering": cfg.get("enable_recentering", False),
+            "recentering": cfg.get("enable_recentering_up",
+                                   cfg.get("enable_recentering", False))
+                           or cfg.get("enable_recentering_down",
+                                      cfg.get("enable_recentering", False)),
             "trailing":    cfg.get("enable_trailing_up", False)
                            or cfg.get("enable_trailing_down", False),
             "stop_loss":   cfg.get("stop_loss_pct")   is not None,

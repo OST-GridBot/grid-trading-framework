@@ -39,7 +39,8 @@ class SmartSetupResult:
     upper_price:           float
     num_grids:             int
     grid_mode:             str
-    enable_recentering:    bool
+    enable_recentering_up:   bool
+    enable_recentering_down: bool
     enable_trailing_up:    bool
     enable_trailing_down:  bool
     trailing_up_stop:      Optional[float]
@@ -145,7 +146,8 @@ def smart_grid_setup(
                                     df=df, total_investment=total_investment,
                                     lower_price=bt_lower, upper_price=bt_upper,
                                     num_grids=num_grids, grid_mode=mode, fee_rate=fee_rate,
-                                    enable_recentering=use_recenter,
+                                    enable_recentering_up=use_recenter,
+                                    enable_recentering_down=use_recenter,
                                     recenter_threshold=0.05,
                                     enable_trailing_up=use_trailing,
                                     enable_trailing_down=use_trailing,
@@ -175,7 +177,8 @@ def smart_grid_setup(
                                         "upper_price":            round(display_upper, 4),
                                         "num_grids":              num_grids,
                                         "grid_mode":              mode,
-                                        "enable_recentering":     use_recenter,
+                                        "enable_recentering_up":   use_recenter,
+                                        "enable_recentering_down": use_recenter,
                                         "enable_trailing_up":     use_trailing,
                                         "enable_trailing_down":   use_trailing,
                                         "trailing_up_stop":       display_tr_up,
@@ -194,7 +197,8 @@ def smart_grid_setup(
         upper_price            = best_cfg["upper_price"],
         num_grids              = best_cfg["num_grids"],
         grid_mode              = best_cfg["grid_mode"],
-        enable_recentering     = best_cfg["enable_recentering"],
+        enable_recentering_up   = best_cfg["enable_recentering_up"],
+        enable_recentering_down = best_cfg["enable_recentering_down"],
         enable_trailing_up     = best_cfg["enable_trailing_up"],
         enable_trailing_down   = best_cfg["enable_trailing_down"],
         trailing_up_stop       = best_cfg["trailing_up_stop"],

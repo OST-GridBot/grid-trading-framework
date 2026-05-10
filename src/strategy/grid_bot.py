@@ -96,7 +96,8 @@ class GridBot:
         reserve_pct     : Kapitalreserve fuer Gebuehren (z.B. 0.03 = 3%)
         stop_loss_pct   : Stop-Loss in % (z.B. 0.20 = 20% Verlust, None = deaktiviert)
         take_profit_pct : Take-Profit in % (z.B. 0.20 = 20% Gewinn, None = deaktiviert)
-        enable_recentering: True = Grid automatisch neu zentrieren
+        enable_recentering_up:   True = Grid neu zentrieren wenn Preis nach oben ausbricht
+        enable_recentering_down: True = Grid neu zentrieren wenn Preis nach unten ausbricht
         recenter_threshold: Schwellenwert fuer Recentering in % (z.B. 0.05 = 5%)
     """
 
@@ -112,7 +113,8 @@ class GridBot:
         reserve_pct:         float = DEFAULT_RESERVE_PCT,
         stop_loss_pct:       Optional[float] = None,
         take_profit_pct:     Optional[float] = None,
-        enable_recentering:  bool  = False,
+        enable_recentering_up:   bool  = False,
+        enable_recentering_down: bool  = False,
         recenter_threshold:  float = 0.05,
         df:                  Optional[object] = None,
         # Drawdown-Drosselung
@@ -147,7 +149,8 @@ class GridBot:
         self.reserve_pct        = reserve_pct
         self.stop_loss_pct      = stop_loss_pct
         self.take_profit_pct    = take_profit_pct
-        self.enable_recentering = enable_recentering
+        self.enable_recentering_up   = enable_recentering_up
+        self.enable_recentering_down = enable_recentering_down
         self.recenter_threshold = recenter_threshold
         self.enable_dd_throttle  = enable_dd_throttle
         self.dd_threshold_1      = dd_threshold_1
@@ -379,7 +382,7 @@ class GridBot:
                 self._update_atr_dynamic(candle, current_price)
 
             # Recentering pruefen
-            if self.enable_recentering:
+            if self.enable_recentering_up or self.enable_recentering_down:
                 self._check_recentering(current_price)
 
             # Grid Trailing pruefen
@@ -615,7 +618,8 @@ class GridBot:
         near_upper = current_price >= self.upper_price * (1 + self.recenter_threshold)
         near_lower = current_price <= self.lower_price * (1 - self.recenter_threshold)
 
-        if near_upper or near_lower:
+        if (near_upper and self.enable_recentering_up) or \
+           (near_lower and self.enable_recentering_down):
             self._recenter_grid(current_price)
 
     def _recenter_grid(self, current_price: float) -> None:
@@ -846,7 +850,8 @@ def simulate_grid_bot(
     reserve_pct:         float = DEFAULT_RESERVE_PCT,
     stop_loss_pct:       Optional[float] = None,
     take_profit_pct:     Optional[float] = None,
-    enable_recentering:  bool  = False,
+    enable_recentering_up:   bool  = False,
+    enable_recentering_down: bool  = False,
     recenter_threshold:  float = 0.05,
     enable_dd_throttle:  bool  = False,
     dd_threshold_1:      float = 0.10,
@@ -877,7 +882,8 @@ def simulate_grid_bot(
         fee_rate         : Gebuehrenrate pro Trade
         reserve_pct      : Kapitalreserve
         stop_loss_pct    : Stop-Loss Schwelle (None = deaktiviert)
-        enable_recentering: Automatisches Recentering aktivieren
+        enable_recentering_up:   Recentering nach oben aktivieren
+        enable_recentering_down: Recentering nach unten aktivieren
         recenter_threshold: Recentering-Schwellenwert
 
     Returns:
@@ -914,7 +920,8 @@ def simulate_grid_bot(
             reserve_pct        = reserve_pct,
             stop_loss_pct      = stop_loss_pct,
             take_profit_pct    = take_profit_pct,
-            enable_recentering = enable_recentering,
+            enable_recentering_up   = enable_recentering_up,
+            enable_recentering_down = enable_recentering_down,
             recenter_threshold = recenter_threshold,
             enable_dd_throttle  = enable_dd_throttle,
             dd_threshold_1      = dd_threshold_1,

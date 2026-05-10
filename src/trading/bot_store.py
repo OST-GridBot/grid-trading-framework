@@ -146,7 +146,8 @@ class BotStore:
         enable_trailing_down:   bool  = False,
         trailing_up_stop:       float = None,
         trailing_down_stop:     float = None,
-        enable_recentering:     bool  = False,
+        enable_recentering_up:   bool  = False,
+        enable_recentering_down: bool  = False,
         recenter_threshold:     float = 0.05,
     ) -> tuple[Optional[str], str]:
         """
@@ -195,7 +196,8 @@ class BotStore:
                 "enable_trailing_down":   enable_trailing_down,
                 "trailing_up_stop":       trailing_up_stop,
                 "trailing_down_stop":     trailing_down_stop,
-                "enable_recentering":     enable_recentering,
+                "enable_recentering_up":   enable_recentering_up,
+                "enable_recentering_down": enable_recentering_down,
                 "recenter_threshold":     recenter_threshold,
             },
             "state":     {},
