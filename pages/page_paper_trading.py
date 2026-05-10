@@ -287,35 +287,6 @@ def _show_new_bot_form():
     interval = st.radio("", ["1m","5m","15m","1h","4h"],
                          index=3, horizontal=True, key="pt_new_interval",
                          label_visibility="collapsed")
-    # Chart mit Grid-Vorschau nach Intervall-Auswahl
-    try:
-        from src.strategy.grid_builder import calculate_grid_lines
-        _days_chart = {"1m":1,"5m":1,"15m":2,"1h":7,"4h":14}.get(interval, 7)
-        _df_chart, _ = get_price_data(coin, days=_days_chart, interval=interval)
-        if _df_chart is not None and not _df_chart.empty:
-            _df_disp = convert_df_timestamps(_df_chart)
-            # Grid-Vorschau aus aktuellen Sidebar-Werten
-            _p = float(_df_chart["close"].iloc[-1])
-            _lo = round(_p * 0.90, 4)
-            _hi = round(_p * 1.10, 4)
-            _ng = st.session_state.get("pt_new_grids", DEFAULT_NUM_GRIDS)
-            try:
-                _gl = calculate_grid_lines(_lo, _hi, _ng, "arithmetic")
-            except Exception:
-                _gl = []
-            plot_grid_chart_v2(
-                df          = _df_disp,
-                grid_lines  = _gl,
-                trade_log   = [],
-                coin        = coin,
-                interval    = interval,
-                show_volume = False,
-                upper_price = float(_gl[-1]) if _gl else _hi,
-                lower_price = float(_gl[0])  if _gl else _lo,
-                height      = 420,
-            )
-    except Exception as e:
-        st.caption(f"Chart nicht verfügbar: {e}")
 
     st.markdown(_divider(), unsafe_allow_html=True)
 
@@ -598,6 +569,33 @@ def _show_new_bot_form():
         grid_mode = "arithmetic" if _pt_gm_sym == "Arithmetisch" else "geometric"
     else:
         grid_mode = "asymmetric_bottom" if _pt_gm_asym == "Bottom heavy" else "asymmetric_top"
+
+    # Live-Chart-Vorschau: zeigt die aktuell parametrisierten Grid-Linien
+    # auf der historischen Preisreihe. Aktualisiert sich bei jeder Aenderung
+    # an Range / Anzahl Grids / Grid-Modus.
+    try:
+        from src.strategy.grid_builder import calculate_grid_lines
+        _days_chart = {"1m":1,"5m":1,"15m":2,"1h":7,"4h":14}.get(interval, 7)
+        _df_chart, _ = get_price_data(coin, days=_days_chart, interval=interval)
+        if _df_chart is not None and not _df_chart.empty:
+            _df_disp = convert_df_timestamps(_df_chart)
+            try:
+                _gl = calculate_grid_lines(lower_price, upper_price, num_grids, grid_mode)
+            except Exception:
+                _gl = []
+            plot_grid_chart_v2(
+                df          = _df_disp,
+                grid_lines  = _gl,
+                trade_log   = [],
+                coin        = coin,
+                interval    = interval,
+                show_volume = False,
+                upper_price = float(_gl[-1]) if _gl else upper_price,
+                lower_price = float(_gl[0])  if _gl else lower_price,
+                height      = 420,
+            )
+    except Exception as e:
+        st.caption(f"Chart nicht verfügbar: {e}")
 
     st.markdown(_divider(), unsafe_allow_html=True)
 

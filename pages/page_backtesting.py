@@ -735,12 +735,11 @@ def show_backtesting():
     # Tabs
     tab1, tab2, tab3 = st.tabs(["Chart", "Trades", "⚙️ Configuration"])
     trade_log    = result.get("trade_log",    []) if result else []
-    grid_lines   = result.get("grid_lines",   []) if result else []
-    daily_values = result.get("daily_values", {}) if result else {}
 
     with tab1:
         if df is not None and not df.empty:
             from src.utils.timezone import convert_df_timestamps, utc_to_zurich
+            from src.strategy.grid_builder import calculate_grid_lines
             df_display = convert_df_timestamps(df)
             trade_log_display = []
             for t in trade_log:
@@ -750,13 +749,15 @@ def show_backtesting():
                 except Exception:
                     pass
                 trade_log_display.append(t2)
-            # Grid-Vorschau wenn noch keine Simulation
+            # Live-Vorschau: Grid-Linien IMMER aus aktuellen Sidebar-Werten
+            # berechnen - so aktualisiert sich das Chart bei jeder Parameter-
+            # aenderung, ohne dass eine Simulation noetig waere.
             try:
-                from src.strategy.grid_builder import calculate_grid_lines
-                preview_grid_lines = calculate_grid_lines(lower_price, upper_price, num_grids, grid_mode)
+                display_grid_lines = calculate_grid_lines(
+                    lower_price, upper_price, num_grids, grid_mode
+                )
             except Exception:
-                preview_grid_lines = []
-            display_grid_lines = grid_lines if grid_lines else preview_grid_lines
+                display_grid_lines = []
             display_upper = float(display_grid_lines[-1]) if display_grid_lines else upper_price
             display_lower = float(display_grid_lines[0])  if display_grid_lines else lower_price
             plot_grid_chart_v2(
