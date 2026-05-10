@@ -970,7 +970,7 @@ def _show_bot_detail(bot: dict):
     render_metrics_tabs(bot_metrics, trade_log=trade_log)
     st.divider()
 
-    tab1, tab2, tab3 = st.tabs(["📈 Chart", "📋 Trade-Log", "⚙️ Konfiguration"])
+    tab1, tab2, tab3 = st.tabs(["📈 Chart", "📋 Trade-Log", "⚙️ Configuration"])
 
     with tab1:
         try:

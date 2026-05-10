@@ -1062,7 +1062,7 @@ def _show_bot_detail(bot: dict):
     st.divider()
 
     # Tabs
-    tab1, tab2, tab3 = st.tabs(["📈 Chart", "📋 Trade-Log", "⚙️ Konfiguration"])
+    tab1, tab2, tab3 = st.tabs(["📈 Chart", "📋 Trade-Log", "⚙️ Configuration"])
 
     with tab1:
         try:
