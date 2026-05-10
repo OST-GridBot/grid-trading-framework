@@ -342,7 +342,7 @@ def _error_result(message: str) -> dict:
         "adx30":                0.0,
         "vola_monthly_pct":     None,
         "vola_yearly_pct":      None,
-        "return_stats":         {"avg_pct": None, "mad_pct": None, "std_pct": None},
+        "return_stats":         {"avg_pct": None, "std_pct": None},
         "price_extremes":       {"max_price": 0.0, "min_price": 0.0, "range_usdt": 0.0, "range_pct": 0.0},
         "grid_config":          None,
         "warnings":             [],

@@ -268,23 +268,20 @@ def calculate_return_stats(df: pd.DataFrame) -> dict:
     Returns:
         dict mit:
             avg_pct: Durchschnittliche %-Rendite pro Kerze
-            mad_pct: Mean Absolute Deviation der %-Rendite
             std_pct: Standardabweichung (= Vola pro Kerze)
         Alle Werte None bei zu wenig Daten.
     """
     if "close" not in df.columns or len(df) < 2:
-        return {"avg_pct": None, "mad_pct": None, "std_pct": None}
+        return {"avg_pct": None, "std_pct": None}
 
     returns = df["close"].pct_change().dropna() * 100
     if len(returns) == 0:
-        return {"avg_pct": None, "mad_pct": None, "std_pct": None}
+        return {"avg_pct": None, "std_pct": None}
 
     avg = float(returns.mean())
-    mad = float((returns - returns.mean()).abs().mean())
     std = float(returns.std())
     return {
         "avg_pct": round(avg, 4),
-        "mad_pct": round(mad, 4),
         "std_pct": round(std, 4),
     }
 
