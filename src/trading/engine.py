@@ -83,6 +83,7 @@ class BotRunner:
             fee_rate           = cfg.get("fee_rate", DEFAULT_FEE_RATE),
             reserve_pct        = cfg.get("reserve_pct", 0.03),
             stop_loss_pct      = cfg.get("stop_loss_pct"),
+            take_profit_pct    = cfg.get("take_profit_pct"),
             enable_dd_throttle  = cfg.get("enable_dd_throttle", False),
             dd_threshold_1      = cfg.get("dd_threshold_1", 0.10),
             dd_threshold_2      = cfg.get("dd_threshold_2", 0.20),
@@ -253,7 +254,7 @@ class BotRunner:
             "state":     state_serialized,
             "trade_log": trade_log_serialized,
             "metrics":   metrics,
-            "status":    "stopped" if self._grid_bot.stop_loss_hit else "running",
+            "status":    "stopped" if (self._grid_bot.stop_loss_hit or self._grid_bot.take_profit_hit) else "running",
         })
 
     # ── Update: neue Kerzen verarbeiten ─────────────────────────────────────

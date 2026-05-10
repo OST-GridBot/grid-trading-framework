@@ -709,6 +709,12 @@ def _show_new_bot_form():
         st.markdown(_caption("Stop-Loss (%)"), unsafe_allow_html=True)
         stop_loss_pct = st.slider("", 5.0, 50.0, 20.0, 5.0,
                                    key="lt_new_sl_pct", label_visibility="collapsed") / 100
+    tp_enabled = st.checkbox("Take-Profit aktivieren", key="lt_new_tp")
+    take_profit_pct = None
+    if tp_enabled:
+        st.markdown(_caption("Take-Profit (%)"), unsafe_allow_html=True)
+        take_profit_pct = st.slider("", 5.0, 100.0, 20.0, 5.0,
+                                   key="lt_new_tp_pct", label_visibility="collapsed") / 100
     dd_enabled = st.checkbox("Drawdown-Drosselung aktivieren", key="lt_new_dd")
     enable_dd_throttle = dd_enabled
     dd_threshold_1 = 0.10
@@ -846,6 +852,7 @@ def _show_new_bot_form():
                     fee_rate           = fee_rate,
                     reserve_pct        = reserve_pct,
                     stop_loss_pct      = stop_loss_pct,
+                    take_profit_pct    = take_profit_pct,
                     enable_dd_throttle  = enable_dd_throttle,
                     dd_threshold_1      = dd_threshold_1,
                     dd_threshold_2      = dd_threshold_2,

@@ -469,6 +469,12 @@ def show_backtesting():
         st.sidebar.markdown(_caption("Stop-Loss (%)"), unsafe_allow_html=True)
         stop_loss_pct = st.sidebar.slider("", 5.0, 50.0, 20.0, 5.0, key="bt_sl_pct",
                                       label_visibility="collapsed") / 100
+    tp_enabled = st.sidebar.checkbox("Take-Profit aktivieren", value=False, key="bt_tp")
+    take_profit_pct = None
+    if tp_enabled:
+        st.sidebar.markdown(_caption("Take-Profit (%)"), unsafe_allow_html=True)
+        take_profit_pct = st.sidebar.slider("", 5.0, 100.0, 20.0, 5.0, key="bt_tp_pct",
+                                      label_visibility="collapsed") / 100
     dd_enabled = st.sidebar.checkbox("Drawdown-Drosselung aktivieren", value=False, key="bt_dd")
     enable_dd_throttle = dd_enabled
     dd_threshold_1 = 0.10
@@ -642,6 +648,7 @@ def show_backtesting():
                     start_date         = start_date,
                     end_date           = end_date,
                     stop_loss_pct      = stop_loss_pct,
+                    take_profit_pct    = take_profit_pct,
                     enable_recentering = enable_recentering,
                     recenter_threshold = recenter_threshold,
                     enable_dd_throttle  = enable_dd_throttle,

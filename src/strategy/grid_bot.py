@@ -95,6 +95,7 @@ class GridBot:
         initial_price   : Startpreis (erste Kerze)
         reserve_pct     : Kapitalreserve fuer Gebuehren (z.B. 0.03 = 3%)
         stop_loss_pct   : Stop-Loss in % (z.B. 0.20 = 20% Verlust, None = deaktiviert)
+        take_profit_pct : Take-Profit in % (z.B. 0.20 = 20% Gewinn, None = deaktiviert)
         enable_recentering: True = Grid automatisch neu zentrieren
         recenter_threshold: Schwellenwert fuer Recentering in % (z.B. 0.05 = 5%)
     """
@@ -110,6 +111,7 @@ class GridBot:
         initial_price:       Optional[float] = None,
         reserve_pct:         float = DEFAULT_RESERVE_PCT,
         stop_loss_pct:       Optional[float] = None,
+        take_profit_pct:     Optional[float] = None,
         enable_recentering:  bool  = False,
         recenter_threshold:  float = 0.05,
         df:                  Optional[object] = None,
@@ -144,6 +146,7 @@ class GridBot:
         self.fee_rate           = fee_rate
         self.reserve_pct        = reserve_pct
         self.stop_loss_pct      = stop_loss_pct
+        self.take_profit_pct    = take_profit_pct
         self.enable_recentering = enable_recentering
         self.recenter_threshold = recenter_threshold
         self.enable_dd_throttle  = enable_dd_throttle
@@ -186,6 +189,7 @@ class GridBot:
         self.grids:        Dict[float, GridState] = {}
         self.recentering_count: int = 0
         self.stop_loss_triggered: bool = False
+        self.take_profit_triggered: bool = False
 
         # Preise
         self.last_price        = initial_price
@@ -321,7 +325,7 @@ class GridBot:
         Args:
             candle: pd.Series mit timestamp, open, high, low, close, volume
         """
-        if self.stop_loss_triggered:
+        if self.stop_loss_triggered or self.take_profit_triggered:
             return
 
         try:
@@ -342,6 +346,11 @@ class GridBot:
             # Stop-Loss pruefen
             if self._check_stop_loss(portfolio_value):
                 self.stop_loss_triggered = True
+                return
+
+            # Take-Profit pruefen
+            if self._check_take_profit(portfolio_value):
+                self.take_profit_triggered = True
                 return
 
             # Reset des Intra-Candle BUY-Trackers
@@ -526,6 +535,26 @@ class GridBot:
         return loss_pct >= self.stop_loss_pct
 
     # -----------------------------------------------------------------------
+    # Take-Profit
+    # -----------------------------------------------------------------------
+
+    def _check_take_profit(self, portfolio_value: float) -> bool:
+        """
+        Prueft ob der Take-Profit ausgeloest wurde.
+
+        Args:
+            portfolio_value: Aktueller Portfolio-Wert in USDT
+
+        Returns:
+            True wenn Take-Profit ausgeloest
+        """
+        if self.take_profit_pct is None:
+            return False
+
+        profit_pct = (portfolio_value - self.total_investment) / self.total_investment
+        return profit_pct >= self.take_profit_pct
+
+    # -----------------------------------------------------------------------
     # Recentering
     # -----------------------------------------------------------------------
 
@@ -693,6 +722,7 @@ class GridBot:
             "last_traded_price":   self.last_traded_price,
             "recentering_count":   self.recentering_count,
             "stop_loss_triggered": self.stop_loss_triggered,
+            "take_profit_triggered": self.take_profit_triggered,
             "dd_throttle_factor":  self.dd_throttle_factor,
             "enable_atr_adjust":   self.enable_atr_adjust,
             "atr_multiplier":      self.atr_multiplier,
@@ -728,6 +758,7 @@ class GridBot:
             self.last_traded_price = state.get("last_traded_price")
             self.recentering_count = state.get("recentering_count", 0)
             self.stop_loss_triggered = state.get("stop_loss_triggered", False)
+            self.take_profit_triggered = state.get("take_profit_triggered", False)
             self.dd_throttle_factor   = state.get("dd_throttle_factor", 1.0)
             self.enable_atr_adjust      = state.get("enable_atr_adjust", False)
             self.atr_multiplier         = state.get("atr_multiplier", 1.0)
@@ -764,6 +795,11 @@ class GridBot:
     def stop_loss_hit(self) -> bool:
         """Alias für stop_loss_triggered."""
         return self.stop_loss_triggered
+
+    @property
+    def take_profit_hit(self) -> bool:
+        """Alias für take_profit_triggered."""
+        return self.take_profit_triggered
 
     def get_portfolio_value(self, current_price: float) -> float:
         """Gibt aktuellen Portfolio-Wert zurück."""
@@ -809,6 +845,7 @@ def simulate_grid_bot(
     fee_rate:            float = DEFAULT_FEE_RATE,
     reserve_pct:         float = DEFAULT_RESERVE_PCT,
     stop_loss_pct:       Optional[float] = None,
+    take_profit_pct:     Optional[float] = None,
     enable_recentering:  bool  = False,
     recenter_threshold:  float = 0.05,
     enable_dd_throttle:  bool  = False,
@@ -876,6 +913,7 @@ def simulate_grid_bot(
             initial_price      = initial_price,
             reserve_pct        = reserve_pct,
             stop_loss_pct      = stop_loss_pct,
+            take_profit_pct    = take_profit_pct,
             enable_recentering = enable_recentering,
             recenter_threshold = recenter_threshold,
             enable_dd_throttle  = enable_dd_throttle,
@@ -949,6 +987,7 @@ def simulate_grid_bot(
             "recentering_count":   bot.recentering_count,
             "trailing_count":      bot.trailing_count,
             "stop_loss_triggered": bot.stop_loss_triggered,
+            "take_profit_triggered": bot.take_profit_triggered,
             "bot_version":         BOT_VERSION,
             "error":               None,
         }
@@ -971,6 +1010,7 @@ def simulate_grid_bot(
             "daily_values":        {},
             "recentering_count":   0,
             "stop_loss_triggered": False,
+            "take_profit_triggered": False,
             "bot_version":         BOT_VERSION,
             "error":               str(e),
         }

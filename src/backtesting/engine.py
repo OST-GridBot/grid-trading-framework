@@ -51,6 +51,7 @@ def run_backtest(
     start_date: Optional[date] = None,
     end_date:   Optional[date] = None,
     stop_loss_pct:      Optional[float] = None,
+    take_profit_pct:    Optional[float] = None,
     enable_recentering: bool    = False,
     recenter_threshold: float   = 0.05,
     enable_dd_throttle:  bool   = False,
@@ -123,6 +124,7 @@ def run_backtest(
         fee_rate           = fee_rate,
         reserve_pct        = reserve_pct,
         stop_loss_pct      = stop_loss_pct,
+        take_profit_pct    = take_profit_pct,
         enable_recentering = enable_recentering,
         recenter_threshold = recenter_threshold,
         enable_dd_throttle  = enable_dd_throttle,
@@ -190,6 +192,7 @@ def run_backtest(
         "recentering_count":   sim["recentering_count"],
         "trailing_count":      sim.get("trailing_count", 0),
         "stop_loss_triggered": sim["stop_loss_triggered"],
+        "take_profit_triggered": sim.get("take_profit_triggered", False),
         # Slippage existiert in der Backtest-Simulation nicht (Trade laeuft am
         # exakten Grid-Preis). Sobald PaperBroker/LiveBroker aktiv ist, kommt
         # der Wert ueber den BotRunner, nicht ueber run_backtest.
@@ -251,6 +254,7 @@ def _error_result(message: str) -> dict:
         "recentering_count":    0,
         "trailing_count":       0,
         "stop_loss_triggered":  False,
+        "take_profit_triggered": False,
         "regime":               None,
         "atr_usdt":             0.0,
         "atr_pct":              0.0,
