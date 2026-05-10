@@ -433,6 +433,7 @@ def _show_new_bot_form():
                 else:
                     st.session_state["pt_gm_active"] = "Asymmetrisch"
                     st.session_state["pt_gm_asym"]   = "Bottom heavy" if _smart.grid_mode == "asymmetric_bottom" else "Top heavy"
+                st.session_state["pt_new_recenter"]      = _smart.enable_recentering_up or _smart.enable_recentering_down
                 st.session_state["pt_new_recenter_up"]   = _smart.enable_recentering_up
                 st.session_state["pt_new_recenter_down"] = _smart.enable_recentering_down
                 st.session_state["pt_trailing"]     = _smart.enable_trailing_up or _smart.enable_trailing_down
@@ -650,26 +651,25 @@ def _show_new_bot_form():
     st.markdown(_label("Dynamische Grid-Mechanismen"), unsafe_allow_html=True)
 
     trailing_active_pt = st.session_state.get("pt_trailing", False)
-    if "pt_new_recenter_up" not in st.session_state:
-        st.session_state["pt_new_recenter_up"] = True
-    enable_recentering_up = st.checkbox(
-        "Recentering Up aktivieren",
-        key="pt_new_recenter_up",
+    enable_recentering = st.checkbox(
+        "Recentering aktivieren",
+        key="pt_new_recenter",
         disabled=trailing_active_pt,
         help="Nicht kombinierbar mit Grid Trailing" if trailing_active_pt else None,
     )
-    enable_recentering_down = st.checkbox(
-        "Recentering Down aktivieren",
-        key="pt_new_recenter_down",
-        disabled=trailing_active_pt,
-        help="Nicht kombinierbar mit Grid Trailing" if trailing_active_pt else None,
-    )
-    if trailing_active_pt:
-        enable_recentering_up   = False
-        enable_recentering_down = False
-    enable_recentering = enable_recentering_up or enable_recentering_down
+    enable_recentering = enable_recentering and not trailing_active_pt
+    enable_recentering_up   = False
+    enable_recentering_down = False
     recenter_threshold = 0.05
     if enable_recentering:
+        if "pt_new_recenter_up" not in st.session_state:
+            st.session_state["pt_new_recenter_up"] = True
+        enable_recentering_up = st.checkbox(
+            "Recentering Up", key="pt_new_recenter_up",
+        )
+        enable_recentering_down = st.checkbox(
+            "Recentering Down", key="pt_new_recenter_down",
+        )
         st.markdown(_caption("Recentering-Schwelle (%)"), unsafe_allow_html=True)
         recenter_threshold = st.slider("", 1.0, 20.0, 5.0, 1.0,
                                         key="pt_recenter_thr",
