@@ -1060,6 +1060,10 @@ def _show_bot_detail(bot: dict):
                 st.markdown(f"- **Stop-Loss:** Aktiv ({cfg['stop_loss_pct']*100:.0f}%)")
             else:
                 st.markdown("- **Stop-Loss:** Inaktiv")
+            if cfg.get("take_profit_pct"):
+                st.markdown(f"- **Take-Profit:** Aktiv ({cfg['take_profit_pct']*100:.0f}%)")
+            else:
+                st.markdown("- **Take-Profit:** Inaktiv")
             if cfg.get("enable_dd_throttle"):
                 st.markdown(f"- **DD-Drosselung:** Aktiv (Schwelle 1: {cfg.get('dd_threshold_1',0)*100:.0f}% / Schwelle 2: {cfg.get('dd_threshold_2',0)*100:.0f}%)")
             else:

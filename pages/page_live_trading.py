@@ -1128,6 +1128,8 @@ def _show_bot_detail(bot: dict):
         # Helper für dynamische Mechanismen
         def _sl():
             return f"Aktiv ({cfg['stop_loss_pct']*100:.0f}%)" if cfg.get("stop_loss_pct") else "Inaktiv"
+        def _tp():
+            return f"Aktiv ({cfg['take_profit_pct']*100:.0f}%)" if cfg.get("take_profit_pct") else "Inaktiv"
         def _dd():
             if cfg.get("enable_dd_throttle"):
                 return f"Aktiv (Schwelle 1: {cfg.get('dd_threshold_1',0)*100:.0f}% / Schwelle 2: {cfg.get('dd_threshold_2',0)*100:.0f}%)"
@@ -1168,6 +1170,7 @@ def _show_bot_detail(bot: dict):
             st.markdown(f"- **Kapitalreserve:** {cfg.get('reserve_pct',0)*100:.0f}%")
             st.markdown(f"- **Grid-Modus:** {cfg.get('grid_mode','–')}")
             st.markdown(f"- **Stop-Loss:** {_sl()}")
+            st.markdown(f"- **Take-Profit:** {_tp()}")
             st.markdown(f"- **Variable Orders:** {_vo()}")
             st.markdown(f"- **ATR-Anpassung:** {_atr()}")
         with col_b:
