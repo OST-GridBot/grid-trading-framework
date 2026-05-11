@@ -21,7 +21,10 @@ from src.trading.optimizer import smart_grid_setup
 from src.data.cache_manager import get_price_data
 from src.strategy.grid_builder import build_grid_config, suggest_atr_grid_counts
 from src.utils.timezone import convert_df_timestamps, utc_to_zurich
-from components.chart_v2 import plot_grid_chart_v2
+from components.chart_v2       import plot_grid_chart_v2
+from components.bot_view       import bot_view_from_bot_state
+from components.portfolio_view import render_portfolio_view
+from components.bot_list       import render_bot_list
 from config.settings import (
     DEFAULT_NUM_GRIDS, DEFAULT_GRID_MODE,
     DEFAULT_FEE_RATE, DEFAULT_RESERVE_PCT,
@@ -67,6 +70,38 @@ def _format_ts(ts_str: str) -> str:
         return ts.strftime("%Y-%m-%d %H:%M")
     except Exception:
         return str(ts_str)[:16].replace("T", " ")
+
+
+# ---------------------------------------------------------------------------
+# Navigations-Callbacks (an die neuen Komponenten uebergeben)
+# ---------------------------------------------------------------------------
+
+def _pt_back() -> None:
+    st.session_state.pt_show_new_bot  = False
+    st.session_state.pt_show_overview = False
+    st.session_state.pt_selected_bot  = None
+    st.rerun()
+
+
+def _pt_show_new_bot() -> None:
+    st.session_state.pt_show_new_bot  = True
+    st.session_state.pt_show_overview = False
+    st.session_state.pt_selected_bot  = None
+    st.rerun()
+
+
+def _pt_show_overview() -> None:
+    st.session_state.pt_show_overview = True
+    st.session_state.pt_show_new_bot  = False
+    st.session_state.pt_selected_bot  = None
+    st.rerun()
+
+
+def _pt_select_bot(bot_id: str) -> None:
+    st.session_state.pt_selected_bot  = bot_id
+    st.session_state.pt_show_new_bot  = False
+    st.session_state.pt_show_overview = False
+    st.rerun()
 
 
 def show_paper_trading():
@@ -134,8 +169,16 @@ def show_paper_trading():
         else:
             st.session_state.pt_selected_bot = None
 
+    # BotViews fuer Komponenten-Konsum (Adapter aus components/bot_view.py)
+    views = [bot_view_from_bot_state(b) for b in bots]
+
     if st.session_state.pt_show_overview:
-        _show_bots_overview(bots)
+        render_bot_list(
+            views         = views,
+            mode          = "paper",
+            on_back       = _pt_back,
+            on_select_bot = _pt_select_bot,
+        )
         return
 
     if not bots:
@@ -143,7 +186,12 @@ def show_paper_trading():
         return
 
     # Standard: Portfolio-Ansicht
-    _show_portfolio(bots)
+    render_portfolio_view(
+        views            = views,
+        mode             = "paper",
+        on_new_bot       = _pt_show_new_bot,
+        on_show_overview = _pt_show_overview,
+    )
 
 
 # ---------------------------------------------------------------------------
