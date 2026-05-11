@@ -18,7 +18,7 @@ Autor: Enes Eryilmaz
 Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
 """
 
-from typing import Callable
+from typing import Callable, Optional
 
 import streamlit as st
 
@@ -33,22 +33,32 @@ _BT_LIST_LIMIT = 10
 # Summary-Berechnungen (pure, testbar)
 # ---------------------------------------------------------------------------
 
+def _avg_outperformance(views: list) -> float:
+    """Mittelwert der outperformance_pct ueber alle Views (None-Werte ignorieren)."""
+    vals = [
+        (v.get("metrics") or {}).get("outperformance_pct")
+        for v in views
+    ]
+    vals = [x for x in vals if x is not None]
+    return (sum(vals) / len(vals)) if vals else 0.0
+
+
 def _compute_summary_running(views: list, max_bots: int) -> dict:
     """
-    Berechnet die fuenf Portfolio-Kennzahlen fuer PT/LT.
+    Berechnet die Portfolio-Kennzahlen fuer PT/LT.
 
     Args:
         views    : Liste aller BotViews dieses Modus
-        max_bots : Limit der gleichzeitig erlaubten Bots (MAX_BOTS_PER_MODE)
+        max_bots : (heute nur fuers Sidebar-Limit, nicht in den Karten verwendet)
 
     Returns:
         Dict mit Schluesseln:
-            active_count  (int)   Anzahl laufender Bots
-            max_count     (int)
-            total_invest  (float) Summe Kapital aller laufenden Bots
-            weighted_roi  (float) kapitalgewichtetes ROI in %
-            total_profit  (float) realisierter Profit ueber alle Bots
-            total_trades  (int)   Trades-Summe ueber alle Bots
+            active_count       (int)   Anzahl laufender Bots
+            max_count          (int)
+            total_invest       (float) Summe Kapital aller laufenden Bots
+            weighted_roi       (float) kapitalgewichtetes ROI in %
+            total_profit       (float) Summe grid_profit_total_usdt ueber alle Bots
+            avg_outperformance (float) Mittelwert outperformance_pct ueber alle Bots
     """
     running = [v for v in views if v.get("status") == "running"]
 
@@ -64,50 +74,39 @@ def _compute_summary_running(views: list, max_bots: int) -> dict:
     )
     weighted_roi = (weighted_sum / total_invest) if total_invest > 0 else 0.0
 
-    total_trades = sum(len(v.get("trade_log") or []) for v in views)
-
-    # Realisierter Profit = Summe profit aller SELL-Trades
+    # Realisierter Profit = Summe grid_profit_total_usdt ueber alle Bots
     total_profit = sum(
-        sum(
-            (t.get("profit") or 0)
-            for t in (v.get("trade_log") or [])
-            if str(t.get("type", "")).upper() == "SELL"
-        )
+        (v.get("metrics") or {}).get("grid_profit_total_usdt", 0) or 0
         for v in views
     )
 
     return {
-        "active_count": len(running),
-        "max_count":    max_bots,
-        "total_invest": total_invest,
-        "weighted_roi": weighted_roi,
-        "total_profit": total_profit,
-        "total_trades": total_trades,
+        "active_count":       len(running),
+        "max_count":          max_bots,
+        "total_invest":       total_invest,
+        "weighted_roi":       weighted_roi,
+        "total_profit":       total_profit,
+        "avg_outperformance": _avg_outperformance(views),
     }
 
 
 def _compute_summary_backtest(views: list, max_backtests: int) -> dict:
     """
-    Berechnet die fuenf Portfolio-Kennzahlen fuer BT.
-
-    Args:
-        views         : Liste aller Backtest-Views
-        max_backtests : Limit der gespeicherten Backtests (MAX_BACKTESTS)
+    Berechnet die Portfolio-Kennzahlen fuer BT.
 
     Returns:
         Dict mit Schluesseln:
-            count        (int)
-            max_count    (int)
-            best_roi     (float) % - 0 bei leerer Liste
-            worst_roi    (float) %
-            avg_roi      (float) %
-            total_trades (int)
+            count              (int)
+            max_count          (int)
+            best_roi           (float) % - 0 bei leerer Liste
+            worst_roi          (float) %
+            avg_roi            (float) %
+            avg_outperformance (float) % - Mittel der outperformance_pct
     """
     rois = [
         (v.get("metrics") or {}).get("roi_pct", 0) or 0
         for v in views
     ]
-    total_trades = sum(len(v.get("trade_log") or []) for v in views)
 
     if rois:
         best  = max(rois)
@@ -117,12 +116,12 @@ def _compute_summary_backtest(views: list, max_backtests: int) -> dict:
         best = worst = avg = 0.0
 
     return {
-        "count":        len(views),
-        "max_count":    max_backtests,
-        "best_roi":     best,
-        "worst_roi":    worst,
-        "avg_roi":      avg,
-        "total_trades": total_trades,
+        "count":              len(views),
+        "max_count":          max_backtests,
+        "best_roi":           best,
+        "worst_roi":          worst,
+        "avg_roi":            avg,
+        "avg_outperformance": _avg_outperformance(views),
     }
 
 
@@ -141,32 +140,56 @@ def _metric_card_html(label: str, value: str, color: str = "#E2E8F0") -> str:
     )
 
 
-def _render_metric_cards_running(summary: dict) -> None:
-    """Fuenf Metrik-Karten fuer PT/LT."""
+def _render_metric_cards_paper(summary: dict) -> None:
+    """Fuenf Metrik-Karten fuer Paper-Trading."""
     c1, c2, c3, c4, c5 = st.columns(5)
-    roi    = summary["weighted_roi"]
-    profit = summary["total_profit"]
-    roi_color    = "#34D399" if roi >= 0 else "#F87171"
+    roi      = summary["weighted_roi"]
+    profit   = summary["total_profit"]
+    outperf  = summary["avg_outperformance"]
+    roi_color    = "#34D399" if roi    >= 0 else "#F87171"
     profit_color = "#34D399" if profit >= 0 else "#F87171"
-    c1.markdown(_metric_card_html("Aktive Bots",         f"{summary['active_count']}/{summary['max_count']}"), unsafe_allow_html=True)
-    c2.markdown(_metric_card_html("Gesamtinvest",        f"${summary['total_invest']:,.0f}"),                  unsafe_allow_html=True)
-    c3.markdown(_metric_card_html("Ø ROI",               f"{roi:+.2f}%",      color=roi_color),                unsafe_allow_html=True)
-    c4.markdown(_metric_card_html("Realisierter Profit", f"${profit:+.2f}",   color=profit_color),             unsafe_allow_html=True)
-    c5.markdown(_metric_card_html("Trades gesamt",       str(summary["total_trades"])),                        unsafe_allow_html=True)
+    outp_color   = "#34D399" if outperf >= 0 else "#F87171"
+    c1.markdown(_metric_card_html("Aktive Bots",          str(summary['active_count'])),                  unsafe_allow_html=True)
+    c2.markdown(_metric_card_html("Gesamtinvest",         f"${summary['total_invest']:,.0f}"),            unsafe_allow_html=True)
+    c3.markdown(_metric_card_html("Ø ROI",                f"{roi:+.2f}%",     color=roi_color),           unsafe_allow_html=True)
+    c4.markdown(_metric_card_html("Realisierter Profit",  f"${profit:+.2f}",  color=profit_color),        unsafe_allow_html=True)
+    c5.markdown(_metric_card_html("Ø Outperformance B&H", f"{outperf:+.2f}%", color=outp_color),          unsafe_allow_html=True)
+
+
+def _render_metric_cards_live(summary: dict, balance_usdt) -> None:
+    """Fuenf Metrik-Karten fuer Live-Trading. Erste Karte = Binance-USDT-Guthaben."""
+    c1, c2, c3, c4, c5 = st.columns(5)
+    roi      = summary["weighted_roi"]
+    outperf  = summary["avg_outperformance"]
+    roi_color  = "#34D399" if roi    >= 0 else "#F87171"
+    outp_color = "#34D399" if outperf >= 0 else "#F87171"
+    if balance_usdt is None:
+        bal_str   = "–"
+        bal_color = "#94A3B8"
+    else:
+        bal_str   = f"${balance_usdt:,.2f}"
+        bal_color = "#34D399" if balance_usdt > 0 else "#94A3B8"
+    c1.markdown(_metric_card_html("Binance Guthaben",     bal_str,                               color=bal_color),   unsafe_allow_html=True)
+    c2.markdown(_metric_card_html("Aktive Bots",          str(summary['active_count'])),                             unsafe_allow_html=True)
+    c3.markdown(_metric_card_html("Gesamtinvest in Bots", f"${summary['total_invest']:,.0f}"),                       unsafe_allow_html=True)
+    c4.markdown(_metric_card_html("Ø ROI",                f"{roi:+.2f}%",     color=roi_color),                      unsafe_allow_html=True)
+    c5.markdown(_metric_card_html("Ø Outperformance B&H", f"{outperf:+.2f}%", color=outp_color),                      unsafe_allow_html=True)
 
 
 def _render_metric_cards_backtest(summary: dict) -> None:
     """Fuenf Metrik-Karten fuer BT."""
     c1, c2, c3, c4, c5 = st.columns(5)
     best, worst, avg = summary["best_roi"], summary["worst_roi"], summary["avg_roi"]
-    best_color  = "#34D399" if best  >= 0 else "#F87171"
-    worst_color = "#34D399" if worst >= 0 else "#F87171"
-    avg_color   = "#34D399" if avg   >= 0 else "#F87171"
-    c1.markdown(_metric_card_html("Gespeicherte Backtests", f"{summary['count']}/{summary['max_count']}"), unsafe_allow_html=True)
-    c2.markdown(_metric_card_html("Bestes ROI",             f"{best:+.2f}%",    color=best_color),         unsafe_allow_html=True)
-    c3.markdown(_metric_card_html("Ø ROI",                  f"{avg:+.2f}%",     color=avg_color),          unsafe_allow_html=True)
-    c4.markdown(_metric_card_html("Schlechtestes ROI",      f"{worst:+.2f}%",   color=worst_color),        unsafe_allow_html=True)
-    c5.markdown(_metric_card_html("Trades gesamt",          str(summary["total_trades"])),                 unsafe_allow_html=True)
+    outperf  = summary["avg_outperformance"]
+    best_color  = "#34D399" if best    >= 0 else "#F87171"
+    worst_color = "#34D399" if worst   >= 0 else "#F87171"
+    avg_color   = "#34D399" if avg     >= 0 else "#F87171"
+    outp_color  = "#34D399" if outperf >= 0 else "#F87171"
+    c1.markdown(_metric_card_html("Gespeicherte Backtests", str(summary['count'])),                          unsafe_allow_html=True)
+    c2.markdown(_metric_card_html("Bestes ROI",             f"{best:+.2f}%",    color=best_color),           unsafe_allow_html=True)
+    c3.markdown(_metric_card_html("Ø ROI",                  f"{avg:+.2f}%",     color=avg_color),            unsafe_allow_html=True)
+    c4.markdown(_metric_card_html("Schlechtestes ROI",      f"{worst:+.2f}%",   color=worst_color),          unsafe_allow_html=True)
+    c5.markdown(_metric_card_html("Ø Outperformance B&H",   f"{outperf:+.2f}%", color=outp_color),           unsafe_allow_html=True)
 
 
 def _render_compact_card_running(view: dict, dim: bool) -> None:
@@ -254,28 +277,34 @@ def _render_action_buttons(
 # ---------------------------------------------------------------------------
 
 def render_portfolio_view(
-    views:            list,
-    mode:             str,
-    on_new_bot:       Callable[[], None],
-    on_show_overview: Callable[[], None],
+    views:             list,
+    mode:              str,
+    on_new_bot:        Callable[[], None],
+    on_show_overview:  Callable[[], None],
+    live_balance_usdt: Optional[float] = None,
 ) -> None:
     """
     Rendert die Portfolio-Uebersicht eines Modus.
 
     Args:
-        views            : Alle BotViews dieses Modus (Page-seitig sortiert)
-        mode             : "backtest" | "paper" | "live"
-        on_new_bot       : Callback "+ Neuen Bot/Backtest starten"
-        on_show_overview : Callback "Uebersicht ... (N)"
+        views             : Alle BotViews dieses Modus (Page-seitig sortiert)
+        mode              : "backtest" | "paper" | "live"
+        on_new_bot        : Callback "+ Neuen Bot/Backtest starten"
+        on_show_overview  : Callback "Uebersicht ... (N)"
+        live_balance_usdt : Nur bei mode="live" relevant - USDT-Guthaben
+                            der Binance-Wallet (None wenn nicht geladen).
     """
     st.markdown("### 📊 Portfolio-Übersicht")
 
     if mode == "backtest":
         summary = _compute_summary_backtest(views, MAX_BACKTESTS)
         _render_metric_cards_backtest(summary)
+    elif mode == "live":
+        summary = _compute_summary_running(views, MAX_BOTS_PER_MODE)
+        _render_metric_cards_live(summary, live_balance_usdt)
     else:
         summary = _compute_summary_running(views, MAX_BOTS_PER_MODE)
-        _render_metric_cards_running(summary)
+        _render_metric_cards_paper(summary)
 
     st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
 
