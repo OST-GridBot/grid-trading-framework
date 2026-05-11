@@ -86,7 +86,6 @@ ATR_PCT_MIN           = 0.5
 ATR_PCT_MAX           = 4.0
 MIN_VOLUME_USDT       = 1_000_000
 SCANNER_LOOKBACK_DAYS = 14
-SCANNER_INTERVAL      = "1h"
 
 # Paper-Trading / Live-Trading
 MAX_BOTS_PER_MODE           = 10
@@ -96,5 +95,3 @@ MAX_BACKTESTS               = 500   # Maximale Anzahl gespeicherter Backtests
 COLOR_GREEN        = "#00C853"
 COLOR_ORANGE       = "#FF6F00"
 COLOR_RED          = "#D50000"
-COLOR_WHITE        = "#FFFFFF"
-COLOR_BLUE         = "#0B5E82"
