@@ -335,8 +335,13 @@ def get_num_days(df, interval: str) -> float:
 
 def calculate_grid_efficiency(trade_log: list, num_grids: int) -> Optional[float]:
     """
-    Grid Efficiency = Anzahl aktiv gekreuzter Grid-Levels / Total Grid-Levels * 100
+    Grid Efficiency = Anzahl aktiv gekreuzter Grid-Linien / Total Grid-Linien * 100
     Zeigt ob die Grid-Grenzen gut gesetzt sind. Gut >= 50%
+
+    Hinweis: num_grids ist die Anzahl Intervalle. Die tatsaechliche Anzahl
+    Grid-Linien ist num_grids + 1 (lower-/upper-Grenze + Zwischen-Linien).
+    Daher Divisor num_grids + 1 - sonst waere 100% theoretisch nicht
+    erreichbar.
     """
     if num_grids <= 0:
         return None
@@ -351,7 +356,8 @@ def calculate_grid_efficiency(trade_log: list, num_grids: int) -> Optional[float
         for t in trade_log if t.get("price", 0) > 0
     )
     active_levels = len(unique_prices)
-    efficiency = min(active_levels / num_grids * 100, 100.0)
+    total_lines   = num_grids + 1
+    efficiency    = min(active_levels / total_lines * 100, 100.0)
     return round(efficiency, 2)
 
 
@@ -397,16 +403,24 @@ def calculate_active_levels_ratio(
     trade_log: list,
     num_grids: int,
 ) -> dict:
-    """Anzahl aktiv gehandelter Grid-Levels vs. Total."""
+    """
+    Anzahl aktiv gehandelter Grid-Linien vs. Total.
+
+    Hinweis: num_grids ist die Anzahl Intervalle. Anzahl Grid-Linien =
+    num_grids + 1. "total" zaehlt Linien (= num_grids + 1), damit ein
+    Bot der alle Linien getradet hat auch tatsaechlich active==total
+    erreichen kann.
+    """
     if num_grids <= 0:
         return {"active": 0, "total": 0}
     unique_prices = set(
         f"{t.get('price', 0):.6g}"
         for t in trade_log if t.get("price", 0) > 0
     )
+    total_lines = num_grids + 1
     return {
-        "active": min(len(unique_prices), num_grids),
-        "total":  num_grids,
+        "active": min(len(unique_prices), total_lines),
+        "total":  total_lines,
     }
 
 
