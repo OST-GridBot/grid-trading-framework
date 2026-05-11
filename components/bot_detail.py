@@ -267,6 +267,11 @@ def render_bot_detail(view: dict, on_back: Callable[[], None]) -> None:
     metrics.setdefault("initial_investment", cfg.get("total_investment", 0))
     if "fees_paid" not in metrics:
         metrics["fees_paid"] = sum(t.get("fee", 0) for t in view.get("trade_log", []))
+    # Indikatoren (BT-spezifisch in view["indicators"]) ins metrics-Dict mergen,
+    # damit Tab "Market Data & Indicators" auch bei BT-Bots Werte zeigt.
+    # setdefault statt update -> PT/LT-Werte in metrics bleiben unberuehrt.
+    for k, v in (view.get("indicators") or {}).items():
+        metrics.setdefault(k, v)
     render_metrics_tabs(metrics, trade_log=view.get("trade_log", []))
 
     st.divider()
