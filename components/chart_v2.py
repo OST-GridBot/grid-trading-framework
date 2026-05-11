@@ -11,15 +11,20 @@ from typing import Optional
 
 
 def plot_grid_chart_v2(
-    df:           pd.DataFrame,
-    grid_lines:   list,
-    trade_log:    list,
-    coin:         str   = "BTC",
-    interval:     str   = "1h",
-    show_volume:  bool  = True,
-    upper_price:  Optional[float] = None,
-    lower_price:  Optional[float] = None,
-    height:       int   = 560,
+    df:                  pd.DataFrame,
+    grid_lines:          list,
+    trade_log:           list,
+    coin:                str   = "BTC",
+    interval:            str   = "1h",
+    show_volume:         bool  = True,
+    upper_price:         Optional[float] = None,
+    lower_price:         Optional[float] = None,
+    height:              int   = 560,
+    show_grid_lines:     bool  = True,
+    show_grid_labels:    bool  = False,
+    show_order_markers:  bool  = True,
+    bot_start_timestamp: Optional[int]   = None,
+    magnet_crosshair:    bool  = False,
 ) -> None:
 
     def _to_unix(ts_val):
@@ -67,37 +72,52 @@ def plot_grid_chart_v2(
         volume_data.sort(key=lambda x: x["time"])
 
     markers = []
-    for t in trade_log:
-        try:
-            ts = _to_unix(t["timestamp"])
-            if ts is None:
+    if show_order_markers:
+        for t in trade_log:
+            try:
+                ts = _to_unix(t["timestamp"])
+                if ts is None:
+                    continue
+                is_buy = "BUY" in str(t.get("type", "")).upper()
+                markers.append({
+                    "time":     ts,
+                    "is_buy":   is_buy,
+                    "price":    float(t.get("price", 0)),
+                    "profit":   t.get("profit", None),
+                    "amount":   float(t.get("amount", 0)),
+                    "fee":      float(t.get("fee", 0)),
+                })
+            except Exception:
                 continue
-            is_buy = "BUY" in str(t.get("type", "")).upper()
-            markers.append({
-                "time":     ts,
-                "is_buy":   is_buy,
-                "price":    float(t.get("price", 0)),
-                "profit":   t.get("profit", None),
-                "amount":   float(t.get("amount", 0)),
-                "fee":      float(t.get("fee", 0)),
-            })
-        except Exception:
-            continue
     markers.sort(key=lambda x: x["time"])
 
-    price_lines = [round(float(gl), 4) for gl in grid_lines]
+    # Bot-Start-Marker (separat von order-markers, andere Render-Logik via JS)
+    df_start_ts = candles[0]["time"]  if candles else None
+    df_end_ts   = candles[-1]["time"] if candles else None
+    bot_start_visible = (
+        bot_start_timestamp is not None
+        and df_start_ts is not None
+        and df_end_ts is not None
+        and df_start_ts <= int(bot_start_timestamp) <= df_end_ts
+    )
+    bot_start_ts = int(bot_start_timestamp) if bot_start_visible else None
+
+    price_lines = [round(float(gl), 4) for gl in grid_lines] if show_grid_lines else []
     has_volume  = show_volume and bool(volume_data)
 
-    candles_json     = json.dumps(candles)
-    volume_json      = json.dumps(volume_data)
-    markers_json     = json.dumps(markers)
-    price_lines_json = json.dumps(price_lines)
-    upper_json       = json.dumps(round(float(upper_price), 4) if upper_price else None)
-    lower_json       = json.dumps(round(float(lower_price), 4) if lower_price else None)
-    coin_js          = json.dumps(coin)
-    interval_js      = json.dumps(interval)
-    date_range_js    = json.dumps(date_range_str)
-    has_vol_js       = "true" if has_volume else "false"
+    candles_json       = json.dumps(candles)
+    volume_json        = json.dumps(volume_data)
+    markers_json       = json.dumps(markers)
+    price_lines_json   = json.dumps(price_lines)
+    upper_json         = json.dumps(round(float(upper_price), 4) if upper_price else None)
+    lower_json         = json.dumps(round(float(lower_price), 4) if lower_price else None)
+    coin_js            = json.dumps(coin)
+    interval_js        = json.dumps(interval)
+    date_range_js      = json.dumps(date_range_str)
+    has_vol_js         = "true" if has_volume else "false"
+    show_grid_labels_js = "true" if show_grid_labels else "false"
+    magnet_js          = "true" if magnet_crosshair else "false"
+    bot_start_ts_json  = json.dumps(bot_start_ts)
 
     HEADER_H = 44
     chart_h  = height - HEADER_H
@@ -216,16 +236,19 @@ def plot_grid_chart_v2(
 
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <script>
-  const candles    = {candles_json};
-  const volData    = {volume_json};
-  const allMarkers = {markers_json};
-  const priceLines = {price_lines_json};
-  const upperPrice = {upper_json};
-  const lowerPrice = {lower_json};
-  const coinName   = {coin_js};
-  const interval   = {interval_js};
-  const dateRange  = {date_range_js};
-  const hasVol     = {has_vol_js};
+  const candles        = {candles_json};
+  const volData        = {volume_json};
+  const allMarkers     = {markers_json};
+  const priceLines     = {price_lines_json};
+  const upperPrice     = {upper_json};
+  const lowerPrice     = {lower_json};
+  const coinName       = {coin_js};
+  const interval       = {interval_js};
+  const dateRange      = {date_range_js};
+  const hasVol         = {has_vol_js};
+  const showGridLabels = {show_grid_labels_js};
+  const magnetCrosshair = {magnet_js};
+  const botStartTs     = {bot_start_ts_json};
 
   // Marker colours — slightly darker than original
   const BUY_COLOR  = '#158A50';  // darker green
@@ -266,7 +289,8 @@ def plot_grid_chart_v2(
       vertLines: {{ color:'rgba(255,255,255,0.04)' }},
       horzLines: {{ color:'rgba(255,255,255,0.04)' }},
     }},
-    crosshair: {{ mode:LightweightCharts.CrosshairMode.Normal }},
+    crosshair: {{ mode: magnetCrosshair ? LightweightCharts.CrosshairMode.Magnet
+                                          : LightweightCharts.CrosshairMode.Normal }},
     rightPriceScale: {{
       borderColor: 'rgba(255,255,255,0.08)',
       scaleMargins: hasVol ? marginsOn : marginsOff,
@@ -298,9 +322,22 @@ def plot_grid_chart_v2(
   }});
   candleSeries.setData(candles);
 
-  priceLines.forEach(p => candleSeries.createPriceLine({{
+  // Bot-Start-Marker (nur wenn timestamp im sichtbaren Kerzen-Bereich liegt)
+  if (botStartTs !== null) {{
+    candleSeries.setMarkers([{{
+      time:     botStartTs,
+      position: 'belowBar',
+      color:    '#60A5FA',
+      shape:    'arrowUp',
+      text:     'Bot Start',
+    }}]);
+  }}
+
+  priceLines.forEach((p, idx) => candleSeries.createPriceLine({{
     price:p, color:'rgba(100,160,255,0.35)', lineWidth:1,
-    lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:false,
+    lineStyle:LightweightCharts.LineStyle.Dotted,
+    axisLabelVisible: showGridLabels,
+    title: showGridLabels ? ('L' + (idx + 1)) : '',
   }}));
   if (upperPrice) candleSeries.createPriceLine({{
     price:upperPrice, color:'rgba(59,130,246,0.9)', lineWidth:2,

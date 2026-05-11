@@ -494,10 +494,12 @@ def _section_grid_count_and_mode(
 
 def _render_chart_main(params: dict) -> None:
     """
-    Live-Chart-Vorschau im Hauptbereich.
+    Live-Chart-Vorschau im Hauptbereich + Chart-Einstellungen-Expander.
     Wird AUSSERHALB des with-Sidebar-Contexts aufgerufen, damit Streamlit
     den Chart in den Hauptbereich rendert (nicht in die Sidebar).
     """
+    from components.chart_settings import render_chart_settings
+
     coin     = params.get("coin", "")
     interval = params.get("interval", "1h")
     lower    = float(params.get("lower_price", 0) or 0)
@@ -515,16 +517,25 @@ def _render_chart_main(params: dict) -> None:
             gl = calculate_grid_lines(lower, upper, num, gm)
         except Exception:
             gl = []
+
+        # Chart-Einstellungen (Bot-Start gibts in der Setup-Vorschau nicht)
+        settings = render_chart_settings(key_prefix="setup")
+
         plot_grid_chart_v2(
-            df          = df_disp,
-            grid_lines  = gl,
-            trade_log   = [],
-            coin        = coin,
-            interval    = interval,
-            show_volume = False,
-            upper_price = float(gl[-1]) if gl else upper,
-            lower_price = float(gl[0])  if gl else lower,
-            height      = 540,
+            df                  = df_disp,
+            grid_lines          = gl,
+            trade_log           = [],
+            coin                = coin,
+            interval            = interval,
+            show_volume         = settings["show_volume"],
+            upper_price         = float(gl[-1]) if gl else upper,
+            lower_price         = float(gl[0])  if gl else lower,
+            height              = 540,
+            show_grid_lines     = settings["show_grid_lines"],
+            show_grid_labels    = settings["show_grid_labels"],
+            show_order_markers  = settings["show_order_markers"],
+            bot_start_timestamp = None,  # Setup-Vorschau hat keinen Bot-Start
+            magnet_crosshair    = settings["magnet_crosshair"],
         )
     except Exception as e:
         st.caption(f"Chart nicht verfügbar: {e}")
