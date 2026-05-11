@@ -61,12 +61,22 @@ def status_badge(status: str) -> str:
 # Hilfsfunktionen (pure)
 # ---------------------------------------------------------------------------
 
-def _format_runtime(metrics: dict) -> str:
+def _format_runtime(view: dict) -> str:
     """
-    Extrahiert die formatierte Laufzeit aus metrics. Defensiv: wenn das
-    runtime-Feld kein Dict ist, gibt "–" zurueck.
+    Formatierte Laufzeit fuer die Detail-View.
+
+    Bei mode="backtest" wird die Sim-Periode aus view["period"]["days"]
+    als "Xd" formatiert (es gibt keine sinnvolle Wall-Clock-Laufzeit
+    fuer einen gespeicherten Backtest).
+
+    Bei PT/LT wird metrics["runtime"]["formatted"] gelesen (Wall-Clock
+    seit Bot-Start, befuellt durch src.analysis.metrics.calculate_runtime).
     """
-    rt = metrics.get("runtime")
+    if view.get("mode") == "backtest":
+        period = view.get("period") or {}
+        days = int(period.get("days", 0) or 0)
+        return f"{days}d" if days > 0 else "–"
+    rt = (view.get("metrics") or {}).get("runtime")
     if isinstance(rt, dict):
         return rt.get("formatted", "–")
     return "–"
@@ -130,7 +140,7 @@ def _render_header(view: dict) -> None:
     iv      = view.get("interval", "")
     bid     = view.get("id", "")
     status  = view.get("status", "")
-    rt_str  = _format_runtime(view.get("metrics", {}))
+    rt_str  = _format_runtime(view)
 
     st.markdown(
         f"<div style='margin-bottom:8px;'>"

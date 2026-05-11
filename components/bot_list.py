@@ -37,9 +37,18 @@ def _format_ts(ts_str: str) -> str:
         return str(ts_str)[:16].replace("T", " ")
 
 
-def _format_runtime_short(metrics: dict) -> str:
-    """Extrahiert metrics['runtime']['formatted'] mit Fallback '–'."""
-    rt = metrics.get("runtime")
+def _format_runtime_short(view: dict) -> str:
+    """
+    Kurze Laufzeit-Anzeige fuer Bot-Karten.
+
+    Bei mode="backtest" aus view["period"]["days"] als "Xd",
+    sonst aus metrics["runtime"]["formatted"].
+    """
+    if view.get("mode") == "backtest":
+        period = view.get("period") or {}
+        days = int(period.get("days", 0) or 0)
+        return f"{days}d" if days > 0 else "–"
+    rt = (view.get("metrics") or {}).get("runtime")
     if isinstance(rt, dict):
         return rt.get("formatted", "–")
     return "–"
@@ -69,7 +78,7 @@ def _card_data(view: dict) -> dict:
         "trades":    len(view.get("trade_log", [])),
         "capital":   cfg.get("total_investment", 0),
         "grids":     cfg.get("num_grids", 0),
-        "runtime":   _format_runtime_short(metrics),
+        "runtime":   _format_runtime_short(view),
         "created":   _format_ts(view.get("created_at", "")),
     }
 
