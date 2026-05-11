@@ -26,6 +26,7 @@ from components.bot_view       import bot_view_from_bot_state
 from components.portfolio_view import render_portfolio_view
 from components.bot_list       import render_bot_list
 from components.bot_detail     import render_bot_detail
+from components.bot_setup_form import render_bot_setup_form
 from config.settings import (
     DEFAULT_NUM_GRIDS, DEFAULT_GRID_MODE,
     DEFAULT_FEE_RATE, DEFAULT_RESERVE_PCT,
@@ -105,6 +106,27 @@ def _pt_select_bot(bot_id: str) -> None:
     st.rerun()
 
 
+def _pt_handle_submit(params: dict) -> None:
+    """
+    Wird von render_bot_setup_form aufgerufen, sobald der User auf
+    "Bot starten" klickt. Erstellt einen Paper-Trading-Bot und springt
+    direkt in die Detail-View.
+    """
+    name = (params.get("name") or "").strip() or f"{params['coin']}/USDT"
+    # create_bot kennt weder "name" noch "period" - rausfiltern
+    sim_kwargs = {k: v for k, v in params.items()
+                  if k not in ("name", "period")}
+    bot_id, err = bot_store.create_bot(mode="paper", **sim_kwargs)
+    if err or bot_id is None:
+        st.error(err or "Bot konnte nicht erstellt werden.")
+        return
+    # Name nachtragen (create_bot speichert keinen Namen)
+    bot_store.update_bot(bot_id, {"name": name})
+    st.session_state.pt_show_new_bot = False
+    st.session_state.pt_selected_bot = bot_id
+    st.rerun()
+
+
 def show_paper_trading():
 
     if "pt_selected_bot" not in st.session_state:
@@ -159,7 +181,11 @@ def show_paper_trading():
     st.divider()
 
     if st.session_state.pt_show_new_bot:
-        _show_new_bot_form()
+        render_bot_setup_form(
+            mode      = "paper",
+            on_submit = _pt_handle_submit,
+            on_back   = _pt_back,
+        )
         return
 
     if st.session_state.pt_selected_bot:
