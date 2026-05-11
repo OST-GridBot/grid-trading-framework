@@ -25,6 +25,7 @@ from components.chart_v2       import plot_grid_chart_v2
 from components.bot_view       import bot_view_from_bot_state
 from components.portfolio_view import render_portfolio_view
 from components.bot_list       import render_bot_list
+from components.bot_detail     import render_bot_detail
 from config.settings import (
     DEFAULT_NUM_GRIDS, DEFAULT_GRID_MODE,
     DEFAULT_FEE_RATE, DEFAULT_RESERVE_PCT,
@@ -164,7 +165,8 @@ def show_paper_trading():
     if st.session_state.pt_selected_bot:
         bot = bot_store.get_bot(st.session_state.pt_selected_bot)
         if bot:
-            _show_bot_detail(bot)
+            view = bot_view_from_bot_state(bot)
+            render_bot_detail(view, on_back=_pt_back)
             return
         else:
             st.session_state.pt_selected_bot = None
