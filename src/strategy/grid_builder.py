@@ -23,7 +23,6 @@ Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
 
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass, field
 from typing import Optional
 
 from config.settings import (
@@ -34,35 +33,6 @@ from config.settings import (
     MAX_NUM_GRIDS,
 )
 from src.analysis.indicators import get_atr_stats
-
-
-# ---------------------------------------------------------------------------
-# Datenklassen
-# ---------------------------------------------------------------------------
-
-@dataclass
-class GridConfig:
-    """
-    Vollstaendige Grid-Konfiguration.
-
-    Attributes:
-        lower_price  : Untere Preisgrenze
-        upper_price  : Obere Preisgrenze
-        num_grids    : Anzahl Grids
-        mode         : "arithmetic" oder "geometric"
-        fee_rate     : Gebuehrenrate pro Trade (z.B. 0.001 = 0.1%)
-        grid_lines   : Berechnete Grid-Linien (aufsteigend)
-        grid_spacing : Durchschnittlicher Abstand zwischen Grids
-        profit_per_grid: Erwarteter Gewinn pro Grid-Zyklus nach Fees (%)
-    """
-    lower_price:     float
-    upper_price:     float
-    num_grids:       int
-    mode:            str
-    fee_rate:        float
-    grid_lines:      list  = field(default_factory=list)
-    grid_spacing:    float = 0.0
-    profit_per_grid: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -129,44 +99,6 @@ def calculate_grid_lines(
         )
 
     return sorted(lines)
-
-
-def build_grid_config(
-    lower_price: float,
-    upper_price: float,
-    num_grids:   int   = DEFAULT_NUM_GRIDS,
-    mode:        str   = DEFAULT_GRID_MODE,
-    fee_rate:    float = DEFAULT_FEE_RATE,
-) -> GridConfig:
-    """
-    Erstellt eine vollstaendige Grid-Konfiguration.
-
-    Berechnet Grid-Linien, Abstände und Gewinnvorschau.
-
-    Args:
-        lower_price: Untere Preisgrenze
-        upper_price: Obere Preisgrenze
-        num_grids  : Anzahl Grids
-        mode       : "arithmetic" oder "geometric"
-        fee_rate   : Gebuehrenrate pro Trade
-
-    Returns:
-        GridConfig mit allen berechneten Werten
-    """
-    grid_lines      = calculate_grid_lines(lower_price, upper_price, num_grids, mode)
-    grid_spacing    = _calculate_avg_spacing(grid_lines)
-    profit_per_grid = _calculate_profit_per_grid(grid_lines, fee_rate, mode)
-
-    return GridConfig(
-        lower_price     = lower_price,
-        upper_price     = upper_price,
-        num_grids       = num_grids,
-        mode            = mode,
-        fee_rate        = fee_rate,
-        grid_lines      = grid_lines,
-        grid_spacing    = grid_spacing,
-        profit_per_grid = profit_per_grid,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -245,47 +177,6 @@ def validate_grid_config(
         )
 
     return is_valid, warnings
-
-
-# ---------------------------------------------------------------------------
-# Hilfsfunktionen
-# ---------------------------------------------------------------------------
-
-def _calculate_avg_spacing(grid_lines: list[float]) -> float:
-    """Berechnet den durchschnittlichen Abstand zwischen Grid-Linien."""
-    if len(grid_lines) < 2:
-        return 0.0
-    spacings = [grid_lines[i+1] - grid_lines[i] for i in range(len(grid_lines)-1)]
-    return float(np.mean(spacings))
-
-
-def _calculate_profit_per_grid(
-    grid_lines: list[float],
-    fee_rate:   float,
-    mode:       str = "arithmetic",
-) -> float:
-    """
-    Berechnet den durchschnittlichen Nettogewinn pro Grid in %.
-
-    Args:
-        grid_lines: Liste der Grid-Preise
-        fee_rate  : Gebuehrenrate pro Trade
-        mode      : Grid-Modus (fuer Dokumentation)
-
-    Returns:
-        Durchschnittlicher Nettogewinn pro Grid in %
-    """
-    if len(grid_lines) < 2:
-        return 0.0
-
-    profits = []
-    for i in range(len(grid_lines) - 1):
-        gross = (grid_lines[i+1] - grid_lines[i]) / grid_lines[i]
-        net   = gross - 2 * fee_rate
-        profits.append(net * 100)
-
-    return float(np.mean(profits))
-
 
 # ---------------------------------------------------------------------------
 # ATR-basierte Grid-Anzahl-Vorschlaege

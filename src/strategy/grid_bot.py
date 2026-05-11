@@ -39,7 +39,7 @@ from config.settings import (
     DEFAULT_NUM_GRIDS,
     DEFAULT_RESERVE_PCT,
 )
-from src.strategy.grid_builder import calculate_grid_lines, build_grid_config
+from src.strategy.grid_builder import calculate_grid_lines
 
 
 # ---------------------------------------------------------------------------
