@@ -31,11 +31,15 @@ from config.settings           import MAX_BACKTESTS
 from src.trading.bot_store     import store as bot_store
 from src.backtesting.engine    import run_backtest
 
-from components.bot_view       import bot_view_from_bot_state
-from components.portfolio_view import render_portfolio_view
-from components.bot_list       import render_bot_list
-from components.bot_detail     import render_bot_detail
-from components.bot_setup_form import render_bot_setup_form
+from components.bot_view          import bot_view_from_bot_state, bot_view_from_backtest_result
+from components.portfolio_view    import render_portfolio_view
+from components.bot_list          import render_bot_list
+from components.bot_detail        import render_bot_detail
+from components.bot_setup_form    import render_bot_setup_form
+from components.metrics_display   import render_metrics_tabs
+from components.tab_chart         import render_tab_chart
+from components.tab_trades        import render_tab_trades
+from components.tab_configuration import render_tab_configuration
 
 
 # ---------------------------------------------------------------------------
@@ -52,10 +56,12 @@ def _label(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _bt_back() -> None:
-    """Zurueck zur Portfolio-Uebersicht (alle View-Flags ruecksetzen)."""
-    st.session_state.bt_selected_bot  = None
-    st.session_state.bt_show_new_bot  = False
-    st.session_state.bt_show_overview = False
+    """Zurueck zur Portfolio-Uebersicht (alle View-Flags + Pending-State ruecksetzen)."""
+    st.session_state.bt_selected_bot   = None
+    st.session_state.bt_show_new_bot   = False
+    st.session_state.bt_show_overview  = False
+    st.session_state.bt_pending_result = None
+    st.session_state.bt_pending_params = None
     st.rerun()
 
 
@@ -81,14 +87,17 @@ def _bt_select_bot(bot_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Submit-Callback: run_backtest -> save_backtest -> Detail-View
+# Simulations- und Speicher-Callbacks
 # ---------------------------------------------------------------------------
 
 def _handle_bt_submit(params: dict) -> None:
     """
-    Wird von render_bot_setup_form aufgerufen, sobald der User auf
-    "Backtest starten" klickt. Fuehrt die Simulation aus, persistiert
-    das Ergebnis und springt direkt in die Detail-View des neuen Bots.
+    "▶ Simulation starten"-Callback aus der Sidebar.
+
+    Fuehrt die Simulation aus und legt das Ergebnis als Pending-Result
+    in den session_state. KEINE automatische Persistierung - der User
+    muss explizit "💾 Speichern" klicken (im Hauptbereich, neben dem
+    Result), um den Backtest ins Portfolio aufzunehmen.
     """
     period = params.get("period") or {}
     try:
@@ -98,21 +107,16 @@ def _handle_bt_submit(params: dict) -> None:
         st.error("Zeitraum konnte nicht gelesen werden.")
         return
 
-    coin     = params["coin"]
-    interval = params["interval"]
-    days     = int(period.get("days", 30))
-
-    # Sim-Parameter zusammenstellen (alles ausser den aeusseren Form-Feldern)
     sim_kwargs = {
         k: v for k, v in params.items()
         if k not in ("name", "coin", "interval", "period")
     }
 
-    with st.spinner(f"Simuliere {coin}/USDT {start} – {end}..."):
+    with st.spinner(f"Simuliere {params['coin']}/USDT {start} – {end}..."):
         result = run_backtest(
-            coin       = coin,
-            interval   = interval,
-            days       = days,
+            coin       = params["coin"],
+            interval   = params["interval"],
+            days       = int(period.get("days", 30)),
             start_date = start,
             end_date   = end,
             **sim_kwargs,
@@ -122,13 +126,32 @@ def _handle_bt_submit(params: dict) -> None:
         st.error(f"Simulationsfehler: {result['error']}")
         return
 
-    # Persistieren - config enthaelt auch coin/interval, analog PT/LT-Schema
+    # Pending-Result + Params-Snapshot in session_state -> Anzeige im Router
+    st.session_state.bt_pending_result = result
+    st.session_state.bt_pending_params = dict(params)
+    st.rerun()
+
+
+def _handle_bt_save(name: str) -> None:
+    """"💾 Speichern"-Callback: persistiert das Pending-Result und springt
+    in die Detail-View des neu gespeicherten Backtests."""
+    result = st.session_state.get("bt_pending_result")
+    params = st.session_state.get("bt_pending_params")
+    if not result or not params:
+        st.error("Kein Ergebnis vorhanden.")
+        return
+
+    period = params.get("period") or {}
+    final_name = (name or "").strip() or (
+        f"{params['coin']} {period.get('start_date','')}–{period.get('end_date','')}"
+    )
     config = {k: v for k, v in params.items() if k not in ("name", "period")}
+
     bot_id, err = bot_store.save_backtest(
-        name     = params["name"],
-        coin     = coin,
-        interval = interval,
-        period   = params["period"],
+        name     = final_name,
+        coin     = params["coin"],
+        interval = params["interval"],
+        period   = period,
         config   = config,
         result   = result,
     )
@@ -136,11 +159,75 @@ def _handle_bt_submit(params: dict) -> None:
         st.error(f"Speicherfehler: {err}")
         return
 
-    # Direkt in Detail-View des neuen Bots
-    st.session_state.bt_selected_bot  = bot_id
-    st.session_state.bt_show_new_bot  = False
-    st.session_state.bt_show_overview = False
+    # Pending-State leeren + in Detail-View springen
+    st.session_state.bt_pending_result = None
+    st.session_state.bt_pending_params = None
+    st.session_state.bt_show_new_bot   = False
+    st.session_state.bt_selected_bot   = bot_id
     st.rerun()
+
+
+def _handle_bt_discard() -> None:
+    """"✕ Verwerfen"-Callback: Pending-Result loeschen, zurueck zum Live-Chart."""
+    st.session_state.bt_pending_result = None
+    st.session_state.bt_pending_params = None
+    st.rerun()
+
+
+def _render_pending_backtest() -> None:
+    """
+    Hauptbereich-Anzeige fuer den noch nicht persistierten Backtest:
+        - Speichern-Box mit Name-Input + Speichern/Verwerfen-Buttons
+        - Standard-Metriken-Tabs
+        - Sub-Tabs Chart / Trade-Log / Configuration
+    """
+    result = st.session_state.bt_pending_result
+    params = st.session_state.bt_pending_params
+    period = params.get("period") or {}
+
+    st.divider()
+    st.markdown("### Simulationsergebnis (noch nicht gespeichert)")
+
+    # ── Speichern-Box ───────────────────────────────────────────────────────
+    default_name = (
+        params.get("name") or
+        f"{params['coin']} {period.get('start_date','')}–{period.get('end_date','')}"
+    )
+    col_name, col_save, col_disc = st.columns([4, 1, 1])
+    with col_name:
+        name = st.text_input(
+            "Backtest-Name",
+            value=st.session_state.get("bt_save_name", default_name),
+            key="bt_save_name",
+            label_visibility="collapsed",
+            placeholder="Backtest-Name eingeben...",
+        )
+    with col_save:
+        if st.button("💾 Speichern", type="primary",
+                      use_container_width=True, key="bt_save"):
+            _handle_bt_save(name)
+    with col_disc:
+        if st.button("✕ Verwerfen", use_container_width=True, key="bt_discard"):
+            _handle_bt_discard()
+
+    # ── Result-Anzeige (Standard-Metriken + 3 Sub-Tabs) ─────────────────────
+    view = bot_view_from_backtest_result(
+        result, dict(params), name=name, period=period
+    )
+    metrics = dict(view.get("metrics", {}))
+    # Indikatoren-Merge (analog bot_detail.render_bot_detail)
+    for k, v in (view.get("indicators") or {}).items():
+        metrics.setdefault(k, v)
+    render_metrics_tabs(metrics, trade_log=view.get("trade_log", []))
+
+    st.divider()
+    tab1, tab2, tab3 = st.tabs(["📈 Chart", "📋 Trade-Log", "⚙️ Configuration"])
+    with tab1:
+        render_tab_chart(view)
+    with tab2:
+        render_tab_trades(view)
+    with tab3:
+        render_tab_configuration(view)
 
 
 # ---------------------------------------------------------------------------
@@ -166,18 +253,24 @@ def _show_empty_state() -> None:
 
 def show_backtesting() -> None:
     # ── Session-State-Initialisierung ────────────────────────────────────────
-    st.session_state.setdefault("bt_selected_bot",  None)
-    st.session_state.setdefault("bt_show_new_bot",  False)
-    st.session_state.setdefault("bt_show_overview", False)
+    st.session_state.setdefault("bt_selected_bot",   None)
+    st.session_state.setdefault("bt_show_new_bot",   False)
+    st.session_state.setdefault("bt_show_overview",  False)
+    st.session_state.setdefault("bt_pending_result", None)
+    st.session_state.setdefault("bt_pending_params", None)
 
     # ── Konfigurations-Mode: Sidebar wird komplett von der Setup-Form
     #    uebernommen. Ansicht-Buttons und Page-Header bleiben unsichtbar.
+    #    Bei vorhandenem Pending-Result wird zusaetzlich der Result-Block
+    #    unter dem Live-Chart angezeigt.
     if st.session_state.bt_show_new_bot:
         render_bot_setup_form(
             mode      = "backtest",
             on_submit = _handle_bt_submit,
             on_back   = _bt_back,
         )
+        if st.session_state.bt_pending_result:
+            _render_pending_backtest()
         return
 
     # ── Bots laden + zu BotView konvertieren ─────────────────────────────────
