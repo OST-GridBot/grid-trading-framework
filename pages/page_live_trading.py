@@ -257,6 +257,24 @@ def show_live_trading():
 
     has_api_keys = bool(BINANCE_API_KEY and BINANCE_SECRET_KEY)
 
+    # ── Konfigurations-Mode: Sidebar wird komplett von der Setup-Form
+    #    uebernommen. Ansicht-Buttons und Page-Header bleiben unsichtbar.
+    #    API-Key-Check kommt davor, damit Setup-Form gar nicht erst geoeffnet
+    #    werden kann ohne konfigurierte Keys.
+    if st.session_state.lt_show_new_bot:
+        if not has_api_keys:
+            st.error(
+                "⚠️ **Binance API-Key nicht konfiguriert.** "
+                "Bitte BINANCE_API_KEY und BINANCE_SECRET_KEY in der .env Datei hinterlegen."
+            )
+            return
+        render_bot_setup_form(
+            mode      = "live",
+            on_submit = _lt_handle_submit,
+            on_back   = _lt_back,
+        )
+        return
+
     # ── Bots laden + zu BotViews konvertieren ────────────────────────────────
     bots       = sorted(
         bot_store.get_all_bots(mode="live"),
@@ -304,15 +322,7 @@ def show_live_trading():
         )
         return
 
-    # ── Router ───────────────────────────────────────────────────────────────
-    if st.session_state.lt_show_new_bot:
-        render_bot_setup_form(
-            mode      = "live",
-            on_submit = _lt_handle_submit,
-            on_back   = _lt_back,
-        )
-        return
-
+    # ── Router (Detail / Overview / Default) ────────────────────────────────
     if st.session_state.lt_selected_bot:
         bot = bot_store.get_bot(st.session_state.lt_selected_bot)
         if bot:

@@ -170,6 +170,16 @@ def show_backtesting() -> None:
     st.session_state.setdefault("bt_show_new_bot",  False)
     st.session_state.setdefault("bt_show_overview", False)
 
+    # ── Konfigurations-Mode: Sidebar wird komplett von der Setup-Form
+    #    uebernommen. Ansicht-Buttons und Page-Header bleiben unsichtbar.
+    if st.session_state.bt_show_new_bot:
+        render_bot_setup_form(
+            mode      = "backtest",
+            on_submit = _handle_bt_submit,
+            on_back   = _bt_back,
+        )
+        return
+
     # ── Bots laden + zu BotView konvertieren ─────────────────────────────────
     raw_bots = bot_store.get_all_bots(mode="backtest")
     views    = sorted(
@@ -199,15 +209,7 @@ def show_backtesting() -> None:
     st.caption(f"{bot_count}/{MAX_BACKTESTS} Backtests")
     st.divider()
 
-    # ── Router ───────────────────────────────────────────────────────────────
-    if st.session_state.bt_show_new_bot:
-        render_bot_setup_form(
-            mode      = "backtest",
-            on_submit = _handle_bt_submit,
-            on_back   = _bt_back,
-        )
-        return
-
+    # ── Router (Detail / Overview / Empty / Portfolio) ──────────────────────
     if st.session_state.bt_selected_bot:
         raw = bot_store.get_bot(st.session_state.bt_selected_bot)
         if raw:

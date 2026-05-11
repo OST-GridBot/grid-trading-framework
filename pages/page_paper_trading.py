@@ -112,6 +112,16 @@ def show_paper_trading():
     st.session_state.setdefault("pt_show_new_bot",  False)
     st.session_state.setdefault("pt_show_overview", False)
 
+    # ── Konfigurations-Mode: Sidebar wird komplett von der Setup-Form
+    #    uebernommen. Ansicht-Buttons und Page-Header bleiben unsichtbar.
+    if st.session_state.pt_show_new_bot:
+        render_bot_setup_form(
+            mode      = "paper",
+            on_submit = _pt_handle_submit,
+            on_back   = _pt_back,
+        )
+        return
+
     # ── Bots laden + zu BotViews konvertieren ────────────────────────────────
     bots       = sorted(
         bot_store.get_all_bots(mode="paper"),
@@ -141,15 +151,7 @@ def show_paper_trading():
     st.caption(f"{bot_count}/{MAX_BOTS_PER_MODE} Bots aktiv")
     st.divider()
 
-    # ── Router ───────────────────────────────────────────────────────────────
-    if st.session_state.pt_show_new_bot:
-        render_bot_setup_form(
-            mode      = "paper",
-            on_submit = _pt_handle_submit,
-            on_back   = _pt_back,
-        )
-        return
-
+    # ── Router (Detail / Overview / Empty / Portfolio) ──────────────────────
     if st.session_state.pt_selected_bot:
         bot = bot_store.get_bot(st.session_state.pt_selected_bot)
         if bot:

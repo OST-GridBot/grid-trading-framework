@@ -421,18 +421,27 @@ def _section_grid_count_and_mode(
     return {"num_grids": num_grids, "grid_mode": grid_mode}
 
 
-def _section_chart_preview(coin: str, interval: str,
-                           lower: float, upper: float,
-                           num_grids: int, grid_mode: str) -> None:
-    """Live-Chart-Vorschau analog zur frueheren Aufgabe-A-Loesung."""
+def _render_chart_main(params: dict) -> None:
+    """
+    Live-Chart-Vorschau im Hauptbereich.
+    Wird AUSSERHALB des with-Sidebar-Contexts aufgerufen, damit Streamlit
+    den Chart in den Hauptbereich rendert (nicht in die Sidebar).
+    """
+    coin     = params.get("coin", "")
+    interval = params.get("interval", "1h")
+    lower    = float(params.get("lower_price", 0) or 0)
+    upper    = float(params.get("upper_price", 0) or 0)
+    num      = int(params.get("num_grids", 10) or 10)
+    gm       = params.get("grid_mode", "arithmetic")
     try:
         days = _DAYS_BY_INTERVAL.get(interval, 7)
         df, _ = get_price_data(coin, days=days, interval=interval)
         if df is None or df.empty:
+            st.info("Keine Preisdaten verfügbar.")
             return
         df_disp = convert_df_timestamps(df)
         try:
-            gl = calculate_grid_lines(lower, upper, num_grids, grid_mode)
+            gl = calculate_grid_lines(lower, upper, num, gm)
         except Exception:
             gl = []
         plot_grid_chart_v2(
@@ -444,7 +453,7 @@ def _section_chart_preview(coin: str, interval: str,
             show_volume = False,
             upper_price = float(gl[-1]) if gl else upper,
             lower_price = float(gl[0])  if gl else lower,
-            height      = 420,
+            height      = 540,
         )
     except Exception as e:
         st.caption(f"Chart nicht verfügbar: {e}")
@@ -605,74 +614,82 @@ def render_bot_setup_form(
     """
     Rendert die Bot-Aufsetzen-Form fuer einen Modus.
 
+    Layout:
+        Sidebar     : "← Zurueck" + alle Konfigurations-Inputs + Submit
+        Hauptbereich: Live-Chart-Vorschau (aktualisiert sich bei jeder
+                      Sidebar-Parameter-Aenderung)
+
     Args:
         mode      : "backtest" | "paper" | "live"
-        on_submit : Wird bei Klick auf "Starten" mit dem params-Dict
-                    aufgerufen.
-        on_back   : "← Zurueck"-Button.
+        on_submit : Wird bei Klick auf Submit mit dem params-Dict aufgerufen.
+        on_back   : "← Zurueck"-Callback.
     """
     title = ("Neuen Backtest konfigurieren" if mode == "backtest"
              else "Neuen Bot konfigurieren")
-    col_t, col_b = st.columns([5, 1])
-    with col_t:
-        st.markdown(f"### {title}")
-    with col_b:
+
+    # Hauptbereich-Header (kompakt - der eigentliche Inhalt steht in der Sidebar)
+    st.markdown(f"### {title}")
+
+    params = _default_params(mode)
+    submit_triggered = False
+
+    # ── Sidebar: komplette Konfiguration ────────────────────────────────────
+    with st.sidebar:
         if st.button("← Zurück", key=f"{mode}_form_back",
                       use_container_width=True):
             on_back()
+        st.markdown(_divider(), unsafe_allow_html=True)
 
-    params = _default_params(mode)
-    params.update(_section_basic(mode))
-    params.update(_section_capital(mode))
+        params.update(_section_basic(mode))
+        params.update(_section_capital(mode))
 
-    # Smart-Setup braucht coin/interval/total_investment/period
-    _section_smart_setup(mode, params["coin"], params["interval"],
-                          params["total_investment"], params.get("period"))
+        # Smart-Setup
+        _section_smart_setup(mode, params["coin"], params["interval"],
+                              params["total_investment"], params.get("period"))
 
-    # Live-Aktueller-Preis fuer Range-Default
-    current_price = _load_current_price(params["coin"], params["interval"])
+        # Live-aktueller Preis fuer Range-Default
+        current_price = _load_current_price(params["coin"], params["interval"])
 
-    params.update(_section_grid_bounds(mode, current_price))
-    params.update(_section_grid_count_and_mode(
-        mode, params["coin"], params["interval"],
-        params["lower_price"], params["upper_price"],
-    ))
+        params.update(_section_grid_bounds(mode, current_price))
+        params.update(_section_grid_count_and_mode(
+            mode, params["coin"], params["interval"],
+            params["lower_price"], params["upper_price"],
+        ))
 
-    # Live-Chart-Vorschau
-    _section_chart_preview(
-        params["coin"], params["interval"],
-        params["lower_price"], params["upper_price"],
-        params["num_grids"], params["grid_mode"],
-    )
+        # ── Sektion: Risiko & Kapital ────────────────────────────────────────
+        # Header kommt aus _section_risk (Label "Risiko & Kapital")
+        risk = _section_risk(mode)
+        params.update({k: v for k, v in risk.items() if not k.startswith("_")})
+        params.update(_section_stop_loss(mode))
+        params.update(_section_take_profit(mode))
+        params.update(_section_dd_throttle(mode))
+        params.update(_section_variable_orders(mode))
 
-    # ── Sektion: Risiko & Kapital ───────────────────────────────────────────
-    # Header kommt aus _section_risk (Label "Risiko & Kapital")
-    risk = _section_risk(mode)
-    params.update({k: v for k, v in risk.items() if not k.startswith("_")})
-    params.update(_section_stop_loss(mode))
-    params.update(_section_take_profit(mode))
-    params.update(_section_dd_throttle(mode))
-    params.update(_section_variable_orders(mode))
+        # ── Sektion: Dynamische Mechanismen ──────────────────────────────────
+        st.markdown(_divider(), unsafe_allow_html=True)
+        st.markdown(_label("Dynamische Mechanismen"), unsafe_allow_html=True)
+        params.update(_section_atr_adjust(mode))
+        # Recentering / Trailing - gegenseitige Verriegelung via session_state
+        tr_active = st.session_state.get(f"{mode}_new_trailing", False)
+        params.update(_section_recentering(mode, trailing_active=tr_active))
+        rc_active = st.session_state.get(f"{mode}_new_recenter", False)
+        params.update(_section_trailing(mode, recenter_active=rc_active,
+                                         lower=params["lower_price"],
+                                         upper=params["upper_price"]))
 
-    # ── Sektion: Dynamische Mechanismen ─────────────────────────────────────
-    st.markdown(_divider(), unsafe_allow_html=True)
-    st.markdown(_label("Dynamische Mechanismen"), unsafe_allow_html=True)
-    params.update(_section_atr_adjust(mode))
-    # Recentering / Trailing - gegenseitige Verriegelung via session_state
-    tr_active = st.session_state.get(f"{mode}_new_trailing", False)
-    params.update(_section_recentering(mode, trailing_active=tr_active))
-    rc_active = st.session_state.get(f"{mode}_new_recenter", False)
-    params.update(_section_trailing(mode, recenter_active=rc_active,
-                                     lower=params["lower_price"],
-                                     upper=params["upper_price"]))
+        # Submit
+        st.markdown(_divider(), unsafe_allow_html=True)
+        submit_lbl = ("Backtest starten" if mode == "backtest"
+                      else "Bot starten")
+        if st.button(submit_lbl, key=f"{mode}_submit", type="primary",
+                      use_container_width=True):
+            submit_triggered = True
 
-    # Submit
-    st.markdown(_divider(), unsafe_allow_html=True)
-    submit_lbl = ("Backtest starten" if mode == "backtest"
-                  else "Bot starten")
-    if st.button(submit_lbl, key=f"{mode}_submit", type="primary",
-                  use_container_width=True):
-        # Minimale Inline-Validierung
+    # ── Hauptbereich: Live-Chart-Vorschau ───────────────────────────────────
+    _render_chart_main(params)
+
+    # ── Submit-Validierung + Callback ───────────────────────────────────────
+    if submit_triggered:
         if params["lower_price"] >= params["upper_price"]:
             st.error("Untere Grenze muss kleiner als obere sein.")
             return
@@ -681,10 +698,8 @@ def render_bot_setup_form(
             if p.get("days", 0) <= 0:
                 st.error("Zeitraum ungültig.")
                 return
-        # Auto-Name fuer BT wenn leer
-        if mode == "backtest" and not params["name"]:
-            p = params.get("period") or {}
-            params["name"] = f"{params['coin']} {p.get('start_date','')}–{p.get('end_date','')}"
+            if not params["name"]:
+                params["name"] = f"{params['coin']} {p.get('start_date','')}–{p.get('end_date','')}"
         # internal-only Helper-Keys aus dem params-Dict entfernen
         for k in list(params.keys()):
             if k.startswith("_"):
