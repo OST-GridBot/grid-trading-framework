@@ -40,6 +40,7 @@ from components.metrics_display   import render_metrics_tabs
 from components.tab_chart         import render_tab_chart
 from components.tab_trades        import render_tab_trades
 from components.tab_configuration import render_tab_configuration
+from components.tab_grid_levels   import render_tab_grid_levels
 
 
 # ---------------------------------------------------------------------------
@@ -232,13 +233,17 @@ def _render_pending_backtest() -> None:
     render_metrics_tabs(metrics, trade_log=view.get("trade_log", []))
 
     st.divider()
-    tab1, tab2, tab3 = st.tabs(["📈 Chart", "📋 Trade-Log", "⚙️ Configuration"])
+    tab1, tab2, tab3, tab4 = st.tabs(
+        ["📈 Chart", "📋 Trade-Log", "⚙️ Configuration", "📐 Grid Levels"]
+    )
     with tab1:
         render_tab_chart(view)
     with tab2:
         render_tab_trades(view)
     with tab3:
         render_tab_configuration(view)
+    with tab4:
+        render_tab_grid_levels(view)
 
 
 # ---------------------------------------------------------------------------
