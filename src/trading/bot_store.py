@@ -21,13 +21,13 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional
 
-from config.settings import CACHE_DIR, MAX_BOTS_PER_MODE
+from config.settings import CACHE_DIR, MAX_BOTS_PER_MODE, MAX_BACKTESTS
 
 BOTS_DIR = Path(CACHE_DIR) / "bots"
 BOTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Gültige Modi
-VALID_MODES = ("paper", "live")
+VALID_MODES = ("paper", "live", "backtest")
 
 
 # ---------------------------------------------------------------------------
@@ -108,11 +108,13 @@ class BotStore:
         """
         if mode not in VALID_MODES:
             return False, f"Ungültiger Modus: {mode}"
+        # Backtest hat eigenes (hoeheres) Limit; PT/LT teilen sich das alte
+        limit = MAX_BACKTESTS if mode == "backtest" else MAX_BOTS_PER_MODE
         count = self.count_bots(mode)
-        if count >= MAX_BOTS_PER_MODE:
+        if count >= limit:
             return False, (
-                f"Maximum von {MAX_BOTS_PER_MODE} Bots im {mode.upper()}-Modus "
-                f"erreicht. Bitte einen laufenden Bot stoppen."
+                f"Maximum von {limit} Bots im {mode.upper()}-Modus "
+                f"erreicht."
             )
         return True, ""
 
@@ -208,6 +210,106 @@ class BotStore:
         try:
             (BOTS_DIR / filename).write_text(json.dumps(bot, indent=2))
             print(f"BotStore: Bot {bot_id} ({coin} {mode}) erstellt")
+            return bot_id, ""
+        except Exception as e:
+            return None, f"Speicherfehler: {e}"
+
+    def save_backtest(
+        self,
+        name:     str,
+        coin:     str,
+        interval: str,
+        period:   dict,
+        config:   dict,
+        result:   dict,
+    ) -> tuple[Optional[str], str]:
+        """
+        Speichert ein Backtest-Result als persistenten Bot-State.
+
+        Anders als create_bot() ist dies KEIN laufender Bot, sondern ein
+        Snapshot eines abgeschlossenen Backtests. Wird im selben Verzeichnis
+        wie PT/LT-Bots abgelegt (mode="backtest").
+
+        Args:
+            name     : Anzeigename (vom User vergeben oder synthetisch generiert)
+            coin     : "BTC", "ETH", ...
+            interval : "1h", "4h", ...
+            period   : {"start_date": str, "end_date": str, "days": int}
+            config   : Alle Sim-Parameter (lower_price, upper_price, num_grids,
+                       grid_mode, fee_rate, reserve_pct, stop_loss_pct,
+                       take_profit_pct, enable_*, ..., total_investment)
+            result   : run_backtest()-Result (Standard-Schema + BT-spezifisch)
+
+        Returns:
+            (bot_id, "")    bei Erfolg
+            (None, errmsg)  bei Fehler
+        """
+        ok, err = self.can_create_bot("backtest")
+        if not ok:
+            return None, err
+
+        bot_id   = _new_bot_id()
+        filename = f"bot_{bot_id}_{coin.upper()}USDT_backtest.json"
+
+        # Status anhand des Result-error-Felds
+        status = "error" if result.get("error") else "completed"
+
+        # Metriken (Standard-Schema) aus dem Result herausziehen.
+        # Konsistent mit dem PT/LT-Schema, wo metrics ein eigener Block ist.
+        METRIC_KEYS = {
+            "roi_pct", "cagr_pct", "calmar_ratio", "sharpe_ratio",
+            "profit_factor", "max_drawdown_pct", "max_drawdown_usdt",
+            "current_drawdown_pct", "fee_impact_pct", "benchmark_roi_pct",
+            "benchmark_roi_usdt", "outperformance_pct", "avg_profit_per_trade",
+            "avg_profit_per_trade_pct", "num_trades", "fees_paid",
+            "initial_investment", "final_value", "grid_efficiency",
+            "unrealized_pnl", "slippage_usdt", "slippage_avg_pct",
+            "mechanism_active", "gross_pl_usdt", "gross_pl_pct",
+            "grid_profit_total_usdt", "grid_profit_total_pct",
+            "capital_per_grid", "active_levels_ratio", "runtime",
+            "recentering_count", "trailing_count",
+            "stop_loss_triggered", "take_profit_triggered",
+        }
+        metrics = {k: v for k, v in result.items() if k in METRIC_KEYS}
+
+        # Indikatoren-Block (BT-spezifisch)
+        indicator_keys = (
+            "atr_usdt", "atr_pct", "adx14", "adx30",
+            "vola_monthly_pct", "vola_yearly_pct",
+            "return_stats", "price_extremes",
+        )
+        indicators = {k: result.get(k) for k in indicator_keys if k in result}
+
+        # RegimeResult-Dataclass -> dict (serialisierbar)
+        regime_obj = result.get("regime")
+        if regime_obj is not None and hasattr(regime_obj, "__dict__"):
+            regime_dict = dict(regime_obj.__dict__)
+        elif isinstance(regime_obj, dict):
+            regime_dict = regime_obj
+        else:
+            regime_dict = None
+
+        bot = {
+            "bot_id":      bot_id,
+            "mode":        "backtest",
+            "name":        name,
+            "coin":        coin.upper(),
+            "interval":    interval,
+            "status":      status,
+            "created_at":  _now_iso(),
+            "last_update": None,
+            "config":      dict(config),
+            "period":      dict(period),
+            "metrics":     metrics,
+            "trade_log":   list(result.get("trade_log", [])),
+            "state":       None,
+            "regime":      regime_dict,
+            "indicators":  indicators,
+        }
+
+        try:
+            (BOTS_DIR / filename).write_text(json.dumps(bot, indent=2, default=str))
+            print(f"BotStore: Backtest {bot_id} ({coin}) gespeichert")
             return bot_id, ""
         except Exception as e:
             return None, f"Speicherfehler: {e}"
