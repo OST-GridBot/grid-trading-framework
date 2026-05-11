@@ -28,22 +28,8 @@ from components.portfolio_view import render_portfolio_view
 from components.bot_list       import render_bot_list
 from components.bot_detail     import render_bot_detail
 from components.bot_setup_form import render_bot_setup_form
+from components.ui_helpers     import label
 from config.settings           import MAX_BOTS_PER_MODE
-
-
-# ---------------------------------------------------------------------------
-# Lokale UI-Helper (LABEL_STYLE + _label - werden in Phase 4 zentralisiert)
-# ---------------------------------------------------------------------------
-
-LABEL_STYLE = (
-    "font-size:1.15rem; font-weight:600; color:#CBD5E1; "
-    "font-family:Inter,-apple-system,sans-serif; text-transform:uppercase; "
-    "letter-spacing:0.06em; margin-bottom:4px;"
-)
-
-
-def _label(text: str) -> str:
-    return f"<div style='{LABEL_STYLE}'>{text}</div>"
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +123,7 @@ def show_paper_trading():
     can_create = bot_count < MAX_BOTS_PER_MODE
 
     # ── Sidebar: Ansicht-Buttons ─────────────────────────────────────────────
-    st.sidebar.markdown(_label("Ansicht"), unsafe_allow_html=True)
+    st.sidebar.markdown(label("Ansicht"), unsafe_allow_html=True)
     if st.sidebar.button("📊 Portfolio", use_container_width=True,
                           key="pt_btn_portfolio"):
         _pt_back()

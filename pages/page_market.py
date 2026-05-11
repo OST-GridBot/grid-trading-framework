@@ -13,12 +13,7 @@ import pandas as pd
 from src.data.cache_manager import get_price_data
 from src.utils.timezone import convert_df_timestamps
 from components.chart_v2 import plot_grid_chart_v2
-
-COINS = [
-    "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "AVAX",
-    "DOT", "MATIC", "LINK", "UNI", "ATOM", "LTC", "BCH",
-    "NEAR", "APT", "OP", "ARB", "FTM",
-]
+from components.ui_helpers import label, COINS
 
 INTERVALS = {
     "1m":  ("1 Minute",   1),
@@ -29,21 +24,12 @@ INTERVALS = {
     "1d":  ("1 Tag",      365),
 }
 
-LABEL_STYLE = (
-    "font-size:1.15rem; font-weight:600; color:#CBD5E1; "
-    "font-family:Inter,-apple-system,sans-serif; text-transform:uppercase; "
-    "letter-spacing:0.06em; margin-bottom:4px;"
-)
-
-def _label(text):
-    return f"<div style='{LABEL_STYLE}'>{text}</div>"
-
 
 def show_market():
     # -----------------------------------------------------------------------
     # Sidebar
     # -----------------------------------------------------------------------
-    st.sidebar.markdown(_label("Coin"), unsafe_allow_html=True)
+    st.sidebar.markdown(label("Coin"), unsafe_allow_html=True)
     coin_mode = st.sidebar.radio(
         "", ["Aus Liste", "Eigene Eingabe"],
         horizontal=True, key="mkt_coin_mode"
@@ -59,7 +45,7 @@ def show_market():
         ).upper().strip()
 
     st.sidebar.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
-    st.sidebar.markdown(_label("Intervall"), unsafe_allow_html=True)
+    st.sidebar.markdown(label("Intervall"), unsafe_allow_html=True)
     interval = st.sidebar.radio(
         "", list(INTERVALS.keys()),
         index=3, horizontal=True,
@@ -67,7 +53,7 @@ def show_market():
     )
 
     st.sidebar.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
-    st.sidebar.markdown(_label("Zeitraum"), unsafe_allow_html=True)
+    st.sidebar.markdown(label("Zeitraum"), unsafe_allow_html=True)
     _, default_days = INTERVALS[interval]
     days = st.sidebar.slider(
         "", min_value=1, max_value=365,
@@ -77,7 +63,7 @@ def show_market():
     st.sidebar.caption(f"→ Letzte {days} Tage")
 
     st.sidebar.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
-    st.sidebar.markdown(_label("Chart"), unsafe_allow_html=True)
+    st.sidebar.markdown(label("Chart"), unsafe_allow_html=True)
     chart_type  = st.sidebar.selectbox(
         "", ["Candlestick", "Linie"],
         key="mkt_chart_type", label_visibility="collapsed"

@@ -35,14 +35,12 @@ from src.strategy.grid_builder import (
 )
 from src.utils.timezone import convert_df_timestamps
 from components.chart_v2 import plot_grid_chart_v2
+from components.ui_helpers import COINS
 
 
 # ---------------------------------------------------------------------------
-# Konstanten / lokale UI-Helper
+# Konstanten / lokale UI-Helper (Form-eigene Label-/Caption-Variante)
 # ---------------------------------------------------------------------------
-
-COINS = ["BTC","ETH","BNB","SOL","XRP","ADA","DOGE","AVAX","DOT","MATIC",
-         "LINK","UNI","ATOM","LTC","BCH","NEAR","APT","OP","ARB","FTM"]
 
 _DAYS_BY_INTERVAL = {"1m": 1, "5m": 1, "15m": 2, "1h": 7, "4h": 14, "1d": 30}
 
