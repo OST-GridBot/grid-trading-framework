@@ -274,6 +274,19 @@ def plot_grid_chart_v2(
     timeScale: {{
       borderColor:'rgba(255,255,255,0.08)', timeVisible:true, secondsVisible:false,
     }},
+    localization: {{
+      locale: 'de-CH',
+      timeFormatter: (ts) => {{
+        const d = new Date(ts * 1000);
+        const day = String(d.getDate()).padStart(2, '0');
+        const months = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+        const month = months[d.getMonth()];
+        const year = d.getFullYear();
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        return day + '. ' + month + ' ' + year + ' ' + hh + ':' + mm;
+      }},
+    }},
     handleScroll: {{ mouseWheel:true, pressedMouseMove:true, horzTouchDrag:true }},
     handleScale:  {{ mouseWheel:true, pinch:true, axisPressedMouseMove:true }},
   }});
