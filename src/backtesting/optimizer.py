@@ -182,12 +182,13 @@ def smart_grid_setup(
     fee_rate:         float = DEFAULT_FEE_RATE,
     objective:        str   = "maximize_roi",
     interval:         str   = "1h",
+    range_basis:      str   = "median",
 ):
     """
     SmartGridSetup: Findet die optimale Bot-Konfiguration je nach Optimierungsziel.
 
     Fundament (immer dabei):
-        - Range (+/-5%, +/-10%, +/-15%, +/-20% um Median)
+        - Range (+/-5%, +/-10%, +/-15%, +/-20% um Anker-Preis)
         - Anzahl Grids (5, 10, 15, 20, 25, 30)
         - Grid-Modus (4 Optionen)
 
@@ -196,11 +197,22 @@ def smart_grid_setup(
         - maximize_sharpe:     Recentering ⊕ Trailing + Variable Orders
         - maximize_calmar:     Recentering ⊕ Trailing + DD-Drosselung
         - minimize_drawdown:   Stop-Loss + DD-Drosselung (kein Recenter/Trailing)
+
+    Args:
+        range_basis: "median"        - Anker-Preis = Mittelwert der hist. Daten
+                                       (Default fuer Backtests).
+                     "current_price" - Anker-Preis = letzter Schlusskurs
+                                       (fuer Paper-/Live-Trading: Bot startet
+                                       HEUTE mit der Range um den aktuellen
+                                       Preis).
     """
     if df is None or df.empty:
         return None
 
-    median_price = float(df["close"].median())
+    if range_basis == "current_price":
+        median_price = float(df["close"].iloc[-1])
+    else:
+        median_price = float(df["close"].median())
 
     range_pcts  = [0.05, 0.10, 0.15, 0.20]
     grid_counts = [5, 10, 15, 20, 25, 30]

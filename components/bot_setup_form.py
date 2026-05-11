@@ -182,6 +182,35 @@ def _load_current_price(coin: str, interval: str) -> Optional[float]:
     return None
 
 
+def _smart_combos_count(objective: str) -> int:
+    """
+    Berechnet die Anzahl Kombinationen die smart_grid_setup pro Objective
+    testet. Synchron mit den Konstanten in
+    src/backtesting/optimizer.py:smart_grid_setup. Bei Backend-Aenderungen
+    bitte hier mitziehen.
+    """
+    n_range = 4   # range_pcts = [0.05, 0.10, 0.15, 0.20]
+    n_grids = 6   # grid_counts = [5, 10, 15, 20, 25, 30]
+    n_modes = 4   # arithmetic, geometric, asymmetric_bottom/top
+    # Mechanismus-Kombis je nach Objective (gleiche Mapping wie im Backend)
+    table = {
+        "maximize_roi":      (3, 1, 1, 1),  # mech, sl, dd, vo  -> 288
+        "maximize_sharpe":   (3, 1, 1, 2),  # 576
+        "maximize_calmar":   (3, 1, 2, 1),  # 576
+        "minimize_drawdown": (1, 2, 2, 1),  # 384
+    }
+    mech, sl, dd, vo = table.get(objective, (3, 1, 1, 1))
+    return n_range * n_grids * n_modes * mech * sl * dd * vo
+
+
+_SMART_INFO = {
+    "maximize_roi":    ("Sucht die Konfiguration mit dem hoechsten Gesamtgewinn. "
+                        "Variiert: Range, Anzahl Grids, Modus, Recentering, Trailing."),
+    "maximize_sharpe": ("Sucht das beste Verhaeltnis von Gewinn zu Volatilitaet "
+                        "(risikobereinigt). Variiert zusaetzlich: Variable Orders."),
+}
+
+
 def _section_smart_setup(
     mode:             str,
     coin:             str,
@@ -195,11 +224,10 @@ def _section_smart_setup(
     st.caption("Findet automatisch die beste Parametrisierung anhand "
                 "historischer Daten.")
 
+    # H1: nur zwei UI-Optionen (Backend kennt weiterhin alle 4 Objectives)
     options = {
-        "maximize_roi":      "Maximales ROI",
-        "maximize_sharpe":   "Bester Sharpe",
-        "maximize_calmar":   "Bester Calmar",
-        "minimize_drawdown": "Minimaler Drawdown",
+        "maximize_roi":    "Maximales ROI",
+        "maximize_sharpe": "Bester Sharpe",
     }
     obj = st.radio("Optimierungsziel",
                     list(options.keys()),
@@ -208,20 +236,36 @@ def _section_smart_setup(
                     key=f"{mode}_smart_obj",
                     label_visibility="collapsed")
 
-    if st.button("Optimieren", key=f"{mode}_smart_run",
+    # H3: Transparenz-Info-Box - was wird optimiert + Kombi-Counter
+    _info  = _SMART_INFO.get(obj, "")
+    _combo = _smart_combos_count(obj)
+    st.markdown(
+        f"<div style='font-size:0.72rem; color:#94A3B8; padding:6px 10px; "
+        f"background:rgba(255,255,255,0.02); border-radius:4px; "
+        f"margin-top:4px; margin-bottom:6px;'>"
+        f"<b style='color:#CBD5E1;'>🎯 {options[obj]}:</b> {_info} "
+        f"<span style='color:#64748B;'>{_combo} Kombinationen werden getestet.</span>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+
+    if st.button("🎯 Optimale Parameter berechnen", key=f"{mode}_smart_run",
                   use_container_width=True):
         try:
+            # H2: konsolidierte Backend-Funktion mit range_basis-Param.
+            # BT nutzt Median des Sim-Zeitraums; PT/LT nutzen aktuellen Preis.
+            from src.backtesting.optimizer import smart_grid_setup
             if mode == "backtest":
-                from src.backtesting.optimizer import smart_grid_setup
                 days = (period or {}).get("days", 30)
-                df, _ = get_price_data(coin, days=days, interval=interval)
+                range_basis = "median"
             else:
-                from src.trading.optimizer import smart_grid_setup
                 days = _DAYS_BY_INTERVAL.get(interval, 7)
-                df, _ = get_price_data(coin, days=days, interval=interval)
+                range_basis = "current_price"
+            df, _ = get_price_data(coin, days=days, interval=interval)
             res = smart_grid_setup(
                 df=df, total_investment=total_investment,
                 objective=obj, interval=interval,
+                range_basis=range_basis,
             )
             st.session_state[f"{mode}_smart_result"] = res
             st.session_state[f"{mode}_smart_error"]  = None if res else "Keine Daten verfügbar."
@@ -237,7 +281,7 @@ def _section_smart_setup(
     if _res is None:
         return
 
-    # Ergebnis-Box
+    # H4: Ergebnis-Box inkl. Mechanismen
     _mode_lbl = {"arithmetic":"Arithmetisch","geometric":"Geometrisch",
                  "asymmetric_bottom":"Bottom Heavy","asymmetric_top":"Top Heavy"
                 }.get(_res.grid_mode, _res.grid_mode)
@@ -245,16 +289,43 @@ def _section_smart_setup(
         st.warning(f"Kein profitables Setup gefunden (ROI: {_res.expected_roi_pct:+.2f}%)")
     else:
         st.success(f"Erwartetes ROI: {_res.expected_roi_pct:+.2f}%")
-    st.markdown(
+
+    # Recentering-Label
+    _rc_up = bool(getattr(_res, "enable_recentering_up",   False))
+    _rc_dn = bool(getattr(_res, "enable_recentering_down", False))
+    if _rc_up and _rc_dn:   _rc_lbl = "Up + Down"
+    elif _rc_up:            _rc_lbl = "Nur Up"
+    elif _rc_dn:            _rc_lbl = "Nur Down"
+    else:                   _rc_lbl = "Inaktiv"
+
+    # Trailing-Label
+    _tr_up = bool(getattr(_res, "enable_trailing_up",   False))
+    _tr_dn = bool(getattr(_res, "enable_trailing_down", False))
+    if _tr_up and _tr_dn:   _tr_lbl = "Up + Down"
+    elif _tr_up:            _tr_lbl = "Nur Up"
+    elif _tr_dn:            _tr_lbl = "Nur Down"
+    else:                   _tr_lbl = "Inaktiv"
+
+    # Optionale Mechanismen (nur anzeigen wenn aktiv)
+    _box_html = (
         f"<div style='font-size:0.78rem; color:#94A3B8; padding:8px 10px; "
         f"background:rgba(255,255,255,0.03); border-radius:4px; margin-top:6px;'>"
         f"<b style='color:#E2E8F0;'>Untere Grenze:</b> ${_res.lower_price:,.2f}<br>"
         f"<b style='color:#E2E8F0;'>Obere Grenze:</b> ${_res.upper_price:,.2f}<br>"
         f"<b style='color:#E2E8F0;'>Anzahl Grids:</b> {_res.num_grids}<br>"
-        f"<b style='color:#E2E8F0;'>Grid-Modus:</b> {_mode_lbl}"
-        f"</div>",
-        unsafe_allow_html=True
+        f"<b style='color:#E2E8F0;'>Grid-Modus:</b> {_mode_lbl}<br>"
+        f"<b style='color:#E2E8F0;'>Recentering:</b> {_rc_lbl}<br>"
+        f"<b style='color:#E2E8F0;'>Grid Trailing:</b> {_tr_lbl}"
     )
+    _sl = getattr(_res, "stop_loss_pct", None)
+    if _sl is not None:
+        _box_html += f"<br><b style='color:#E2E8F0;'>Stop-Loss:</b> Aktiv ({int(_sl*100)}%)"
+    if getattr(_res, "enable_dd_throttle", False):
+        _box_html += f"<br><b style='color:#E2E8F0;'>DD-Drosselung:</b> Aktiv"
+    if getattr(_res, "enable_variable_orders", False):
+        _box_html += f"<br><b style='color:#E2E8F0;'>Variable Orders:</b> Aktiv"
+    _box_html += "</div>"
+    st.markdown(_box_html, unsafe_allow_html=True)
 
     if st.button("Übernehmen", key=f"{mode}_smart_apply",
                   use_container_width=True, type="primary"):
