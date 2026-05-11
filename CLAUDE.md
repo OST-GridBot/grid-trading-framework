@@ -61,7 +61,13 @@ im Krypto-Spot-Markt. Single-User-App, lokal auf macOS.
 
 6. **Branch:** nur `main`. Keine Feature-Branches ohne Erlaubnis.
 
-7. **Commits:** Bei Erlaubnis "commit jetzt" darf der gesamte Workflow (`git add` + `git commit` + `git push`) durchgezogen werden. Sonst nichts.
+7. **Commit- und Merge-Workflow:**
+   - Nachdem der User initiales "ok" zu einem Sub-Plan gegeben hat UND alle Zwischenschritte während der Bearbeitung einzeln bestätigt wurden, darf Claude Code am Ende selbstständig:
+     a) Smoke-Test ausführen
+     b) Bei grünem Smoke-Test: `git add` + `git commit`
+     c) Bei grünem Commit: lokal nach `main` mergen
+   - **Niemals selbstständig pushen.** Vor jedem `git push` muss der User explizit gefragt werden.
+   - Bei rotem Smoke-Test: KEIN Commit, sondern dem User melden mit Befund.
 
 8. **Niemals:** API-Keys lesen oder loggen, `.env` lesen, `data/cache/` löschen, Live-Broker ohne Erlaubnis testen.
 
