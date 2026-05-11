@@ -338,7 +338,6 @@ def _section_grid_count_and_mode(
     interval:      str,
     lower_price:   float,
     upper_price:   float,
-    fee_rate_pct:  float,
 ) -> dict:
     """Anzahl Grids + Gewinn/Grid-Info + ATR-Vorschlaege + Grid-Modus."""
     st.markdown(_divider(), unsafe_allow_html=True)
@@ -349,7 +348,9 @@ def _section_grid_count_and_mode(
         step=1, key=f"{mode}_new_grids", label_visibility="collapsed"
     ))
 
-    # Gewinn pro Grid (Vorschau)
+    # Gewinn pro Grid (Vorschau) - fee_pct kommt aus session_state, weil
+    # _section_risk in der neuen Reihenfolge erst NACH dieser Section laeuft
+    fee_rate_pct = st.session_state.get(f"{mode}_new_fee", DEFAULT_FEE_RATE * 100)
     fee = fee_rate_pct / 100
     _gm_active = st.session_state.get(f"{mode}_gm_active", "Symmetrisch")
     _gm_sym    = st.session_state.get(f"{mode}_gm_sym", "Arithmetisch")
@@ -632,13 +633,9 @@ def render_bot_setup_form(
     current_price = _load_current_price(params["coin"], params["interval"])
 
     params.update(_section_grid_bounds(mode, current_price))
-    # _section_risk braucht den fee_pct - rufe es VOR grid_count_and_mode
-    risk = _section_risk(mode)
-    params.update({k: v for k, v in risk.items() if not k.startswith("_")})
     params.update(_section_grid_count_and_mode(
         mode, params["coin"], params["interval"],
         params["lower_price"], params["upper_price"],
-        risk["_fee_pct"],
     ))
 
     # Live-Chart-Vorschau
@@ -648,13 +645,19 @@ def render_bot_setup_form(
         params["num_grids"], params["grid_mode"],
     )
 
-    # Mechanismen
+    # ── Sektion: Risiko & Kapital ───────────────────────────────────────────
+    # Header kommt aus _section_risk (Label "Risiko & Kapital")
+    risk = _section_risk(mode)
+    params.update({k: v for k, v in risk.items() if not k.startswith("_")})
     params.update(_section_stop_loss(mode))
     params.update(_section_take_profit(mode))
     params.update(_section_dd_throttle(mode))
     params.update(_section_variable_orders(mode))
-    params.update(_section_atr_adjust(mode))
 
+    # ── Sektion: Dynamische Mechanismen ─────────────────────────────────────
+    st.markdown(_divider(), unsafe_allow_html=True)
+    st.markdown(_label("Dynamische Mechanismen"), unsafe_allow_html=True)
+    params.update(_section_atr_adjust(mode))
     # Recentering / Trailing - gegenseitige Verriegelung via session_state
     tr_active = st.session_state.get(f"{mode}_new_trailing", False)
     params.update(_section_recentering(mode, trailing_active=tr_active))
