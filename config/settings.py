@@ -88,16 +88,11 @@ MIN_VOLUME_USDT       = 1_000_000
 SCANNER_LOOKBACK_DAYS = 14
 SCANNER_INTERVAL      = "1h"
 
-# Paper-Trading
-PAPER_TRADING_DEFAULT_CAPITAL = 10_000.0
+# Paper-Trading / Live-Trading
 MAX_BOTS_PER_MODE           = 10
 MAX_BACKTESTS               = 500   # Maximale Anzahl gespeicherter Backtests
-PAPER_TRADING_UPDATE_INTERVAL = 60
 
-# UI / Streamlit
-APP_TITLE          = "Grid-Trading-Framework"
-APP_LAYOUT         = "wide"
-DEFAULT_CHART_TYPE = "Candlestick"
+# UI-Farben
 COLOR_GREEN        = "#00C853"
 COLOR_ORANGE       = "#FF6F00"
 COLOR_RED          = "#D50000"

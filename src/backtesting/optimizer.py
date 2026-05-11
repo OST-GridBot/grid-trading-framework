@@ -38,15 +38,12 @@ from config.settings import (
     MIN_NUM_GRIDS,
     MAX_NUM_GRIDS,
 )
-from src.data.cache_manager import get_price_data
 from src.strategy.grid_bot import simulate_grid_bot
-from src.analysis.metrics import calculate_drawdown
 from src.analysis.metrics import (
-    calculate_roi, calculate_cagr, calculate_sharpe_ratio,
-    calculate_calmar_ratio, calculate_profit_factor,
+    calculate_drawdown, calculate_cagr,
+    calculate_sharpe_ratio, calculate_calmar_ratio,
     get_num_days,
 )
-from src.analysis.regime import detect_regime
 
 
 # ---------------------------------------------------------------------------
@@ -320,166 +317,6 @@ def smart_grid_setup(
         enable_dd_throttle     = best_cfg.get("enable_dd_throttle", False),
         enable_variable_orders = best_cfg.get("enable_variable_orders", False),
     )
-
-
-# ---------------------------------------------------------------------------
-# Grid-Search (Multi-Parameter)
-# ---------------------------------------------------------------------------
-
-def grid_search(
-    df:               pd.DataFrame,
-    current_price:    float,
-    total_investment: float  = 10_000.0,
-    fee_rate:         float  = DEFAULT_FEE_RATE,
-    grid_counts:      list   = None,
-    range_pcts:       list   = None,
-    modes:            list   = None,
-    objective:        str    = "maximize_roi",
-    max_combinations: int    = 100,
-    interval:         str    = "1h",
-) -> OptimizationResult:
-    """
-    Vollstaendige Grid-Search ueber alle Parameter.
-
-    Testet alle Kombinationen aus grid_counts x range_pcts x modes.
-    Begrenzt auf max_combinations um Laufzeit zu kontrollieren.
-
-    Args:
-        df               : OHLCV-DataFrame
-        current_price    : Aktueller Marktpreis
-        total_investment : Startkapital
-        fee_rate         : Gebuehrenrate
-        grid_counts      : Liste zu testender Grid-Anzahlen
-        range_pcts       : Liste zu testender Range-Prozente
-        modes            : Liste zu testender Modi
-        objective        : Optimierungsziel
-        max_combinations : Maximale Anzahl Kombinationen
-
-    Returns:
-        OptimizationResult mit bester Parameterkombination
-    """
-    if grid_counts is None: grid_counts = [10, 15, 20, 25, 30]
-    if range_pcts  is None: range_pcts  = [0.10, 0.15, 0.20, 0.25, 0.30]
-    if modes       is None: modes       = ["arithmetic", "geometric"]
-
-    # Alle Kombinationen generieren
-    combinations = [
-        (g, p, m)
-        for g in grid_counts
-        for p in range_pcts
-        for m in modes
-    ][:max_combinations]
-
-    results  = []
-    num_days = get_num_days(df, interval)
-
-    print(f"Grid-Search: {len(combinations)} Kombinationen werden getestet...")
-
-    for i, (num_grids, range_pct, mode) in enumerate(combinations):
-        lower = current_price * (1 - range_pct)
-        upper = current_price * (1 + range_pct)
-
-        sim = simulate_grid_bot(
-            df=df, total_investment=total_investment,
-            lower_price=lower, upper_price=upper,
-            num_grids=num_grids, grid_mode=mode, fee_rate=fee_rate,
-        )
-        if sim.get("error"):
-            continue
-
-        score = _calculate_score(sim, df, total_investment, num_days, objective)
-        if score is None:
-            continue
-
-        dd = calculate_drawdown(sim["daily_values"])
-        results.append({
-            "num_grids":   num_grids,
-            "range_pct":   round(range_pct * 100, 1),
-            "mode":        mode,
-            "lower_price": round(lower, 2),
-            "upper_price": round(upper, 2),
-            "roi_pct":     round(sim["profit_pct"], 4),
-            "calmar":      calculate_calmar_ratio(calculate_cagr(total_investment, sim["final_value"], num_days), dd.max_drawdown_pct),
-            "max_dd_pct":  dd.max_drawdown_pct,
-            "num_trades":  sim["num_trades"],
-            "fees_paid":   round(sim["fees_paid"], 2),
-            "score":       score,
-        })
-
-        if (i + 1) % 10 == 0:
-            print(f"  {i+1}/{len(combinations)} getestet...")
-
-    return _build_result(results, ["num_grids", "range_pct", "mode"], objective)
-
-
-# ---------------------------------------------------------------------------
-# Regime-basierte Optimierung
-# ---------------------------------------------------------------------------
-
-def optimize_by_regime(
-    df:               pd.DataFrame,
-    current_price:    float,
-    total_investment: float = 10_000.0,
-    fee_rate:         float = DEFAULT_FEE_RATE,
-    interval:         str   = "1h",
-    objective:        str   = "maximize_roi",
-) -> dict:
-    """
-    Gibt optimale Parameter basierend auf dem aktuellen Marktregime zurueck.
-
-    Logik (Bachelorarbeit Ziel 8):
-        Range-Markt  : Mehr Grids, engere Range (mehr Trades = mehr Gewinn)
-        Trend-Markt  : Weniger Grids, weitere Range (Trend folgen)
-
-    Args:
-        df               : OHLCV-DataFrame
-        current_price    : Aktueller Marktpreis
-        total_investment : Startkapital
-        fee_rate         : Gebuehrenrate
-        interval         : Kerzen-Intervall
-        objective        : Optimierungsziel
-
-    Returns:
-        Dictionary mit regime-spezifischen Parametern und Begruendung
-    """
-    regime_result = detect_regime(df, interval)
-    regime        = regime_result.regime
-
-    if regime == "range":
-        grid_counts = [20, 25, 30, 35, 40]
-        range_pcts  = [0.10, 0.15, 0.20]
-        reasoning   = "Range-Markt: Mehr Grids, engere Range fuer haeufigere Trades."
-    elif regime == "trend_up":
-        grid_counts = [10, 15, 20]
-        range_pcts  = [0.20, 0.30, 0.40]
-        reasoning   = "Aufwaertstrend: Weiterer Range nach oben, weniger Grids."
-    elif regime == "trend_down":
-        grid_counts = [10, 15, 20]
-        range_pcts  = [0.20, 0.25, 0.30]
-        reasoning   = "Abwaertstrend: Vorsicht – Grid-Bot nur mit Stop-Loss empfohlen."
-    else:
-        grid_counts = [15, 20, 25]
-        range_pcts  = [0.15, 0.20, 0.25]
-        reasoning   = "Unklares Regime: Konservative Standardparameter."
-
-    opt = grid_search(
-        df=df, current_price=current_price,
-        total_investment=total_investment, fee_rate=fee_rate,
-        interval=interval,
-        grid_counts=grid_counts, range_pcts=range_pcts,
-        modes=["arithmetic", "geometric"],
-        objective=objective, max_combinations=50,
-    )
-
-    return {
-        "regime":       regime,
-        "confidence":   regime_result.confidence,
-        "reasoning":    reasoning,
-        "best_params":  opt.best_params,
-        "best_score":   opt.best_score,
-        "objective":    objective,
-        "all_results":  opt.all_results,
-    }
 
 
 # ---------------------------------------------------------------------------
