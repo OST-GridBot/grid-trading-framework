@@ -21,7 +21,10 @@ from src.trading.optimizer import smart_grid_setup
 from src.data.cache_manager import get_price_data
 from src.strategy.grid_builder import build_grid_config, suggest_atr_grid_counts
 from src.utils.timezone import convert_df_timestamps, utc_to_zurich
-from components.chart_v2 import plot_grid_chart_v2
+from components.chart_v2       import plot_grid_chart_v2
+from components.bot_view       import bot_view_from_bot_state
+from components.portfolio_view import render_portfolio_view
+from components.bot_list       import render_bot_list
 from config.settings import (
     DEFAULT_NUM_GRIDS, DEFAULT_GRID_MODE,
     DEFAULT_FEE_RATE, DEFAULT_RESERVE_PCT,
@@ -235,6 +238,39 @@ def _show_connection_status():
     st.divider()
 
 
+# ---------------------------------------------------------------------------
+# Navigations-Callbacks (an die neuen Komponenten uebergeben)
+# ---------------------------------------------------------------------------
+
+def _lt_back() -> None:
+    st.session_state.lt_show_new_bot  = False
+    st.session_state.lt_show_overview = False
+    st.session_state.lt_selected_bot  = None
+    st.rerun()
+
+
+def _lt_show_new_bot() -> None:
+    st.session_state.lt_show_new_bot  = True
+    st.session_state.lt_show_overview = False
+    st.session_state.lt_selected_bot  = None
+    st.session_state.lt_confirmed     = False
+    st.rerun()
+
+
+def _lt_show_overview() -> None:
+    st.session_state.lt_show_overview = True
+    st.session_state.lt_show_new_bot  = False
+    st.session_state.lt_selected_bot  = None
+    st.rerun()
+
+
+def _lt_select_bot(bot_id: str) -> None:
+    st.session_state.lt_selected_bot  = bot_id
+    st.session_state.lt_show_new_bot  = False
+    st.session_state.lt_show_overview = False
+    st.rerun()
+
+
 def show_live_trading():
 
     # ── Session State ────────────────────────────────────────────────────────
@@ -327,32 +363,29 @@ def show_live_trading():
         _show_new_bot_form()
         return
 
+    # BotViews fuer Komponenten-Konsum (Adapter aus components/bot_view.py)
+    views = [bot_view_from_bot_state(b) for b in bots]
+
     # ── Ansicht: Bot-Übersicht ────────────────────────────────────────────────
     if st.session_state.lt_show_overview:
-        _show_bots_overview(bots)
+        render_bot_list(
+            views         = views,
+            mode          = "live",
+            on_back       = _lt_back,
+            on_select_bot = _lt_select_bot,
+        )
         return
 
-    # ── Standard-Ansicht: Portfolio + zwei Aktions-Buttons ───────────────────
+    # ── Standard-Ansicht: Connection-Status + Portfolio-Komponente ──────────
     _show_connection_status()
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
-    col_act1, col_act2 = st.columns(2)
-    with col_act1:
-        if st.button("＋ Neuen Bot starten",
-                      use_container_width=True,
-                      disabled=not can_create,
-                      type="primary",
-                      key="lt_main_new"):
-            st.session_state.lt_show_new_bot = True
-            st.rerun()
-        if not can_create:
-            st.caption(f"Maximum {MAX_BOTS_PER_MODE} Bots erreicht.")
-    with col_act2:
-        if st.button(f"Übersicht aktive Bots ({bot_count})",
-                      use_container_width=True,
-                      key="lt_main_overview"):
-            st.session_state.lt_show_overview = True
-            st.rerun()
+    render_portfolio_view(
+        views            = views,
+        mode             = "live",
+        on_new_bot       = _lt_show_new_bot,
+        on_show_overview = _lt_show_overview,
+    )
 
 
 # ---------------------------------------------------------------------------
