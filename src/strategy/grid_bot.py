@@ -193,6 +193,12 @@ class GridBot:
         self.recentering_count: int = 0
         self.stop_loss_triggered: bool = False
         self.take_profit_triggered: bool = False
+        # Event-Log fuer dynamische Marker im Chart. Pro Trailing-Trigger
+        # ein Dict mit timestamp, new_lower, new_upper, direction.
+        self.trailing_events: List[dict] = []
+        # Wird in process_candle gesetzt - damit _check_trailing den
+        # aktuellen Kerzen-Zeitstempel ins Event schreiben kann.
+        self._current_timestamp = None
 
         # Preise
         self.last_price        = initial_price
@@ -335,6 +341,8 @@ class GridBot:
             current_price = float(candle["close"])
             timestamp     = candle["timestamp"]
             date_str      = pd.to_datetime(timestamp).strftime("%Y-%m-%d")
+            # Fuer _check_trailing zugaenglich machen (Event-Logging)
+            self._current_timestamp = timestamp
 
             # Portfolio-Wert tracken
             portfolio_value = (
@@ -671,6 +679,13 @@ class GridBot:
                 return
             self._shift_grid(new_lower, new_upper, current_price)
             self.trailing_count += 1
+            if self._current_timestamp is not None:
+                self.trailing_events.append({
+                    "timestamp": self._current_timestamp,
+                    "new_lower": float(self.lower_price),
+                    "new_upper": float(self.upper_price),
+                    "direction": "up",
+                })
 
         # Trailing DOWN
         elif self.enable_trailing_down and current_price <= self.lower_price:
@@ -681,6 +696,13 @@ class GridBot:
                 return
             self._shift_grid(new_lower, new_upper, current_price)
             self.trailing_count += 1
+            if self._current_timestamp is not None:
+                self.trailing_events.append({
+                    "timestamp": self._current_timestamp,
+                    "new_lower": float(self.lower_price),
+                    "new_upper": float(self.upper_price),
+                    "direction": "down",
+                })
 
     def _shift_grid(self, new_lower: float, new_upper: float, current_price: float) -> None:
         """
@@ -737,6 +759,7 @@ class GridBot:
             "trailing_up_stop":    self.trailing_up_stop,
             "trailing_down_stop":  self.trailing_down_stop,
             "trailing_count":      self.trailing_count,
+            "trailing_events":     self.trailing_events,
             "enable_variable_orders": self.enable_variable_orders,
             "weight_bottom":          self.weight_bottom,
             "weight_top":             self.weight_top,
@@ -773,6 +796,7 @@ class GridBot:
             self.trailing_up_stop     = state.get("trailing_up_stop", None)
             self.trailing_down_stop   = state.get("trailing_down_stop", None)
             self.trailing_count       = state.get("trailing_count", 0)
+            self.trailing_events      = state.get("trailing_events", [])
             self.enable_variable_orders = state.get("enable_variable_orders", False)
             self.weight_bottom           = state.get("weight_bottom", 2.0)
             self.weight_top              = state.get("weight_top", 0.5)
@@ -993,6 +1017,7 @@ def simulate_grid_bot(
             "daily_values":        filled_daily,
             "recentering_count":   bot.recentering_count,
             "trailing_count":      bot.trailing_count,
+            "trailing_events":     bot.trailing_events,
             "stop_loss_triggered": bot.stop_loss_triggered,
             "take_profit_triggered": bot.take_profit_triggered,
             "bot_version":         BOT_VERSION,
@@ -1016,6 +1041,7 @@ def simulate_grid_bot(
             "price_change_pct":    0.0,
             "daily_values":        {},
             "recentering_count":   0,
+            "trailing_events":     [],
             "stop_loss_triggered": False,
             "take_profit_triggered": False,
             "bot_version":         BOT_VERSION,

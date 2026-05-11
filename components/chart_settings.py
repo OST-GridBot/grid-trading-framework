@@ -24,6 +24,7 @@ _DEFAULTS = {
     "show_bot_start":      True,
     "magnet_crosshair":    False,
     "show_volume":         True,
+    "show_trailing_steps": True,
 }
 
 
@@ -67,5 +68,10 @@ def render_chart_settings(key_prefix: str) -> dict:
             settings["show_volume"] = st.checkbox(
                 "Volumen", value=_DEFAULTS["show_volume"],
                 key=f"chs_{key_prefix}_volume"
+            )
+            settings["show_trailing_steps"] = st.checkbox(
+                "Grid Trailing-Stufen (orange)",
+                value=_DEFAULTS["show_trailing_steps"],
+                key=f"chs_{key_prefix}_trailing_steps"
             )
     return settings

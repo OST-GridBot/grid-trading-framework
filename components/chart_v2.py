@@ -25,6 +25,8 @@ def plot_grid_chart_v2(
     show_order_markers:  bool  = True,
     bot_start_timestamp: Optional[int]   = None,
     magnet_crosshair:    bool  = False,
+    trailing_events:     Optional[list]  = None,
+    show_trailing_steps: bool  = True,
 ) -> None:
 
     def _to_unix(ts_val):
@@ -105,19 +107,49 @@ def plot_grid_chart_v2(
     price_lines = [round(float(gl), 4) for gl in grid_lines] if show_grid_lines else []
     has_volume  = show_volume and bool(volume_data)
 
-    candles_json       = json.dumps(candles)
-    volume_json        = json.dumps(volume_data)
-    markers_json       = json.dumps(markers)
-    price_lines_json   = json.dumps(price_lines)
-    upper_json         = json.dumps(round(float(upper_price), 4) if upper_price else None)
-    lower_json         = json.dumps(round(float(lower_price), 4) if lower_price else None)
-    coin_js            = json.dumps(coin)
-    interval_js        = json.dumps(interval)
-    date_range_js      = json.dumps(date_range_str)
-    has_vol_js         = "true" if has_volume else "false"
+    # Trailing-Stufen aufbereiten: zwei Linien-Daten-Listen (lower + upper).
+    # Datenpunkte ueber 6 sig. Stellen sortiert; Lightweight-Charts erwartet
+    # streng aufsteigende time-Werte ohne Duplikate.
+    trail_lower_data = []
+    trail_upper_data = []
+    if show_trailing_steps and trailing_events:
+        for ev in trailing_events:
+            ts = _to_unix(ev.get("timestamp"))
+            if ts is None:
+                continue
+            try:
+                nl = float(ev.get("new_lower"))
+                nu = float(ev.get("new_upper"))
+            except Exception:
+                continue
+            trail_lower_data.append({"time": ts, "value": round(nl, 4)})
+            trail_upper_data.append({"time": ts, "value": round(nu, 4)})
+        trail_lower_data.sort(key=lambda x: x["time"])
+        trail_upper_data.sort(key=lambda x: x["time"])
+        # Duplikate (gleiche time) entfernen - behalte letzten Wert
+        def _dedup(items):
+            seen = {}
+            for it in items:
+                seen[it["time"]] = it["value"]
+            return [{"time": t, "value": v} for t, v in sorted(seen.items())]
+        trail_lower_data = _dedup(trail_lower_data)
+        trail_upper_data = _dedup(trail_upper_data)
+
+    candles_json        = json.dumps(candles)
+    volume_json         = json.dumps(volume_data)
+    markers_json        = json.dumps(markers)
+    price_lines_json    = json.dumps(price_lines)
+    upper_json          = json.dumps(round(float(upper_price), 4) if upper_price else None)
+    lower_json          = json.dumps(round(float(lower_price), 4) if lower_price else None)
+    coin_js             = json.dumps(coin)
+    interval_js         = json.dumps(interval)
+    date_range_js       = json.dumps(date_range_str)
+    has_vol_js          = "true" if has_volume else "false"
     show_grid_labels_js = "true" if show_grid_labels else "false"
-    magnet_js          = "true" if magnet_crosshair else "false"
-    bot_start_ts_json  = json.dumps(bot_start_ts)
+    magnet_js           = "true" if magnet_crosshair else "false"
+    bot_start_ts_json   = json.dumps(bot_start_ts)
+    trail_lower_json    = json.dumps(trail_lower_data)
+    trail_upper_json    = json.dumps(trail_upper_data)
 
     HEADER_H = 44
     chart_h  = height - HEADER_H
@@ -249,6 +281,8 @@ def plot_grid_chart_v2(
   const showGridLabels = {show_grid_labels_js};
   const magnetCrosshair = {magnet_js};
   const botStartTs     = {bot_start_ts_json};
+  const trailLowerData = {trail_lower_json};
+  const trailUpperData = {trail_upper_json};
 
   // Marker colours — slightly darker than original
   const BUY_COLOR  = '#158A50';  // darker green
@@ -347,6 +381,29 @@ def plot_grid_chart_v2(
     price:lowerPrice, color:'rgba(59,130,246,0.9)', lineWidth:2,
     lineStyle:LightweightCharts.LineStyle.Solid, axisLabelVisible:true, title:'Lower',
   }});
+  // ── Grid Trailing-Stufen (orange Step-Linien) ─────────────
+  // Pro Trailing-Trigger ein Datenpunkt; Stufen entstehen via LineType.WithSteps.
+  if (trailLowerData.length > 0) {{
+    const trailLowerSeries = chart.addLineSeries({{
+      color:'#F97316', lineWidth:2,
+      lineStyle:LightweightCharts.LineStyle.Solid,
+      lineType:LightweightCharts.LineType.WithSteps,
+      priceLineVisible:false, lastValueVisible:false,
+      crosshairMarkerVisible:false,
+    }});
+    trailLowerSeries.setData(trailLowerData);
+  }}
+  if (trailUpperData.length > 0) {{
+    const trailUpperSeries = chart.addLineSeries({{
+      color:'#F97316', lineWidth:2,
+      lineStyle:LightweightCharts.LineStyle.Solid,
+      lineType:LightweightCharts.LineType.WithSteps,
+      priceLineVisible:false, lastValueVisible:false,
+      crosshairMarkerVisible:false,
+    }});
+    trailUpperSeries.setData(trailUpperData);
+  }}
+
   chart.timeScale().fitContent();
 
   // ── Volume ────────────────────────────────────────────────

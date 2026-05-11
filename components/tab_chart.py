@@ -138,6 +138,16 @@ def render_tab_chart(
     upper = float(grid_lines[-1]) if grid_lines else float(cfg.get("upper_price", 0))
     lower = float(grid_lines[0])  if grid_lines else float(cfg.get("lower_price", 0))
 
+    # Trailing-Events: Timestamps nach Zurich konvertieren (analog Trade-Log)
+    trailing_events_display = []
+    for ev in (view.get("trailing_events") or []):
+        ev2 = dict(ev)
+        try:
+            ev2["timestamp"] = utc_to_zurich(ev2["timestamp"])
+        except Exception:
+            pass
+        trailing_events_display.append(ev2)
+
     plot_grid_chart_v2(
         df                  = df_display,
         grid_lines          = grid_lines,
@@ -153,4 +163,6 @@ def render_tab_chart(
         show_order_markers  = settings["show_order_markers"],
         bot_start_timestamp = bot_start_ts,
         magnet_crosshair    = settings["magnet_crosshair"],
+        trailing_events     = trailing_events_display,
+        show_trailing_steps = settings["show_trailing_steps"],
     )

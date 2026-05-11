@@ -194,6 +194,7 @@ def run_backtest(
         "daily_values":        sim["daily_values"],
         "recentering_count":   sim["recentering_count"],
         "trailing_count":      sim.get("trailing_count", 0),
+        "trailing_events":     sim.get("trailing_events", []),
         "stop_loss_triggered": sim["stop_loss_triggered"],
         "take_profit_triggered": sim.get("take_profit_triggered", False),
         # Mechanismus-Aktivierung (fuer Tab "Mechanisms")
@@ -263,6 +264,7 @@ def _error_result(message: str) -> dict:
         "daily_values":         {},
         "recentering_count":    0,
         "trailing_count":       0,
+        "trailing_events":      [],
         "stop_loss_triggered":  False,
         "take_profit_triggered": False,
         "mechanism_active":     {

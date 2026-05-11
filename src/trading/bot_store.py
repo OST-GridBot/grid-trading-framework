@@ -290,21 +290,22 @@ class BotStore:
             regime_dict = None
 
         bot = {
-            "bot_id":      bot_id,
-            "mode":        "backtest",
-            "name":        name,
-            "coin":        coin.upper(),
-            "interval":    interval,
-            "status":      status,
-            "created_at":  _now_iso(),
-            "last_update": None,
-            "config":      dict(config),
-            "period":      dict(period),
-            "metrics":     metrics,
-            "trade_log":   list(result.get("trade_log", [])),
-            "state":       None,
-            "regime":      regime_dict,
-            "indicators":  indicators,
+            "bot_id":          bot_id,
+            "mode":            "backtest",
+            "name":            name,
+            "coin":            coin.upper(),
+            "interval":        interval,
+            "status":          status,
+            "created_at":      _now_iso(),
+            "last_update":     None,
+            "config":          dict(config),
+            "period":          dict(period),
+            "metrics":         metrics,
+            "trade_log":       list(result.get("trade_log", [])),
+            "trailing_events": list(result.get("trailing_events", [])),
+            "state":           None,
+            "regime":          regime_dict,
+            "indicators":      indicators,
         }
 
         try:

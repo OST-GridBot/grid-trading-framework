@@ -272,11 +272,16 @@ class BotRunner:
             self._grid_bot.get_state() if hasattr(self._grid_bot, "get_state") else {}
         )
 
+        trailing_events_serialized = _serialize(
+            getattr(self._grid_bot, "trailing_events", []) or []
+        )
+
         self.store.update_bot(self.bot_id, {
-            "state":     state_serialized,
-            "trade_log": trade_log_serialized,
-            "metrics":   metrics,
-            "status":    "stopped" if (self._grid_bot.stop_loss_hit or self._grid_bot.take_profit_hit) else "running",
+            "state":           state_serialized,
+            "trade_log":       trade_log_serialized,
+            "trailing_events": trailing_events_serialized,
+            "metrics":         metrics,
+            "status":          "stopped" if (self._grid_bot.stop_loss_hit or self._grid_bot.take_profit_hit) else "running",
         })
 
     # ── Update: neue Kerzen verarbeiten ─────────────────────────────────────
