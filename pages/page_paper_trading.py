@@ -64,6 +64,14 @@ def _pt_select_bot(bot_id: str) -> None:
     st.rerun()
 
 
+def _pt_back_to_overview() -> None:
+    """Aus Detail-View zurueck zur Bot-Uebersicht (statt Portfolio)."""
+    st.session_state.pt_selected_bot   = None
+    st.session_state.pt_show_overview  = True
+    st.session_state.pt_show_new_bot   = False
+    st.rerun()
+
+
 def _pt_handle_submit(params: dict) -> None:
     """
     Wird von render_bot_setup_form aufgerufen, sobald der User auf
@@ -156,7 +164,7 @@ def show_paper_trading():
         bot = bot_store.get_bot(st.session_state.pt_selected_bot)
         if bot:
             view = bot_view_from_bot_state(bot)
-            render_bot_detail(view, on_back=_pt_back)
+            render_bot_detail(view, on_back=_pt_back_to_overview)
             return
         # Bot wurde geloescht oder ID ungueltig
         st.session_state.pt_selected_bot = None

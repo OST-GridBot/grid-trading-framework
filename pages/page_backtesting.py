@@ -86,6 +86,17 @@ def _bt_select_bot(bot_id: str) -> None:
     st.rerun()
 
 
+def _bt_back_to_overview() -> None:
+    """Aus Detail-View zurueck zur Bot-Uebersicht (statt Portfolio).
+    Saeubert zusaetzlich Pending-State (analog _bt_back)."""
+    st.session_state.bt_selected_bot   = None
+    st.session_state.bt_show_overview  = True
+    st.session_state.bt_show_new_bot   = False
+    st.session_state.bt_pending_result = None
+    st.session_state.bt_pending_params = None
+    st.rerun()
+
+
 # ---------------------------------------------------------------------------
 # Simulations- und Speicher-Callbacks
 # ---------------------------------------------------------------------------
@@ -307,7 +318,7 @@ def show_backtesting() -> None:
         raw = bot_store.get_bot(st.session_state.bt_selected_bot)
         if raw:
             view = bot_view_from_bot_state(raw)
-            render_bot_detail(view, on_back=_bt_back)
+            render_bot_detail(view, on_back=_bt_back_to_overview)
             return
         # Bot wurde geloescht oder ID ungueltig
         st.session_state.bt_selected_bot = None
