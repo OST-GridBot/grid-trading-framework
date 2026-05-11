@@ -386,31 +386,4 @@ class BotRunner:
             "regime":            regime,
         }
 
-    # ── Aktuellen Stand abrufen ──────────────────────────────────────────────
-
-    def get_summary(self, current_price: float) -> dict:
-        """Gibt eine Zusammenfassung des Bot-Zustands zurück."""
-        bot = self.store.get_bot(self.bot_id)
-        if bot is None:
-            return {}
-        metrics = bot.get("metrics", {})
-        cfg     = bot["config"]
-        return {
-            "bot_id":           self.bot_id,
-            "coin":             bot["coin"],
-            "interval":         bot["interval"],
-            "mode":             bot["mode"],
-            "status":           bot["status"],
-            "created_at":       bot["created_at"],
-            "current_price":    current_price,
-            "roi_pct":          metrics.get("roi_pct", 0),
-            "num_trades":       len(bot.get("trade_log", [])),
-            "runtime":          metrics.get("runtime", {}),
-            "unrealized_pnl":   metrics.get("unrealized_pnl", {}),
-            "lower_price":      cfg["lower_price"],
-            "upper_price":      cfg["upper_price"],
-            "num_grids":        cfg["num_grids"],
-            "total_investment": cfg["total_investment"],
-        }
-
 
