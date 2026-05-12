@@ -18,7 +18,7 @@ Autor: Enes Eryilmaz
 Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
 """
 
-from typing import Callable, Optional
+from typing import Callable
 
 import streamlit as st
 
@@ -53,39 +53,36 @@ def _compute_summary_running(views: list, max_bots: int) -> dict:
 
     Returns:
         Dict mit Schluesseln:
-            active_count       (int)   Anzahl laufender Bots
+            active_count       (int)   Anzahl laufender Bots (status == "running")
             max_count          (int)
-            total_invest       (float) Summe Kapital aller laufenden Bots
-            weighted_roi       (float) kapitalgewichtetes ROI in %
-            total_profit       (float) Summe grid_profit_total_usdt ueber alle Bots
-            avg_outperformance (float) Mittelwert outperformance_pct ueber alle Bots
+            best_roi           (float) % - Maximum roi_pct ueber ALLE Views
+            worst_roi          (float) % - Minimum roi_pct ueber ALLE Views
+            avg_roi            (float) % - Mittelwert roi_pct ueber ALLE Views
+            avg_outperformance (float) % - Mittelwert outperformance_pct
+                                          ueber ALLE Views
+
+    ROI-Statistiken (best/worst/avg) gehen bewusst ueber alle Views inkl.
+    gestoppte Bots — konsistent zu BT und zur bisherigen Outperformance-Logik.
     """
-    running = [v for v in views if v.get("status") == "running"]
+    active_count = sum(1 for v in views if v.get("status") == "running")
 
-    total_invest = sum(
-        (v.get("config") or {}).get("total_investment", 0) or 0
-        for v in running
-    )
-
-    weighted_sum = sum(
-        ((v.get("metrics") or {}).get("roi_pct", 0) or 0)
-        * ((v.get("config") or {}).get("total_investment", 0) or 0)
-        for v in running
-    )
-    weighted_roi = (weighted_sum / total_invest) if total_invest > 0 else 0.0
-
-    # Realisierter Profit = Summe grid_profit_total_usdt ueber alle Bots
-    total_profit = sum(
-        (v.get("metrics") or {}).get("grid_profit_total_usdt", 0) or 0
+    rois = [
+        (v.get("metrics") or {}).get("roi_pct", 0) or 0
         for v in views
-    )
+    ]
+    if rois:
+        best  = max(rois)
+        worst = min(rois)
+        avg   = sum(rois) / len(rois)
+    else:
+        best = worst = avg = 0.0
 
     return {
-        "active_count":       len(running),
+        "active_count":       active_count,
         "max_count":          max_bots,
-        "total_invest":       total_invest,
-        "weighted_roi":       weighted_roi,
-        "total_profit":       total_profit,
+        "best_roi":           best,
+        "worst_roi":          worst,
+        "avg_roi":            avg,
         "avg_outperformance": _avg_outperformance(views),
     }
 
@@ -140,44 +137,49 @@ def _metric_card_html(label: str, value: str, color: str = "#E2E8F0") -> str:
     )
 
 
+def _render_metric_cards_running(summary: dict, count_label: str) -> None:
+    """
+    Fuenf Metrik-Karten fuer PT/LT (identische Struktur, nur Karte-1-Label
+    bleibt variabel falls spaeter doch nochmal unterschieden werden soll).
+
+    Reihenfolge: Active Bots / Best ROI / Worst ROI / Avg ROI /
+                 Avg Outperformance B&H.
+    """
+    c1, c2, c3, c4, c5 = st.columns(5)
+    best, worst, avg = summary["best_roi"], summary["worst_roi"], summary["avg_roi"]
+    outperf = summary["avg_outperformance"]
+    best_color  = "#34D399" if best    >= 0 else "#F87171"
+    worst_color = "#34D399" if worst   >= 0 else "#F87171"
+    avg_color   = "#34D399" if avg     >= 0 else "#F87171"
+    outp_color  = "#34D399" if outperf >= 0 else "#F87171"
+    c1.markdown(_metric_card_html(count_label,              str(summary['active_count'])),               unsafe_allow_html=True)
+    c2.markdown(_metric_card_html("Best ROI",               f"{best:+.2f}%",    color=best_color),       unsafe_allow_html=True)
+    c3.markdown(_metric_card_html("Worst ROI",              f"{worst:+.2f}%",   color=worst_color),      unsafe_allow_html=True)
+    c4.markdown(_metric_card_html("Avg. ROI",               f"{avg:+.2f}%",     color=avg_color),        unsafe_allow_html=True)
+    c5.markdown(_metric_card_html("Avg. Outperformance B&H", f"{outperf:+.2f}%", color=outp_color),      unsafe_allow_html=True)
+
+
 def _render_metric_cards_paper(summary: dict) -> None:
     """Fuenf Metrik-Karten fuer Paper-Trading."""
-    c1, c2, c3, c4, c5 = st.columns(5)
-    roi      = summary["weighted_roi"]
-    profit   = summary["total_profit"]
-    outperf  = summary["avg_outperformance"]
-    roi_color    = "#34D399" if roi    >= 0 else "#F87171"
-    profit_color = "#34D399" if profit >= 0 else "#F87171"
-    outp_color   = "#34D399" if outperf >= 0 else "#F87171"
-    c1.markdown(_metric_card_html("Aktive Bots",          str(summary['active_count'])),                  unsafe_allow_html=True)
-    c2.markdown(_metric_card_html("Gesamtinvest",         f"${summary['total_invest']:,.0f}"),            unsafe_allow_html=True)
-    c3.markdown(_metric_card_html("Ø ROI",                f"{roi:+.2f}%",     color=roi_color),           unsafe_allow_html=True)
-    c4.markdown(_metric_card_html("Realisierter Profit",  f"${profit:+.2f}",  color=profit_color),        unsafe_allow_html=True)
-    c5.markdown(_metric_card_html("Ø Outperformance B&H", f"{outperf:+.2f}%", color=outp_color),          unsafe_allow_html=True)
+    _render_metric_cards_running(summary, count_label="Active Bots")
 
 
-def _render_metric_cards_live(summary: dict, balance_usdt) -> None:
-    """Fuenf Metrik-Karten fuer Live-Trading. Erste Karte = Binance-USDT-Guthaben."""
-    c1, c2, c3, c4, c5 = st.columns(5)
-    roi      = summary["weighted_roi"]
-    outperf  = summary["avg_outperformance"]
-    roi_color  = "#34D399" if roi    >= 0 else "#F87171"
-    outp_color = "#34D399" if outperf >= 0 else "#F87171"
-    if balance_usdt is None:
-        bal_str   = "–"
-        bal_color = "#94A3B8"
-    else:
-        bal_str   = f"${balance_usdt:,.2f}"
-        bal_color = "#34D399" if balance_usdt > 0 else "#94A3B8"
-    c1.markdown(_metric_card_html("Binance Guthaben",     bal_str,                               color=bal_color),   unsafe_allow_html=True)
-    c2.markdown(_metric_card_html("Aktive Bots",          str(summary['active_count'])),                             unsafe_allow_html=True)
-    c3.markdown(_metric_card_html("Gesamtinvest in Bots", f"${summary['total_invest']:,.0f}"),                       unsafe_allow_html=True)
-    c4.markdown(_metric_card_html("Ø ROI",                f"{roi:+.2f}%",     color=roi_color),                      unsafe_allow_html=True)
-    c5.markdown(_metric_card_html("Ø Outperformance B&H", f"{outperf:+.2f}%", color=outp_color),                      unsafe_allow_html=True)
+def _render_metric_cards_live(summary: dict) -> None:
+    """
+    Fuenf Metrik-Karten fuer Live-Trading. Identisch zu Paper.
+    Binance-USDT-Guthaben wird woanders in der LT-Page angezeigt
+    (Connection-Status / Wallet-Block), nicht mehr in den Portfolio-Karten.
+    """
+    _render_metric_cards_running(summary, count_label="Active Bots")
 
 
 def _render_metric_cards_backtest(summary: dict) -> None:
-    """Fuenf Metrik-Karten fuer BT."""
+    """
+    Fuenf Metrik-Karten fuer BT.
+
+    Reihenfolge: Historic Bots / Best ROI / Worst ROI / Avg ROI /
+                 Avg Outperformance B&H.
+    """
     c1, c2, c3, c4, c5 = st.columns(5)
     best, worst, avg = summary["best_roi"], summary["worst_roi"], summary["avg_roi"]
     outperf  = summary["avg_outperformance"]
@@ -185,11 +187,11 @@ def _render_metric_cards_backtest(summary: dict) -> None:
     worst_color = "#34D399" if worst   >= 0 else "#F87171"
     avg_color   = "#34D399" if avg     >= 0 else "#F87171"
     outp_color  = "#34D399" if outperf >= 0 else "#F87171"
-    c1.markdown(_metric_card_html("Gespeicherte Backtests", str(summary['count'])),                          unsafe_allow_html=True)
-    c2.markdown(_metric_card_html("Bestes ROI",             f"{best:+.2f}%",    color=best_color),           unsafe_allow_html=True)
-    c3.markdown(_metric_card_html("Ø ROI",                  f"{avg:+.2f}%",     color=avg_color),            unsafe_allow_html=True)
-    c4.markdown(_metric_card_html("Schlechtestes ROI",      f"{worst:+.2f}%",   color=worst_color),          unsafe_allow_html=True)
-    c5.markdown(_metric_card_html("Ø Outperformance B&H",   f"{outperf:+.2f}%", color=outp_color),           unsafe_allow_html=True)
+    c1.markdown(_metric_card_html("Historic Bots",           str(summary['count'])),                     unsafe_allow_html=True)
+    c2.markdown(_metric_card_html("Best ROI",                f"{best:+.2f}%",    color=best_color),      unsafe_allow_html=True)
+    c3.markdown(_metric_card_html("Worst ROI",               f"{worst:+.2f}%",   color=worst_color),     unsafe_allow_html=True)
+    c4.markdown(_metric_card_html("Avg. ROI",                f"{avg:+.2f}%",     color=avg_color),       unsafe_allow_html=True)
+    c5.markdown(_metric_card_html("Avg. Outperformance B&H", f"{outperf:+.2f}%", color=outp_color),      unsafe_allow_html=True)
 
 
 def _render_compact_card_running(view: dict, dim: bool) -> None:
@@ -281,7 +283,6 @@ def render_portfolio_view(
     mode:              str,
     on_new_bot:        Callable[[], None],
     on_show_overview:  Callable[[], None],
-    live_balance_usdt: Optional[float] = None,
 ) -> None:
     """
     Rendert die Portfolio-Uebersicht eines Modus.
@@ -291,8 +292,6 @@ def render_portfolio_view(
         mode              : "backtest" | "paper" | "live"
         on_new_bot        : Callback "+ Neuen Bot/Backtest starten"
         on_show_overview  : Callback "Uebersicht ... (N)"
-        live_balance_usdt : Nur bei mode="live" relevant - USDT-Guthaben
-                            der Binance-Wallet (None wenn nicht geladen).
     """
     st.markdown("### 📊 Portfolio-Übersicht")
 
@@ -301,7 +300,7 @@ def render_portfolio_view(
         _render_metric_cards_backtest(summary)
     elif mode == "live":
         summary = _compute_summary_running(views, MAX_BOTS_PER_MODE)
-        _render_metric_cards_live(summary, live_balance_usdt)
+        _render_metric_cards_live(summary)
     else:
         summary = _compute_summary_running(views, MAX_BOTS_PER_MODE)
         _render_metric_cards_paper(summary)

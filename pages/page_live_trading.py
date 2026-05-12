@@ -350,19 +350,13 @@ def show_live_trading():
         return
 
     # ── Default-View: Connection-Status + Portfolio-Komponente ──────────────
+    # Binance-USDT-Guthaben wird via _show_connection_status() / Wallet-Block
+    # angezeigt — nicht mehr als Portfolio-Karte.
     _show_connection_status()
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
-    # USDT-Wallet-Balance fuer die "Binance Guthaben"-Karte extrahieren.
-    _bal = st.session_state.get("lt_balance") or {}
-    balance_usdt = (
-        _bal.get("usdt")
-        if isinstance(_bal, dict) and "error" not in _bal
-        else None
-    )
     render_portfolio_view(
         views             = views,
         mode              = "live",
         on_new_bot        = _lt_show_new_bot,
         on_show_overview  = _lt_show_overview,
-        live_balance_usdt = balance_usdt,
     )
