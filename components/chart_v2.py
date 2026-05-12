@@ -146,9 +146,11 @@ def plot_grid_chart_v2(
             return [{"time": t, "value": v} for t, v in sorted(seen.items())]
         trail_lower_data = _dedup(trail_lower_data)
         trail_upper_data = _dedup(trail_upper_data)
-        # Juengsten Original-Event-Timestamp merken VOR der Verlaengerung
-        # (Fill-Start = ab hier ist die Range konstant bis Chart-Ende).
-        trailing_fill_start_ts = (trail_upper_data[-1]["time"]
+        # Fill-Start = ERSTER Trailing-Event (zeigt: hier wurde Trailing aktiv).
+        # Die eingefaerbte Range ist konstant der juengste Stand — eine
+        # bewusste Vereinfachung; der historische Verlauf ist ueber die
+        # Step-Linien selbst sichtbar.
+        trailing_fill_start_ts = (trail_upper_data[0]["time"]
                                    if trail_upper_data else None)
         # Step-Linie bis Chart-Ende verlaengern, damit auch ein einzelner
         # Event sichtbar ist (WithSteps zeichnet sonst nur einen Punkt).
@@ -188,8 +190,8 @@ def plot_grid_chart_v2(
             return [{"time": t, "value": v} for t, v in sorted(seen.items())]
         recenter_lower_data = _dedup_rc(recenter_lower_data)
         recenter_upper_data = _dedup_rc(recenter_upper_data)
-        # Juengsten Original-Event-Timestamp merken VOR der Verlaengerung
-        recenter_fill_start_ts = (recenter_upper_data[-1]["time"]
+        # Fill-Start = ERSTER Recentering-Event (analog Trailing).
+        recenter_fill_start_ts = (recenter_upper_data[0]["time"]
                                    if recenter_upper_data else None)
         # Step-Linie bis Chart-Ende verlaengern (analog Trailing).
         if df_end_ts is not None:
