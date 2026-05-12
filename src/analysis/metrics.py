@@ -284,7 +284,12 @@ def calculate_all_metrics(
         "benchmark_roi_usdt":     bh_usdt,
         "outperformance_pct":     round(roi - bh_roi, 4) if bh_roi is not None else None,
         "avg_profit_per_trade":   avg_p,
-        "num_trades":             len(trade_log),
+        # Initial-Buys (Binance-Standard-Setup) sind keine Grid-Trades,
+        # sondern Setup-Operations. Aus num_trades ausfiltern.
+        "num_trades":             sum(
+            1 for t in trade_log
+            if not (t.get("type") == "BUY" and t.get("initial"))
+        ),
         "fees_paid":              round(float(fees_paid), 4),
         "initial_investment":     float(initial_value),
         "final_value":            float(final_value),

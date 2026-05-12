@@ -1218,7 +1218,11 @@ def simulate_grid_bot(
             "profit_usdt":         total_profit,
             "profit_pct":          (total_profit / total_investment) * 100,
             "fees_paid":           total_fees,
-            "num_trades":          len(bot.trade_log),
+            # Initial-Buys (Binance-Setup) zaehlen nicht als Grid-Trades.
+            "num_trades":          sum(
+                1 for t in bot.trade_log
+                if not (t.get("type") == "BUY" and t.get("initial"))
+            ),
             "trade_log":           bot.trade_log,
             "grid_lines":          bot.grid_lines,
             "final_position":      dict(bot.position),

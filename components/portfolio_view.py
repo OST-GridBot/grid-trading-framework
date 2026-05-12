@@ -53,7 +53,12 @@ def _compute_summary_running(views: list, max_bots: int) -> dict:
 
     Returns:
         Dict mit Schluesseln:
-            active_count       (int)   Anzahl laufender Bots (status == "running")
+            active_count       (int)   Anzahl WIRKLICH aktiver Bots
+                                       (status == "running" UND
+                                        bot_status != "waiting_for_trigger")
+            waiting_count      (int)   Anzahl Bots im Trigger-Warten-Status
+                                       (status == "running" UND
+                                        bot_status == "waiting_for_trigger")
             max_count          (int)
             best_roi           (float) % - Maximum roi_pct ueber ALLE Views
             worst_roi          (float) % - Minimum roi_pct ueber ALLE Views
@@ -64,7 +69,11 @@ def _compute_summary_running(views: list, max_bots: int) -> dict:
     ROI-Statistiken (best/worst/avg) gehen bewusst ueber alle Views inkl.
     gestoppte Bots — konsistent zu BT und zur bisherigen Outperformance-Logik.
     """
-    active_count = sum(1 for v in views if v.get("status") == "running")
+    running       = [v for v in views if v.get("status") == "running"]
+    waiting_count = sum(
+        1 for v in running if v.get("bot_status") == "waiting_for_trigger"
+    )
+    active_count  = len(running) - waiting_count
 
     rois = [
         (v.get("metrics") or {}).get("roi_pct", 0) or 0
@@ -79,6 +88,7 @@ def _compute_summary_running(views: list, max_bots: int) -> dict:
 
     return {
         "active_count":       active_count,
+        "waiting_count":      waiting_count,
         "max_count":          max_bots,
         "best_roi":           best,
         "worst_roi":          worst,
@@ -144,6 +154,9 @@ def _render_metric_cards_running(summary: dict, count_label: str) -> None:
 
     Reihenfolge: Active Bots / Best ROI / Worst ROI / Avg ROI /
                  Avg Outperformance B&H.
+
+    Wenn Bots im Trigger-Warte-Status sind, wird die Anzahl in orange als
+    Suffix "(M warten)" hinter die Active-Bots-Zahl gehaengt.
     """
     c1, c2, c3, c4, c5 = st.columns(5)
     best, worst, avg = summary["best_roi"], summary["worst_roi"], summary["avg_roi"]
@@ -152,11 +165,22 @@ def _render_metric_cards_running(summary: dict, count_label: str) -> None:
     worst_color = "#34D399" if worst   >= 0 else "#F87171"
     avg_color   = "#34D399" if avg     >= 0 else "#F87171"
     outp_color  = "#34D399" if outperf >= 0 else "#F87171"
-    c1.markdown(_metric_card_html(count_label,              str(summary['active_count'])),               unsafe_allow_html=True)
-    c2.markdown(_metric_card_html("Best ROI",               f"{best:+.2f}%",    color=best_color),       unsafe_allow_html=True)
-    c3.markdown(_metric_card_html("Worst ROI",              f"{worst:+.2f}%",   color=worst_color),      unsafe_allow_html=True)
-    c4.markdown(_metric_card_html("Avg. ROI",               f"{avg:+.2f}%",     color=avg_color),        unsafe_allow_html=True)
-    c5.markdown(_metric_card_html("Avg. Outperformance B&H", f"{outperf:+.2f}%", color=outp_color),      unsafe_allow_html=True)
+
+    waiting = summary.get("waiting_count", 0)
+    if waiting > 0:
+        active_value = (
+            f"{summary['active_count']}"
+            f" <span style='font-size:0.7rem; color:#FB923C; font-weight:600;'>"
+            f"({waiting} warten)</span>"
+        )
+    else:
+        active_value = str(summary['active_count'])
+
+    c1.markdown(_metric_card_html(count_label,              active_value),                                unsafe_allow_html=True)
+    c2.markdown(_metric_card_html("Best ROI",               f"{best:+.2f}%",    color=best_color),        unsafe_allow_html=True)
+    c3.markdown(_metric_card_html("Worst ROI",              f"{worst:+.2f}%",   color=worst_color),       unsafe_allow_html=True)
+    c4.markdown(_metric_card_html("Avg. ROI",               f"{avg:+.2f}%",     color=avg_color),         unsafe_allow_html=True)
+    c5.markdown(_metric_card_html("Avg. Outperformance B&H", f"{outperf:+.2f}%", color=outp_color),       unsafe_allow_html=True)
 
 
 def _render_metric_cards_paper(summary: dict) -> None:
