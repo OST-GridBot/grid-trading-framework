@@ -172,9 +172,35 @@ def _section_capital(mode: str) -> dict:
     return {"total_investment": float(val)}
 
 
-def _load_current_price(coin: str, interval: str) -> Optional[float]:
-    """Holt den letzten Schlusskurs fuer Smart-Setup / Default-Range."""
+def _load_current_price(
+    coin:     str,
+    interval: str,
+    period:   Optional[dict] = None,
+    mode:     str            = "paper",
+) -> Optional[float]:
+    """
+    Liefert den Referenzpreis fuer Range-Defaults und Live-Chart-Anker.
+
+    - PT/LT: letzter Schlusskurs (Live-Preis).
+    - BT   : Schlusskurs am Von-Datum (erster Close im BT-Zeitraum),
+             damit ± X%-Range-Vorbelegung, Grid Trigger-Vergleich und
+             Live-Chart-Grid-Linien auf den historischen Bot-Start-Preis
+             bezogen werden — nicht auf den Heute-Preis.
+             Faellt bei unvollstaendigem Period auf letzten Close zurueck.
+    """
     try:
+        if (mode == "backtest" and period
+                and period.get("start_date") and period.get("end_date")):
+            from datetime import date as _date
+            sd = _date.fromisoformat(period["start_date"])
+            ed = _date.fromisoformat(period["end_date"])
+            df, _ = get_price_data(
+                coin, days=period.get("days", 30),
+                interval=interval, start_date=sd, end_date=ed,
+            )
+            if df is not None and not df.empty:
+                return float(df["close"].iloc[0])  # erster Close = Von-Datum
+        # Default-Pfad (PT/LT oder BT-Fallback)
         days = _DAYS_BY_INTERVAL.get(interval, 7)
         df, _ = get_price_data(coin, days=days, interval=interval)
         if df is not None and not df.empty:
@@ -182,6 +208,26 @@ def _load_current_price(coin: str, interval: str) -> Optional[float]:
     except Exception:
         pass
     return None
+
+
+def params_differ(a: Optional[dict], b: Optional[dict]) -> bool:
+    """
+    True, wenn sich die BT-relevanten Parameter zwischen a und b
+    unterscheiden. Vergleicht alle Keys ausser solche, die mit "_"
+    beginnen oder "name" heissen (rein UI-Metadata).
+
+    Wird von page_backtesting verwendet, um ein gespeichertes
+    Pending-Result automatisch zu verwerfen, sobald der User in der
+    Sidebar Parameter aendert.
+    """
+    if a is None and b is None:
+        return False
+    if a is None or b is None:
+        return True
+    def _clean(d: dict) -> dict:
+        return {k: v for k, v in d.items()
+                if not str(k).startswith("_") and k != "name"}
+    return _clean(a) != _clean(b)
 
 
 def _smart_combos_count(objective: str) -> int:
@@ -494,11 +540,14 @@ def _section_grid_count_and_mode(
     return {"num_grids": num_grids, "grid_mode": grid_mode}
 
 
-def _render_chart_main(params: dict) -> None:
+def _render_chart_main(params: dict, mode: str = "paper") -> None:
     """
     Live-Chart-Vorschau im Hauptbereich + Chart-Einstellungen-Expander.
     Wird AUSSERHALB des with-Sidebar-Contexts aufgerufen, damit Streamlit
     den Chart in den Hauptbereich rendert (nicht in die Sidebar).
+
+    Bei BT zeigt der Chart den Kerzen-Bereich VOM-Datum bis BIS-Datum.
+    Bei PT/LT die letzten X Tage abhaengig vom Intervall.
     """
     from components.chart_settings import render_chart_settings
 
@@ -509,8 +558,19 @@ def _render_chart_main(params: dict) -> None:
     num      = int(params.get("num_grids", 10) or 10)
     gm       = params.get("grid_mode", "arithmetic")
     try:
-        days = _DAYS_BY_INTERVAL.get(interval, 7)
-        df, _ = get_price_data(coin, days=days, interval=interval)
+        period = params.get("period") or {}
+        if (mode == "backtest" and period.get("start_date")
+                and period.get("end_date")):
+            from datetime import date as _date
+            sd = _date.fromisoformat(period["start_date"])
+            ed = _date.fromisoformat(period["end_date"])
+            df, _ = get_price_data(
+                coin, days=period.get("days", 30),
+                interval=interval, start_date=sd, end_date=ed,
+            )
+        else:
+            days = _DAYS_BY_INTERVAL.get(interval, 7)
+            df, _ = get_price_data(coin, days=days, interval=interval)
         if df is None or df.empty:
             st.info("Keine Preisdaten verfügbar.")
             return
@@ -802,9 +862,10 @@ def _section_trailing(mode: str, recenter_active: bool,
 # ---------------------------------------------------------------------------
 
 def render_bot_setup_form(
-    mode:      str,
-    on_submit: Callable[[dict], None],
-    on_back:   Callable[[], None],
+    mode:                str,
+    on_submit:           Callable[[dict], None],
+    on_back:             Callable[[], None],
+    suppress_main_chart: bool = False,
 ) -> None:
     """
     Rendert die Bot-Aufsetzen-Form fuer einen Modus.
@@ -815,9 +876,17 @@ def render_bot_setup_form(
                       Sidebar-Parameter-Aenderung)
 
     Args:
-        mode      : "backtest" | "paper" | "live"
-        on_submit : Wird bei Klick auf Submit mit dem params-Dict aufgerufen.
-        on_back   : "← Zurueck"-Callback.
+        mode                : "backtest" | "paper" | "live"
+        on_submit           : Wird bei Klick auf Submit mit dem params-Dict
+                              aufgerufen.
+        on_back             : "← Zurueck"-Callback.
+        suppress_main_chart : Wenn True wird der Live-Chart im Hauptbereich
+                              NICHT gerendert (BT-Pending-Result-Ansicht).
+
+    Side-Effect:
+        Bei jedem Render wird das aktuelle params-Dict (ohne interne
+        Helper-Keys und ohne Name) in st.session_state["<mode>_current_params"]
+        abgelegt, damit die Page-Ebene Parameter-Aenderungen erkennen kann.
     """
     title = ("Neuen Backtest konfigurieren" if mode == "backtest"
              else "Neuen Bot konfigurieren")
@@ -842,8 +911,12 @@ def render_bot_setup_form(
         _section_smart_setup(mode, params["coin"], params["interval"],
                               params["total_investment"], params.get("period"))
 
-        # Live-aktueller Preis fuer Range-Default
-        current_price = _load_current_price(params["coin"], params["interval"])
+        # Referenz-Preis fuer Range-Default + Live-Chart-Anker:
+        # BT -> Schlusskurs am Von-Datum, PT/LT -> letzter Live-Preis.
+        current_price = _load_current_price(
+            params["coin"], params["interval"],
+            params.get("period"), mode,
+        )
 
         params.update(_section_grid_bounds(mode, current_price))
         params.update(_section_grid_count_and_mode(
@@ -883,8 +956,18 @@ def render_bot_setup_form(
                       use_container_width=True):
             submit_triggered = True
 
+    # ── Aktuelles params-Dict ins session_state schreiben ───────────────────
+    # Damit die Page-Ebene Parameter-Aenderungen erkennen und ein gespeichertes
+    # Pending-Result automatisch verwerfen kann.
+    _params_for_diff = {
+        k: v for k, v in params.items()
+        if not k.startswith("_") and k not in ("name",)
+    }
+    st.session_state[f"{mode}_current_params"] = _params_for_diff
+
     # ── Hauptbereich: Live-Chart-Vorschau ───────────────────────────────────
-    _render_chart_main(params)
+    if not suppress_main_chart:
+        _render_chart_main(params, mode=mode)
 
     # ── Submit-Validierung + Callback ───────────────────────────────────────
     if submit_triggered:

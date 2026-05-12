@@ -189,18 +189,18 @@ def _handle_bt_discard() -> None:
 def _render_pending_backtest() -> None:
     """
     Hauptbereich-Anzeige fuer den noch nicht persistierten Backtest:
-        - Speichern-Box mit Name-Input + Speichern/Verwerfen-Buttons
+        - Speicherabfrage ganz oben (Textfeld + Speichern + Verwerfen)
         - Standard-Metriken-Tabs
-        - Sub-Tabs Chart / Trade-Log / Configuration
+        - Sub-Tabs Chart / Trade-Log / Configuration / Grid Levels
+
+    Kein Live-Chart parallel — die Setup-Form-Seite unterdrueckt ihren
+    Hauptbereich-Chart, sobald ein Pending-Result existiert.
     """
     result = st.session_state.bt_pending_result
     params = st.session_state.bt_pending_params
     period = params.get("period") or {}
 
-    st.divider()
-    st.markdown("### Simulationsergebnis (noch nicht gespeichert)")
-
-    # ── Speichern-Box ───────────────────────────────────────────────────────
+    # ── Speicherabfrage ganz oben (ohne Emojis) ─────────────────────────────
     default_name = (
         params.get("name") or
         f"{params['coin']} {period.get('start_date','')}–{period.get('end_date','')}"
@@ -215,12 +215,15 @@ def _render_pending_backtest() -> None:
             placeholder="Backtest-Name eingeben...",
         )
     with col_save:
-        if st.button("💾 Speichern", type="primary",
+        if st.button("Speichern", type="primary",
                       use_container_width=True, key="bt_save"):
             _handle_bt_save(name)
     with col_disc:
-        if st.button("✕ Verwerfen", use_container_width=True, key="bt_discard"):
+        if st.button("Verwerfen", use_container_width=True, key="bt_discard"):
             _handle_bt_discard()
+
+    st.divider()
+    st.markdown("### Simulationsergebnis")
 
     # ── Result-Anzeige (Standard-Metriken + 3 Sub-Tabs) ─────────────────────
     view = bot_view_from_backtest_result(
@@ -283,17 +286,29 @@ def show_backtesting() -> None:
     st.session_state.setdefault("bt_pending_params", None)
 
     # ── Konfigurations-Mode: Sidebar wird komplett von der Setup-Form
-    #    uebernommen. Ansicht-Buttons und Page-Header bleiben unsichtbar.
-    #    Bei vorhandenem Pending-Result wird zusaetzlich der Result-Block
-    #    unter dem Live-Chart angezeigt.
+    #    uebernommen. Wenn ein Pending-Result existiert:
+    #      - Live-Chart im Hauptbereich wird unterdrueckt (nie 2 Charts)
+    #      - Pending-Result-Block ersetzt den Live-Chart
+    #      - Bei Parameter-Aenderung in der Sidebar wird Pending verworfen
     if st.session_state.bt_show_new_bot:
+        from components.bot_setup_form import params_differ
+        has_pending = bool(st.session_state.bt_pending_result)
         render_bot_setup_form(
-            mode      = "backtest",
-            on_submit = _handle_bt_submit,
-            on_back   = _bt_back,
+            mode                = "backtest",
+            on_submit           = _handle_bt_submit,
+            on_back             = _bt_back,
+            suppress_main_chart = has_pending,
         )
-        if st.session_state.bt_pending_result:
-            _render_pending_backtest()
+        if has_pending:
+            # Param-Change-Detection: aktuelle Form-params vs. Submit-Snapshot
+            current = st.session_state.get("backtest_current_params")
+            pending = st.session_state.bt_pending_params
+            if params_differ(current, pending):
+                st.session_state.bt_pending_result = None
+                st.session_state.bt_pending_params = None
+                st.rerun()
+            else:
+                _render_pending_backtest()
         return
 
     # ── Bots laden + zu BotView konvertieren ─────────────────────────────────
