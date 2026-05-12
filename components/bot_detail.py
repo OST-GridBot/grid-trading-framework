@@ -41,17 +41,25 @@ _BADGE_COLORS = {
     "stopped":   "#F87171",
     "completed": "#34D399",
     "error":     "#FBBF24",
+    # Innere Grid-Bot-Status (Binance-Standard-Setup)
+    "waiting_for_trigger": "#FB923C",  # orange
+    "paused":              "#94A3B8",  # grau
+    "active":              "#34D399",  # gruen
 }
 _BADGE_LABELS = {
     "running":   "● LÄUFT",
     "stopped":   "■ GESTOPPT",
     "completed": "✓ ABGESCHLOSSEN",
     "error":     "⚠ FEHLER",
+    "waiting_for_trigger": "⏳ WARTET AUF TRIGGER",
+    "paused":              "⏸ PAUSIERT (out-of-range)",
+    "active":              "● AKTIV",
 }
 
 
 def status_badge(status: str) -> str:
-    """Status-Pill als HTML-Snippet. Kennt running/stopped/completed/error."""
+    """Status-Pill als HTML-Snippet. Kennt running/stopped/completed/error
+    sowie die inneren Grid-Bot-Status (waiting_for_trigger/paused/active)."""
     color = _BADGE_COLORS.get(status, "#94A3B8")
     label = _BADGE_LABELS.get(status, str(status).upper())
     return (f"<span style='color:{color}; font-weight:700; "
@@ -137,18 +145,27 @@ def _confirm_delete_dialog(bot_id: str, bot_name: str, on_deleted: Callable[[], 
 def _render_header(view: dict) -> None:
     """Bot-Name + Coin/Intervall/ID/Laufzeit + Status-Badge."""
     name    = view.get("name") or f"{view.get('coin','')}/USDT"
-    coin    = view.get("coin", "")
-    iv      = view.get("interval", "")
-    bid     = view.get("id", "")
-    status  = view.get("status", "")
-    rt_str  = _format_runtime(view)
+    coin       = view.get("coin", "")
+    iv         = view.get("interval", "")
+    bid        = view.get("id", "")
+    status     = view.get("status", "")
+    bot_status = view.get("bot_status", "active")
+    rt_str     = _format_runtime(view)
+
+    # Zweiter Badge fuer den inneren Grid-Bot-Zustand. "active" wird nicht
+    # extra angezeigt — das ist der Standard und addiert keine Info.
+    inner_badge = (
+        f" &nbsp; {status_badge(bot_status)}"
+        if bot_status and bot_status != "active"
+        else ""
+    )
 
     st.markdown(
         f"<div style='margin-bottom:8px;'>"
         f"<span style='font-size:1.6rem; font-weight:700; color:#E2E8F0;'>{name}</span>"
         f"<span style='font-size:0.85rem; color:#64748B; margin-left:10px;'>"
         f"{coin}/USDT · {iv} · ID: {bid} · Laufzeit {rt_str}</span>"
-        f" &nbsp;&nbsp; {status_badge(status)}"
+        f" &nbsp;&nbsp; {status_badge(status)}{inner_badge}"
         f"</div>",
         unsafe_allow_html=True
     )

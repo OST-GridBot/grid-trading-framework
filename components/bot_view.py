@@ -51,6 +51,7 @@ def bot_view_from_bot_state(bot: dict) -> dict:
     nur Default-Fallbacks fuer fehlende Schluessel (z.B. alte Bots ohne
     "last_update" oder "regime").
     """
+    state = bot.get("state") or {}
     return {
         "id":              bot.get("bot_id", ""),
         "mode":            bot.get("mode", "paper"),
@@ -68,6 +69,12 @@ def bot_view_from_bot_state(bot: dict) -> dict:
         "regime":          _serialize_regime(bot.get("regime")),
         "indicators":      bot.get("indicators"),
         "period":          bot.get("period"),
+        # Innerer Bot-Status (Grid-Mechanik). Default "active" fuer alte Bots.
+        "bot_status":      state.get("bot_status", "active"),
+        # Initial-Buy-Aggregate (Binance-Standard). 0.0 fuer alte Bots.
+        "initial_buy_coin_amount": state.get("initial_buy_coin_amount", 0.0),
+        "initial_buy_fee":         state.get("initial_buy_fee", 0.0),
+        "initial_buy_value_usdt":  state.get("initial_buy_value_usdt", 0.0),
     }
 
 
@@ -149,6 +156,11 @@ def bot_view_from_backtest_result(
         "regime":          _serialize_regime(result.get("regime")),
         "indicators":      indicators,
         "period":          dict(period),
+        # Innerer Bot-Status + Initial-Buy-Aggregate (aus Result, da kein State)
+        "bot_status":              result.get("bot_status", "active"),
+        "initial_buy_coin_amount": result.get("initial_buy_coin_amount", 0.0),
+        "initial_buy_fee":         result.get("initial_buy_fee", 0.0),
+        "initial_buy_value_usdt":  result.get("initial_buy_value_usdt", 0.0),
     }
 
 

@@ -69,6 +69,7 @@ def run_backtest(
     enable_trailing_down:   bool  = False,
     trailing_up_stop:       Optional[float] = None,
     trailing_down_stop:     Optional[float] = None,
+    grid_trigger_price:     Optional[float] = None,
     force_reload:           bool  = False,
 ) -> dict:
     """
@@ -144,6 +145,7 @@ def run_backtest(
         enable_trailing_down   = enable_trailing_down,
         trailing_up_stop       = trailing_up_stop,
         trailing_down_stop     = trailing_down_stop,
+        grid_trigger_price     = grid_trigger_price,
     )
 
     if sim.get("error"):
@@ -197,6 +199,12 @@ def run_backtest(
         "trailing_events":     sim.get("trailing_events", []),
         "stop_loss_triggered": sim["stop_loss_triggered"],
         "take_profit_triggered": sim.get("take_profit_triggered", False),
+        # Initial-Buy-Aggregate + Bot-Status + Grid Trigger (Binance-Standard)
+        "initial_buy_coin_amount": sim.get("initial_buy_coin_amount", 0.0),
+        "initial_buy_fee":         sim.get("initial_buy_fee", 0.0),
+        "initial_buy_value_usdt":  sim.get("initial_buy_value_usdt", 0.0),
+        "bot_status":              sim.get("bot_status", "active"),
+        "grid_trigger_price":      sim.get("grid_trigger_price", None),
         # Mechanismus-Aktivierung (fuer Tab "Mechanisms")
         "mechanism_active":    {
             "recentering": enable_recentering_up or enable_recentering_down,
@@ -267,6 +275,11 @@ def _error_result(message: str) -> dict:
         "trailing_events":      [],
         "stop_loss_triggered":  False,
         "take_profit_triggered": False,
+        "initial_buy_coin_amount": 0.0,
+        "initial_buy_fee":         0.0,
+        "initial_buy_value_usdt":  0.0,
+        "bot_status":              "stopped",
+        "grid_trigger_price":      None,
         "mechanism_active":     {
             "recentering": False, "trailing": False,
             "stop_loss":   False, "take_profit": False,

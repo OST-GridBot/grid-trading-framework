@@ -151,6 +151,7 @@ class BotStore:
         enable_recentering_up:   bool  = False,
         enable_recentering_down: bool  = False,
         recenter_threshold:     float = 0.05,
+        grid_trigger_price:     Optional[float] = None,
     ) -> tuple[Optional[str], str]:
         """
         Erstellt einen neuen Bot und speichert ihn.
@@ -201,6 +202,8 @@ class BotStore:
                 "enable_recentering_up":   enable_recentering_up,
                 "enable_recentering_down": enable_recentering_down,
                 "recenter_threshold":     recenter_threshold,
+                # Grid Trigger (None = sofortiger Start)
+                "grid_trigger_price":     grid_trigger_price,
             },
             "state":     {},
             "trade_log": [],

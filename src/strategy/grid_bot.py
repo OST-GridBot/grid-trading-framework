@@ -135,6 +135,9 @@ class GridBot:
         enable_trailing_down:   bool  = False,
         trailing_up_stop:       Optional[float] = None,
         trailing_down_stop:     Optional[float] = None,
+        # Grid Trigger (optional): Bot wartet bis Marktpreis diesen Wert
+        # beruehrt, bevor Initial-Setup ausgefuehrt wird.
+        grid_trigger_price:     Optional[float] = None,
     ):
         self._validate_inputs(total_investment, lower_price, upper_price,
                               num_grids, fee_rate)
@@ -215,8 +218,44 @@ class GridBot:
         self.last_price        = initial_price
         self.last_traded_price = None
 
-        # Initialisierung
-        self._initialize_grids(total_investment, initial_price)
+        # ── Bot-Status + Grid Trigger ───────────────────────────────────────
+        # bot_status: innerer Zustand der Grid-Mechanik
+        #   "waiting_for_trigger" - wartet auf Trigger-Beruehrung
+        #   "active"              - normaler Betrieb
+        #   "paused"              - Preis ausserhalb Range (rein UI-Hinweis,
+        #                            kein Verhaltens-Effekt)
+        #   "stopped"             - SL/TP geriggert oder explizit gestoppt
+        # Getrennt vom bot_store.status (Lebenszyklus-Eigenschaft).
+        self.grid_trigger_price: Optional[float] = grid_trigger_price
+        # Richtung des Triggers ("up" = warte auf Anstieg, "down" = auf
+        # Rueckgang). Wird bei der ersten Kerze anhand des Close-Preises
+        # bestimmt — in __init__ ist der Initial-Preis evtl. None.
+        self._trigger_direction: Optional[str] = None
+        if grid_trigger_price is not None:
+            self.bot_status: str = "waiting_for_trigger"
+        else:
+            self.bot_status = "active"
+
+        # Aggregat-Tracking fuer Initial-Buys (Binance-Standard):
+        # Anzahl Coins, gezahlte Fee, USDT-Wert.
+        self.initial_buy_coin_amount: float = 0.0
+        self.initial_buy_fee:         float = 0.0
+        self.initial_buy_value_usdt:  float = 0.0
+        # Pufferzone-Linie (= kleinste Linie ueber initial_price beim Bot-Start).
+        # Bleibt blocked, bis der erste reale Trade laeuft — danach wird sie
+        # zu einer normalen Grid-Linie. Wird in _perform_initial_setup gesetzt,
+        # in _execute_trade nach dem ersten Trade auf None gesetzt.
+        self._buffer_zone_price: Optional[float] = None
+
+        # Initialisierung. Im "waiting_for_trigger"-Modus wird das Grid
+        # erst beim Trigger aufgebaut (siehe _perform_initial_setup).
+        # Fallback-Timestamp fuer Initial-Buys, falls __init__ ausserhalb
+        # eines Candle-Kontexts laeuft (PT/LT bei Bot-Erstellung). Wird im
+        # BT-Pfad von simulate_grid_bot anschliessend auf first_ts gepatcht.
+        if self._current_timestamp is None:
+            self._current_timestamp = pd.Timestamp.now()
+        if self.bot_status == "active":
+            self._perform_initial_setup(initial_price, total_investment)
 
     # -----------------------------------------------------------------------
     # Initialisierung
@@ -259,33 +298,35 @@ class GridBot:
                 trade_amount=coin_amount,
             )
 
-    def _initialize_grids(
+    def _perform_initial_setup(
         self,
+        initial_price:    float,
         total_investment: float,
-        initial_price:    Optional[float],
     ) -> None:
         """
-        Initialisiert alle Grid-Levels.
+        Fuehrt das Initial-Setup nach Binance-Industrie-Standard durch:
 
-        Bot startet ausschliesslich mit USDT. Kein initialer Coin-Kauf.
-        Grids unterhalb initial_price sind Buy-Grids.
-        Grids oberhalb initial_price sind Sell-Grids.
+        1. Grid-Linien berechnen (inkl. ATR-Anpassung falls aktiv)
+        2. Effektive Order-Groesse pro Grid bestimmen
+        3. Grid-States aufbauen (Sides klassifizieren + Variable-Order-Gewichte)
+        4. Pufferzone bestimmen: kleinste Linie ueber initial_price -> KEINE Order
+        5. Initial-Buys ausfuehren auf allen Sell-Linien ausser Pufferzone
+           (= Binance "buy orders above market get filled at market price")
+        6. Buys unterhalb des Preises bleiben offene Limit-Orders
+        7. bot_status auf "active" setzen
+
+        Wird beim Bot-Start (ohne Trigger) bzw. beim Trigger-Touch aufgerufen.
         """
-        if initial_price is None:
-            initial_price = self.grid_lines[len(self.grid_lines) // 2]
-
-        # ATR-basierte Anpassung der Grid-Abstände (Range bleibt fix)
-        # ATR bestimmt den optimalen Grid-Abstand innerhalb lower/upper
+        # ATR-basierte Anpassung der Grid-Anzahl (Range bleibt fix)
         if self.enable_atr_adjust and self._df is not None:
             try:
                 from src.analysis.indicators import get_atr_stats
                 atr_usdt, _ = get_atr_stats(self._df)
                 grid_step   = atr_usdt * self.atr_multiplier
                 if grid_step > 0:
-                    # Anzahl Grids aus ATR-Abstand berechnen
-                    range_width     = self.upper_price - self.lower_price
-                    atr_num_grids   = max(2, round(range_width / grid_step))
-                    self.num_grids  = atr_num_grids
+                    range_width    = self.upper_price - self.lower_price
+                    atr_num_grids  = max(2, round(range_width / grid_step))
+                    self.num_grids = atr_num_grids
                     self.grid_lines = calculate_grid_lines(
                         self.lower_price, self.upper_price,
                         self.num_grids, self.grid_mode
@@ -297,15 +338,74 @@ class GridBot:
         effective_investment  = total_investment * (1 - self.reserve_pct)
         self.base_amount_usdt = effective_investment / self.num_grids
 
-        # Grid-States aufbauen (inkl. asymm. + variable orders)
+        # Grid-States aufbauen (Sides + Variable-Order-Gewichte)
         self._build_grids(initial_price)
 
-        # Grids unterhalb initial_price sind buy (nicht sell)
+        # ── Pufferzone bestimmen: kleinste Linie ueber initial_price ────────
+        lines_above = sorted(p for p in self.grids.keys() if p > initial_price)
+        buffer_price: Optional[float] = lines_above[0] if lines_above else None
+        # Persistent merken, damit _update_grid_sides sie nicht ueberschreibt.
+        self._buffer_zone_price = buffer_price
+
+        # ── Sides finalisieren + Initial-Buys ausfuehren ────────────────────
+        # Binance-Logik:
+        #   - Buys unter initial_price -> offen als Limit-Order ("buy")
+        #   - Linie == initial_price   -> "blocked" (keine Order)
+        #   - Pufferzone               -> "blocked" (keine Order)
+        #   - Linien ueber Pufferzone  -> Initial-Buy zum Marktpreis,
+        #                                  dann Order steht als "sell" offen
         for price, g in self.grids.items():
+            if buffer_price is not None and np.isclose(price, buffer_price):
+                g.side = "blocked"
+                continue
+            if np.isclose(price, initial_price):
+                g.side = "blocked"
+                continue
             if price < initial_price:
                 g.side = "buy"
-            elif price >= initial_price:
+                continue
+
+            # price > initial_price und nicht Pufferzone: Initial-Buy
+            amount       = g.trade_amount  # bereits variable-order-gewichtet
+            cost_usdt    = amount * initial_price
+            fee          = cost_usdt * self.fee_rate
+            required     = cost_usdt + fee
+            if self.position["usdt"] < required:
+                # Nicht genug USDT — Order kann nicht initialisiert werden,
+                # bleibt aber als "sell" registriert (faellt einfach im
+                # Folge-Match aus, da kein Inventar dafuer existiert).
                 g.side = "sell"
+                continue
+
+            self.position["usdt"] -= required
+            self.position["coin"] += amount
+            self.coin_inventory.append(
+                (amount, initial_price, self._current_timestamp)
+            )
+            # Initial-Buy im trade_log loggen.
+            #   price  = grid.price  (die Sell-Linie, auf der die Order kommt)
+            #   cprice = initial_price (tatsaechlicher Marktpreis)
+            self.trade_log.append({
+                "timestamp":    self._current_timestamp,
+                "type":         "BUY",
+                "cprice":       float(initial_price),
+                "price":        float(initial_price),
+                "amount":       float(amount),
+                "fee":          float(fee),
+                "profit":       0.0,
+                "profit_gross": 0.0,
+                "initial":      True,
+            })
+            # Aggregat-Tracking
+            self.initial_buy_coin_amount += amount
+            self.initial_buy_fee         += fee
+            self.initial_buy_value_usdt  += cost_usdt
+
+            # Order steht jetzt als Sell-Limit auf grid.price
+            g.side = "sell"
+
+        # Bot ist jetzt aktiv
+        self.bot_status = "active"
 
     # -----------------------------------------------------------------------
     # Grid-Zustände aktualisieren
@@ -316,13 +416,23 @@ class GridBot:
         current_price:  float,
         blocked_price:  Optional[float] = None,
     ) -> None:
-        """Aktualisiert Buy/Sell-Zustände aller Grids basierend auf aktuellem Preis."""
+        """Aktualisiert Buy/Sell-Zustände aller Grids basierend auf aktuellem Preis.
+
+        Pufferzone (self._buffer_zone_price) bleibt "blocked", bis sie
+        durch den ersten Trade aufgehoben wird (siehe _execute_trade).
+        """
         for price in self.grid_lines:
             if np.isclose(price, current_price):
                 continue
             if price == blocked_price:
                 self.grids[price].side = "blocked"
-            elif price > current_price:
+                continue
+            # Pufferzone (Initial-Setup-Konzept) bleibt blocked
+            if (self._buffer_zone_price is not None
+                    and np.isclose(price, self._buffer_zone_price)):
+                self.grids[price].side = "blocked"
+                continue
+            if price > current_price:
                 self.grids[price].side = "sell"
             else:
                 self.grids[price].side = "buy"
@@ -346,14 +456,49 @@ class GridBot:
             candle: pd.Series mit timestamp, open, high, low, close, volume
         """
         if self.stop_loss_triggered or self.take_profit_triggered:
+            self.bot_status = "stopped"
             return
 
         try:
             current_price = float(candle["close"])
             timestamp     = candle["timestamp"]
             date_str      = pd.to_datetime(timestamp).strftime("%Y-%m-%d")
-            # Fuer _check_trailing zugaenglich machen (Event-Logging)
+            # Fuer _check_trailing / Initial-Buys zugaenglich machen
             self._current_timestamp = timestamp
+
+            # ── Grid Trigger: wartet auf Preis-Beruehrung ───────────────────
+            if self.bot_status == "waiting_for_trigger":
+                trigger = self.grid_trigger_price
+                # Richtung beim ersten gesehenen Preis bestimmen:
+                #   close < trigger -> "up"   (warte auf Anstieg)
+                #   close > trigger -> "down" (warte auf Rueckgang)
+                #   close == trigger -> sofort triggern
+                if self._trigger_direction is None:
+                    if current_price < trigger:
+                        self._trigger_direction = "up"
+                    elif current_price > trigger:
+                        self._trigger_direction = "down"
+                    else:
+                        self._trigger_direction = "hit"  # sofort
+                # Trigger-Pruefung (Kerzen-Range-basiert)
+                try:
+                    high = float(candle["high"])
+                    low  = float(candle["low"])
+                except Exception:
+                    high = low = current_price
+                triggered = False
+                if self._trigger_direction == "up":
+                    triggered = high >= trigger
+                elif self._trigger_direction == "down":
+                    triggered = low <= trigger
+                else:  # "hit"
+                    triggered = True
+                if not triggered:
+                    return
+                # Trigger erreicht: Initial-Setup zum Trigger-Preis
+                self._perform_initial_setup(trigger, self.total_investment)
+                self.last_price = trigger
+                # Anschliessend normaler Trade-Flow auf dieser Kerze
 
             # Portfolio-Wert tracken
             portfolio_value = (
@@ -407,6 +552,16 @@ class GridBot:
             # Grid Trailing pruefen
             if self.enable_trailing_up or self.enable_trailing_down:
                 self._check_trailing(current_price)
+
+            # ── Range-Status (rein UI-Hinweis, kein Verhaltens-Effekt) ──────
+            # "paused" wenn Preis ausserhalb der aktuellen Range, "active"
+            # sobald wieder drin. SL/TP-Stops setzen ihren eigenen Status.
+            if current_price > self.upper_price or current_price < self.lower_price:
+                if self.bot_status == "active":
+                    self.bot_status = "paused"
+            else:
+                if self.bot_status == "paused":
+                    self.bot_status = "active"
 
         except Exception as e:
             raise RuntimeError(f"Fehler bei Kerzenverarbeitung: {e}")
@@ -518,6 +673,11 @@ class GridBot:
                 "profit":       float(profit),        # netto (nach Sell-Fee)
                 "profit_gross": float(profit_gross),  # brutto (Preisdifferenz × Menge)
             })
+
+            # Pufferzone (Initial-Setup-Konzept) wird durch den ersten realen
+            # Trade aufgehoben — danach ist die Linie ein normales Grid-Level.
+            if self._buffer_zone_price is not None:
+                self._buffer_zone_price = None
 
             # last_traded_price:
             # SELL → immer auf dieses Grid setzen
@@ -780,6 +940,15 @@ class GridBot:
             "enable_variable_orders": self.enable_variable_orders,
             "weight_bottom":          self.weight_bottom,
             "weight_top":             self.weight_top,
+            # Bot-Status + Grid Trigger
+            "bot_status":             self.bot_status,
+            "grid_trigger_price":     self.grid_trigger_price,
+            "_trigger_direction":     self._trigger_direction,
+            # Initial-Buy-Aggregate (Binance-Standard)
+            "initial_buy_coin_amount": self.initial_buy_coin_amount,
+            "initial_buy_fee":         self.initial_buy_fee,
+            "initial_buy_value_usdt":  self.initial_buy_value_usdt,
+            "_buffer_zone_price":      self._buffer_zone_price,
             "grids": {
                 str(price): {
                     "price":        g.price,
@@ -822,6 +991,16 @@ class GridBot:
             self.enable_variable_orders = state.get("enable_variable_orders", False)
             self.weight_bottom           = state.get("weight_bottom", 2.0)
             self.weight_top              = state.get("weight_top", 0.5)
+            # Bot-Status + Grid Trigger (Backward-Compat: alte Bots = "active")
+            self.bot_status         = state.get("bot_status", "active")
+            self.grid_trigger_price = state.get("grid_trigger_price",
+                                                self.grid_trigger_price)
+            self._trigger_direction = state.get("_trigger_direction", None)
+            # Initial-Buy-Aggregate
+            self.initial_buy_coin_amount = state.get("initial_buy_coin_amount", 0.0)
+            self.initial_buy_fee         = state.get("initial_buy_fee", 0.0)
+            self.initial_buy_value_usdt  = state.get("initial_buy_value_usdt", 0.0)
+            self._buffer_zone_price      = state.get("_buffer_zone_price", None)
             self.trade_log         = state.get("trade_log", [])
 
             # FIFO-Inventar wiederherstellen
@@ -913,6 +1092,7 @@ def simulate_grid_bot(
     enable_trailing_down:   bool  = False,
     trailing_up_stop:       Optional[float] = None,
     trailing_down_stop:     Optional[float] = None,
+    grid_trigger_price:     Optional[float] = None,
     df_for_atr:             Optional[object] = None,
 ) -> dict:
     """
@@ -984,11 +1164,21 @@ def simulate_grid_bot(
             trailing_up_stop       = trailing_up_stop,
             trailing_down_stop     = trailing_down_stop,
             df                     = df_for_atr,
+            grid_trigger_price     = grid_trigger_price,
         )
 
-        # Timestamp fuer Initial-Trade setzen
-        if bot.trade_log:
-            bot.trade_log[0]["timestamp"] = df.iloc[0]["timestamp"]
+        # Initial-Buy-Timestamps auf erste Kerze setzen (im __init__ war
+        # _current_timestamp noch None). Betrifft nur den "active"-Pfad —
+        # im Trigger-Modus setzt process_candle den Timestamp korrekt.
+        first_ts = df.iloc[0]["timestamp"]
+        for t in bot.trade_log:
+            if t.get("timestamp") is None:
+                t["timestamp"] = first_ts
+        # Inventar-Timestamps analog
+        bot.coin_inventory = [
+            (a, p, ts if ts is not None else first_ts)
+            for (a, p, ts) in bot.coin_inventory
+        ]
 
         # Kerzen verarbeiten (erste Kerze = Initialisierung)
         for _, candle in df.iloc[1:].iterrows():
@@ -1042,6 +1232,12 @@ def simulate_grid_bot(
             "trailing_events":     bot.trailing_events,
             "stop_loss_triggered": bot.stop_loss_triggered,
             "take_profit_triggered": bot.take_profit_triggered,
+            # Initial-Buy-Aggregate + Bot-Status + Grid Trigger
+            "initial_buy_coin_amount": bot.initial_buy_coin_amount,
+            "initial_buy_fee":         bot.initial_buy_fee,
+            "initial_buy_value_usdt":  bot.initial_buy_value_usdt,
+            "bot_status":              bot.bot_status,
+            "grid_trigger_price":      bot.grid_trigger_price,
             "bot_version":         BOT_VERSION,
             "error":               None,
         }
@@ -1066,6 +1262,11 @@ def simulate_grid_bot(
             "trailing_events":     [],
             "stop_loss_triggered": False,
             "take_profit_triggered": False,
+            "initial_buy_coin_amount": 0.0,
+            "initial_buy_fee":         0.0,
+            "initial_buy_value_usdt":  0.0,
+            "bot_status":              "stopped",
+            "grid_trigger_price":      grid_trigger_price,
             "bot_version":         BOT_VERSION,
             "error":               str(e),
         }

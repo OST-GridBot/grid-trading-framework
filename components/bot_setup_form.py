@@ -101,6 +101,8 @@ def _default_params(mode: str) -> dict:
         "enable_trailing_down":   False,
         "trailing_up_stop":       None,
         "trailing_down_stop":     None,
+        # Grid Trigger (None = Bot startet sofort, Wert = Bot wartet auf Touch)
+        "grid_trigger_price":     None,
     }
 
 
@@ -629,6 +631,48 @@ def _section_take_profit(mode: str, upper_price: float = 0.0) -> dict:
     return {"take_profit_pct": pct}
 
 
+def _section_grid_trigger(mode: str, lower: float, upper: float,
+                          current_price: Optional[float]) -> dict:
+    """
+    Optionaler Grid Trigger Price. Bot wartet bis Marktpreis diesen Wert
+    beruehrt — dann erst wird das Initial-Setup ausgefuehrt.
+    """
+    st.markdown(_divider(), unsafe_allow_html=True)
+    enabled = st.checkbox(
+        "Grid Trigger aktivieren", key=f"{mode}_new_trigger",
+        help=("Bot wartet auf Preis-Beruehrung dieses Werts. Erst dann "
+              "werden Grid und Initial-Orders aufgebaut. Leer = Bot startet "
+              "sofort zum aktuellen Marktpreis."),
+    )
+    trigger_price = None
+    if enabled:
+        # Default = Mitte der Range
+        default_trigger = float((lower + upper) / 2.0) if (lower and upper) else (
+            float(current_price) if current_price else 0.0
+        )
+        prior = float(st.session_state.get(f"{mode}_new_trigger_price",
+                                            default_trigger))
+        trigger_price = st.number_input(
+            "Trigger-Preis (USDT)",
+            min_value=0.0, value=prior, step=1.0,
+            key=f"{mode}_new_trigger_price", label_visibility="collapsed",
+        )
+        if trigger_price <= 0:
+            trigger_price = None
+        elif current_price and current_price > 0:
+            direction = "Anstieg" if current_price < trigger_price else (
+                "Rueckgang" if current_price > trigger_price else "sofort"
+            )
+            st.markdown(
+                _caption(
+                    f"Aktueller Preis: <b style='color:#E2E8F0;'>{current_price:,.2f}</b> "
+                    f"USDT &nbsp;→&nbsp; wartet auf <b style='color:#E2E8F0;'>{direction}</b>"
+                ),
+                unsafe_allow_html=True,
+            )
+    return {"grid_trigger_price": trigger_price}
+
+
 def _section_dd_throttle(mode: str) -> dict:
     enabled = st.checkbox("Drawdown-Drosselung", key=f"{mode}_new_dd")
     t1, t2 = 0.10, 0.20
@@ -793,6 +837,9 @@ def render_bot_setup_form(
         params.update({k: v for k, v in risk.items() if not k.startswith("_")})
         params.update(_section_stop_loss(mode, params["lower_price"]))
         params.update(_section_take_profit(mode, params["upper_price"]))
+        params.update(_section_grid_trigger(
+            mode, params["lower_price"], params["upper_price"], current_price
+        ))
         params.update(_section_dd_throttle(mode))
         params.update(_section_variable_orders(mode))
 
