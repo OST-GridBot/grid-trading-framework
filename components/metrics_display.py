@@ -156,15 +156,277 @@ def render_metrics_tabs(
         unsafe_allow_html=True,
     )
 
-    tab_pr, tab_bd, tab_mi = st.tabs(
-        ["Performance & Risk", "Bot Details", "Market Data & Indicators"]
+    tab_all, tab_pr, tab_bd, tab_mi = st.tabs(
+        ["All", "Performance & Risk", "Bot Details", "Market Data & Indicators"]
     )
+    with tab_all:
+        _render_tab_all(metrics, trade_log or [])
     with tab_pr:
         _render_tab_performance(metrics)
     with tab_bd:
         _render_tab_bot_details(metrics, trade_log or [])
     with tab_mi:
         _render_tab_market_indicators(metrics)
+
+
+# ---------------------------------------------------------------------------
+# Tab 0: All — kompakte Excel-aehnliche Uebersicht aller Metriken
+# ---------------------------------------------------------------------------
+
+def _fmt_or_dash(value, fmt: str = "{}") -> str:
+    """Formatiert value mit fmt, oder '–' wenn None."""
+    if value is None:
+        return "–"
+    try:
+        return fmt.format(value)
+    except Exception:
+        return "–"
+
+
+def _render_section_table(title: str, rows: list) -> None:
+    """
+    Rendert eine kompakte Section mit Sub-Header + Tabelle.
+
+    Args:
+        title: Section-Header (z.B. "Performance")
+        rows : Liste von Tupeln (label, value_str, secondary_str_or_None)
+               Wenn value_str None -> "–". Sekundärwert optional.
+    """
+    html = (
+        f"<div style='font-size:0.85rem; font-weight:600; color:#94A3B8; "
+        f"text-transform:uppercase; letter-spacing:0.05em; "
+        f"margin: 10px 0 4px 0;'>{title}</div>"
+    )
+    html += (
+        "<table style='width:100%; border-collapse:collapse; font-size:0.78rem;'>"
+    )
+    for label, value, secondary in rows:
+        val_str = value if value is not None else "–"
+        sec_html = (
+            f"<td style='text-align:right; padding:3px 8px; color:#64748B; "
+            f"border-bottom:1px solid rgba(255,255,255,0.04); width:30%;'>"
+            f"{secondary}</td>"
+            if secondary is not None
+            else "<td style='border-bottom:1px solid rgba(255,255,255,0.04); width:30%;'></td>"
+        )
+        html += (
+            "<tr>"
+            f"<td style='padding:3px 8px; color:#94A3B8; "
+            f"border-bottom:1px solid rgba(255,255,255,0.04); width:40%;'>{label}</td>"
+            f"<td style='text-align:right; padding:3px 8px; color:#E2E8F0; "
+            f"font-weight:500; border-bottom:1px solid rgba(255,255,255,0.04); "
+            f"width:30%;'>{val_str}</td>"
+            f"{sec_html}"
+            "</tr>"
+        )
+    html += "</table>"
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def _render_theme_header(title: str) -> None:
+    """Render-Header fuer ein Tab-Thema (eine Stufe groesser als Section-Header)."""
+    st.markdown(
+        f"<div style='font-size:1.0rem; font-weight:700; color:#CBD5E1; "
+        f"letter-spacing:0.03em; margin: 18px 0 4px 0; "
+        f"border-bottom:1px solid rgba(255,255,255,0.10); padding-bottom:4px;'>"
+        f"{title}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _render_tab_all(metrics: dict, trade_log: list) -> None:
+    """
+    "All"-Tab: kompakte tabellarische Uebersicht aller Metriken.
+
+    Gliederung nach den drei thematischen Tabs, innerhalb dieser jeweils
+    Sub-Sections. Initial-Buy-Felder + bot_status + grid_trigger_price
+    werden ebenfalls angezeigt (sofern in metrics gemerged).
+    """
+    # ──────────────────────────────────────────────────────────────────────
+    # PERFORMANCE & RISK
+    # ──────────────────────────────────────────────────────────────────────
+    _render_theme_header("Performance & Risk")
+
+    initial      = metrics.get("initial_investment")
+    final        = metrics.get("final_value")
+    pl_usdt      = (final - initial) if (final is not None and initial is not None) else None
+    roi          = metrics.get("roi_pct")
+    bh_pct       = metrics.get("benchmark_roi_pct")
+    bh_usdt      = metrics.get("benchmark_roi_usdt")
+    gross_pct    = metrics.get("gross_pl_pct")
+    gross_usdt   = metrics.get("gross_pl_usdt")
+    outperf      = metrics.get("outperformance_pct")
+    cagr         = metrics.get("cagr_pct")
+    g_total_u    = metrics.get("grid_profit_total_usdt")
+    g_total_p    = metrics.get("grid_profit_total_pct")
+    upnl         = metrics.get("unrealized_pnl") or {}
+    upnl_u       = upnl.get("usdt") if isinstance(upnl, dict) else None
+    upnl_p       = upnl.get("pct")  if isinstance(upnl, dict) else None
+    avg_p_usdt   = metrics.get("avg_profit_per_trade")
+    avg_p_pct    = metrics.get("avg_profit_per_trade_pct")
+
+    _render_section_table("Performance", [
+        ("Total Gross P/L",     _fmt_or_dash(gross_pct,  "{:+.2f}%"),
+                                _fmt_or_dash(gross_usdt, "{:+,.2f} USDT")),
+        ("Total Net P/L",       _fmt_or_dash(roi,        "{:+.2f}%"),
+                                _fmt_or_dash(pl_usdt,    "{:+,.2f} USDT")),
+        ("Buy & Hold",          _fmt_or_dash(bh_pct,     "{:+.2f}%"),
+                                _fmt_or_dash(bh_usdt,    "{:+,.2f} USDT")),
+        ("Outperformance",      _fmt_or_dash(outperf,    "{:+.2f}%"),
+                                "vs. Buy & Hold" if outperf is not None else None),
+        ("Grid Profit Total",   _fmt_or_dash(g_total_u,  "{:+,.2f} USDT"),
+                                _fmt_or_dash(g_total_p,  "{:+.2f}%")),
+        ("Floating Profit",     _fmt_or_dash(upnl_u,     "{:+,.2f} USDT"),
+                                _fmt_or_dash(upnl_p,     "{:+.2f}%")),
+        ("CAGR",                _fmt_or_dash(cagr,       "{:+.2f}%"), None),
+        ("Avg Profit / Trade",  _fmt_or_dash(avg_p_usdt, "{:+,.2f} USDT"),
+                                _fmt_or_dash(avg_p_pct,  "{:+.2f}%")),
+    ])
+
+    calmar       = metrics.get("calmar_ratio")
+    sharpe       = metrics.get("sharpe_ratio")
+    max_dd_pct   = metrics.get("max_drawdown_pct")
+    max_dd_usdt  = metrics.get("max_drawdown_usdt")
+    pf           = metrics.get("profit_factor")
+    fees         = metrics.get("fees_paid")
+    fee_imp      = metrics.get("fee_impact_pct")
+    slip_usdt    = metrics.get("slippage_usdt")
+    slip_pct     = metrics.get("slippage_avg_pct")
+
+    _render_section_table("Risk", [
+        ("Calmar Ratio",   _fmt_or_dash(calmar,      "{:.2f}"),     "good ≥ 1.0"),
+        ("Sharpe Ratio",   _fmt_or_dash(sharpe,      "{:.2f}"),     "good ≥ 1.0"),
+        ("Max Drawdown",   _fmt_or_dash(max_dd_pct,  "{:.2f}%"),
+                           _fmt_or_dash(max_dd_usdt, "{:,.2f} USDT")),
+        ("Profit Factor",  _fmt_or_dash(pf,          "{:.2f}"),     "good ≥ 1.5"),
+        ("Trading Fees",   _fmt_or_dash(fees,        "{:,.2f} USDT"), None),
+        ("Fee Impact",     _fmt_or_dash(fee_imp,     "{:.1f}%"),    None),
+        ("Total Slippage", _fmt_or_dash(slip_usdt,   "{:,.4f} USDT"),
+                           _fmt_or_dash(slip_pct,    "{:.4f}%")),
+    ])
+
+    # ──────────────────────────────────────────────────────────────────────
+    # BOT DETAILS
+    # ──────────────────────────────────────────────────────────────────────
+    _render_theme_header("Bot Details")
+
+    active = metrics.get("mechanism_active", {}) or {}
+    rc_on  = active.get("recentering", False)
+    tr_on  = active.get("trailing",    False)
+    sl_on  = active.get("stop_loss",   False)
+    tp_on  = active.get("take_profit", False)
+
+    rc_count = metrics.get("recentering_count")
+    tr_count = metrics.get("trailing_count")
+    sl_hit   = metrics.get("stop_loss_triggered")
+    tp_hit   = metrics.get("take_profit_triggered")
+
+    def _mech_row(label: str, enabled: bool, count, hit) -> tuple:
+        if not enabled:
+            return (label, "–", "Inactive")
+        if count is not None:
+            return (label, str(count) if count is not None else "–",
+                    "Triggered" if (count or 0) > 0 else "Never triggered")
+        if hit is not None:
+            return (label,
+                    "Triggered" if hit else "Not triggered",
+                    None)
+        return (label, "–", None)
+
+    # Grid Trigger + Bot-Status
+    bot_status = metrics.get("bot_status")
+    grid_trigger = metrics.get("grid_trigger_price")
+    trigger_label = (
+        _fmt_or_dash(grid_trigger, "{:,.2f} USDT") if grid_trigger else "–"
+    )
+    trigger_sec = "Sofortiger Start" if not grid_trigger else None
+
+    _render_section_table("Mechanismen", [
+        ("Bot-Status",          bot_status if bot_status else "–", None),
+        ("Grid Trigger",        trigger_label, trigger_sec),
+        _mech_row("Recentering Events", rc_on, rc_count, None),
+        _mech_row("Trailing Events",    tr_on, tr_count, None),
+        _mech_row("Stop-Loss",          sl_on, None,     sl_hit),
+        _mech_row("Take-Profit",        tp_on, None,     tp_hit),
+    ])
+
+    num_t        = metrics.get("num_trades")
+    grid_eff     = metrics.get("grid_efficiency")
+    active_lv    = metrics.get("active_levels", {"active": 0, "total": 0})
+    cap_per_grid = metrics.get("capital_per_grid")
+    buys  = sum(1 for t in trade_log if "BUY"  in str(t.get("type", "")).upper())
+    sells = sum(1 for t in trade_log if "SELL" in str(t.get("type", "")).upper())
+    bs_str = f"B:{buys} / S:{sells}" if trade_log else None
+    ratio = (
+        f"{active_lv['active']}/{active_lv['total']}"
+        if isinstance(active_lv, dict) and active_lv.get("total")
+        else None
+    )
+
+    # Initial-Buy-Aggregate (Binance-Standard-Setup)
+    ib_coin  = metrics.get("initial_buy_coin_amount")
+    ib_fee   = metrics.get("initial_buy_fee")
+    ib_value = metrics.get("initial_buy_value_usdt")
+    # "–" auch bei 0.0 (kein Initial-Setup ausgefuehrt z.B. bei Trigger-Wartenden)
+    ib_coin_v  = None if not ib_coin  else ib_coin
+    ib_fee_v   = None if not ib_fee   else ib_fee
+    ib_value_v = None if not ib_value else ib_value
+
+    _render_section_table("Kapital & Aktivität", [
+        ("Initial Capital",      _fmt_or_dash(initial,  "{:,.2f} USDT"), None),
+        ("Current Capital",      _fmt_or_dash(final,    "{:,.2f} USDT"), None),
+        ("Number of Trades",     _fmt_or_dash(num_t,    "{}"),           bs_str),
+        ("Grid Efficiency",      _fmt_or_dash(grid_eff, "{:.1f}%"),      ratio),
+        ("Invest / Grid",        _fmt_or_dash(cap_per_grid, "{:,.2f} USDT"), None),
+        ("Initial-Buy Coins",    _fmt_or_dash(ib_coin_v,  "{:,.6f}"),    None),
+        ("Initial-Buy Wert",     _fmt_or_dash(ib_value_v, "{:,.2f} USDT"), None),
+        ("Initial-Buy Fee",      _fmt_or_dash(ib_fee_v,   "{:,.4f} USDT"), None),
+    ])
+
+    # ──────────────────────────────────────────────────────────────────────
+    # MARKET DATA & INDICATORS
+    # ──────────────────────────────────────────────────────────────────────
+    _render_theme_header("Market Data & Indicators")
+
+    cur_price = metrics.get("current_price")
+    extr      = metrics.get("price_extremes", {}) or {}
+    max_p     = extr.get("max_price")
+    min_p     = extr.get("min_price")
+    range_u   = extr.get("range_usdt")
+    range_p   = extr.get("range_pct")
+
+    _render_section_table("Market Data", [
+        ("Current Price",  _fmt_or_dash(cur_price, "{:,.2f} USDT"), None),
+        ("Max Price",      _fmt_or_dash(max_p,     "{:,.2f} USDT"), None),
+        ("Min Price",      _fmt_or_dash(min_p,     "{:,.2f} USDT"), None),
+        ("Max-Min Range",  _fmt_or_dash(range_u,   "{:,.2f} USDT"),
+                           _fmt_or_dash(range_p,   "{:.2f}%")),
+    ])
+
+    rs     = metrics.get("return_stats", {}) or {}
+    avg_r  = rs.get("avg_pct")
+    std_r  = rs.get("std_pct")
+    vola_m = metrics.get("vola_monthly_pct")
+    vola_y = metrics.get("vola_yearly_pct")
+
+    _render_section_table("Returns & Volatilität", [
+        ("Avg Return / Candle",  _fmt_or_dash(avg_r,  "{:+.2f}%"), None),
+        ("Vola Return / Candle", _fmt_or_dash(std_r,  "{:.2f}%"),  None),
+        ("Monthly Vola",         _fmt_or_dash(vola_m, "{:.2f}%"),  None),
+        ("Yearly Vola",          _fmt_or_dash(vola_y, "{:.2f}%"),  None),
+    ])
+
+    atr_u = metrics.get("atr_usdt")
+    atr_p = metrics.get("atr_pct")
+    adx14 = metrics.get("adx14")
+    adx30 = metrics.get("adx30")
+
+    _render_section_table("Indikatoren", [
+        ("Avg ATR (USDT)", _fmt_or_dash(atr_u, "{:,.2f} USDT"), None),
+        ("Avg ATR (%)",    _fmt_or_dash(atr_p, "{:.2f}%"),      None),
+        ("ADX 14",         _fmt_or_dash(adx14, "{:.1f}"),       None),
+        ("ADX 30",         _fmt_or_dash(adx30, "{:.1f}"),       None),
+    ])
 
 
 # ---------------------------------------------------------------------------

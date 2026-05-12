@@ -290,6 +290,13 @@ def render_bot_detail(view: dict, on_back: Callable[[], None]) -> None:
     # setdefault statt update -> PT/LT-Werte in metrics bleiben unberuehrt.
     for k, v in (view.get("indicators") or {}).items():
         metrics.setdefault(k, v)
+    # Initial-Buy-Aggregate + Bot-Status + Grid Trigger ins metrics mergen,
+    # damit der "All"-Tab diese Felder anzeigen kann (gleiches Pattern).
+    metrics.setdefault("initial_buy_coin_amount", view.get("initial_buy_coin_amount", 0.0))
+    metrics.setdefault("initial_buy_fee",         view.get("initial_buy_fee", 0.0))
+    metrics.setdefault("initial_buy_value_usdt",  view.get("initial_buy_value_usdt", 0.0))
+    metrics.setdefault("bot_status",              view.get("bot_status", "active"))
+    metrics.setdefault("grid_trigger_price",      cfg.get("grid_trigger_price"))
     render_metrics_tabs(metrics, trade_log=view.get("trade_log", []))
 
     st.divider()
