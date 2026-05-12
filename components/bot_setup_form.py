@@ -552,6 +552,9 @@ def _render_chart_main(params: dict) -> None:
             take_profit_price   = tp_price_v,
             show_stop_loss      = settings["show_stop_loss"],
             show_take_profit    = settings["show_take_profit"],
+            trailing_up_stop    = params.get("trailing_up_stop"),
+            trailing_down_stop  = params.get("trailing_down_stop"),
+            show_trailing_stops = settings["show_trailing_stops"],
         )
     except Exception as e:
         st.caption(f"Chart nicht verfügbar: {e}")

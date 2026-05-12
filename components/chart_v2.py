@@ -31,6 +31,9 @@ def plot_grid_chart_v2(
     take_profit_price:   Optional[float] = None,
     show_stop_loss:      bool  = True,
     show_take_profit:    bool  = True,
+    trailing_up_stop:    Optional[float] = None,
+    trailing_down_stop:  Optional[float] = None,
+    show_trailing_stops: bool  = True,
 ) -> None:
 
     def _to_unix(ts_val):
@@ -169,6 +172,20 @@ def plot_grid_chart_v2(
     stop_loss_json   = json.dumps(sl_val)
     take_profit_json = json.dumps(tp_val)
 
+    # Trailing-Stops nur senden, wenn Toggle aktiv UND Wert gesetzt.
+    tr_up_val = (
+        round(float(trailing_up_stop), 4)
+        if (show_trailing_stops and trailing_up_stop is not None and trailing_up_stop > 0)
+        else None
+    )
+    tr_dn_val = (
+        round(float(trailing_down_stop), 4)
+        if (show_trailing_stops and trailing_down_stop is not None and trailing_down_stop > 0)
+        else None
+    )
+    trailing_up_stop_json   = json.dumps(tr_up_val)
+    trailing_down_stop_json = json.dumps(tr_dn_val)
+
     HEADER_H = 44
     chart_h  = height - HEADER_H
 
@@ -303,6 +320,8 @@ def plot_grid_chart_v2(
   const trailUpperData = {trail_upper_json};
   const stopLossPrice  = {stop_loss_json};
   const takeProfitPrice = {take_profit_json};
+  const trailingUpStop   = {trailing_up_stop_json};
+  const trailingDownStop = {trailing_down_stop_json};
 
   // Marker colours — slightly darker than original
   const BUY_COLOR  = '#158A50';  // darker green
@@ -410,6 +429,17 @@ def plot_grid_chart_v2(
   if (takeProfitPrice !== null) candleSeries.createPriceLine({{
     price:takeProfitPrice, color:'#10B981', lineWidth:2,
     lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'TP',
+  }});
+  // ── Trailing-Stops (orange, gestrichelt) ──────────────────
+  // Obergrenze: ueber diesen Preis wandert das Grid nicht hinaus.
+  // Untergrenze analog nach unten.
+  if (trailingUpStop !== null) candleSeries.createPriceLine({{
+    price:trailingUpStop, color:'#F97316', lineWidth:2,
+    lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'Trail-Up Stop',
+  }});
+  if (trailingDownStop !== null) candleSeries.createPriceLine({{
+    price:trailingDownStop, color:'#F97316', lineWidth:2,
+    lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'Trail-Down Stop',
   }});
   // ── Grid Trailing-Stufen (orange Step-Linien) ─────────────
   // Pro Trailing-Trigger ein Datenpunkt; Stufen entstehen via LineType.WithSteps.
