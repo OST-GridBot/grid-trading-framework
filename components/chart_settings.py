@@ -25,9 +25,13 @@ _DEFAULTS = {
     "magnet_crosshair":    False,
     "show_volume":         True,
     "show_trailing_steps": True,
-    "show_stop_loss":      True,
-    "show_take_profit":    True,
-    "show_trailing_stops": True,
+    "show_stop_loss":          True,
+    "show_take_profit":        True,
+    "show_trailing_stops":     True,
+    "show_recentering_steps":  True,
+    "show_range_fill":         True,
+    "show_trailing_fill":      True,
+    "show_recentering_fill":   True,
 }
 
 
@@ -71,6 +75,16 @@ def render_chart_settings(key_prefix: str) -> dict:
                 value=_DEFAULTS["magnet_crosshair"],
                 key=f"chs_{key_prefix}_magnet"
             )
+            settings["show_range_fill"] = st.checkbox(
+                "Range-Fläche (blau)",
+                value=_DEFAULTS["show_range_fill"],
+                key=f"chs_{key_prefix}_range_fill"
+            )
+            settings["show_trailing_fill"] = st.checkbox(
+                "Trailing-Fläche (orange)",
+                value=_DEFAULTS["show_trailing_fill"],
+                key=f"chs_{key_prefix}_trailing_fill"
+            )
         with col2:
             settings["show_volume"] = st.checkbox(
                 "Volumen", value=_DEFAULTS["show_volume"],
@@ -95,5 +109,15 @@ def render_chart_settings(key_prefix: str) -> dict:
                 "Trailing-Grenzen markieren",
                 value=_DEFAULTS["show_trailing_stops"],
                 key=f"chs_{key_prefix}_trailing_stops"
+            )
+            settings["show_recentering_steps"] = st.checkbox(
+                "Recentering-Stufen (gelb)",
+                value=_DEFAULTS["show_recentering_steps"],
+                key=f"chs_{key_prefix}_recenter_steps"
+            )
+            settings["show_recentering_fill"] = st.checkbox(
+                "Recentering-Fläche (gelb)",
+                value=_DEFAULTS["show_recentering_fill"],
+                key=f"chs_{key_prefix}_recenter_fill"
             )
     return settings

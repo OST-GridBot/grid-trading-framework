@@ -197,6 +197,7 @@ def run_backtest(
         "recentering_count":   sim["recentering_count"],
         "trailing_count":      sim.get("trailing_count", 0),
         "trailing_events":     sim.get("trailing_events", []),
+        "recentering_events":  sim.get("recentering_events", []),
         "stop_loss_triggered": sim["stop_loss_triggered"],
         "take_profit_triggered": sim.get("take_profit_triggered", False),
         # Initial-Buy-Aggregate + Bot-Status + Grid Trigger (Binance-Standard)
@@ -273,6 +274,7 @@ def _error_result(message: str) -> dict:
         "recentering_count":    0,
         "trailing_count":       0,
         "trailing_events":      [],
+        "recentering_events":   [],
         "stop_loss_triggered":  False,
         "take_profit_triggered": False,
         "initial_buy_coin_amount": 0.0,

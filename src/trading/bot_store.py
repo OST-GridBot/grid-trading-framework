@@ -306,6 +306,7 @@ class BotStore:
             "metrics":         metrics,
             "trade_log":       list(result.get("trade_log", [])),
             "trailing_events": list(result.get("trailing_events", [])),
+            "recentering_events": list(result.get("recentering_events", [])),
             "state":           None,
             "regime":          regime_dict,
             "indicators":      indicators,

@@ -557,6 +557,12 @@ def _render_chart_main(params: dict) -> None:
             trailing_up_stop    = params.get("trailing_up_stop"),
             trailing_down_stop  = params.get("trailing_down_stop"),
             show_trailing_stops = settings["show_trailing_stops"],
+            # Setup-Vorschau hat keine Events (Bot existiert noch nicht)
+            recentering_events     = [],
+            show_recentering_steps = settings["show_recentering_steps"],
+            show_range_fill        = settings["show_range_fill"],
+            show_trailing_fill     = settings["show_trailing_fill"],
+            show_recentering_fill  = settings["show_recentering_fill"],
         )
     except Exception as e:
         st.caption(f"Chart nicht verfügbar: {e}")

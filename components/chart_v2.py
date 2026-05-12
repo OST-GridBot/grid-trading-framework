@@ -34,6 +34,11 @@ def plot_grid_chart_v2(
     trailing_up_stop:    Optional[float] = None,
     trailing_down_stop:  Optional[float] = None,
     show_trailing_stops: bool  = True,
+    recentering_events:     Optional[list] = None,
+    show_recentering_steps: bool  = True,
+    show_range_fill:        bool  = True,
+    show_trailing_fill:     bool  = True,
+    show_recentering_fill:  bool  = True,
 ) -> None:
 
     def _to_unix(ts_val):
@@ -142,6 +147,42 @@ def plot_grid_chart_v2(
         trail_lower_data = _dedup(trail_lower_data)
         trail_upper_data = _dedup(trail_upper_data)
 
+    # Recentering-Events analog Trailing aufbereiten.
+    recenter_lower_data = []
+    recenter_upper_data = []
+    if show_recentering_steps and recentering_events:
+        for ev in recentering_events:
+            ts = _to_unix(ev.get("timestamp"))
+            if ts is None:
+                continue
+            try:
+                nl = float(ev.get("new_lower"))
+                nu = float(ev.get("new_upper"))
+            except Exception:
+                continue
+            recenter_lower_data.append({"time": ts, "value": round(nl, 4)})
+            recenter_upper_data.append({"time": ts, "value": round(nu, 4)})
+        recenter_lower_data.sort(key=lambda x: x["time"])
+        recenter_upper_data.sort(key=lambda x: x["time"])
+        def _dedup_rc(items):
+            seen = {}
+            for it in items:
+                seen[it["time"]] = it["value"]
+            return [{"time": t, "value": v} for t, v in sorted(seen.items())]
+        recenter_lower_data = _dedup_rc(recenter_lower_data)
+        recenter_upper_data = _dedup_rc(recenter_upper_data)
+
+    # Aktuelle Range fuer Trailing-/Recentering-Fill (jeweils juengster Step).
+    # Falls keine Events: fill verwendet Initial-Lower/Upper.
+    trailing_current_lower = (trail_lower_data[-1]["value"]
+                              if trail_lower_data else None)
+    trailing_current_upper = (trail_upper_data[-1]["value"]
+                              if trail_upper_data else None)
+    recenter_current_lower = (recenter_lower_data[-1]["value"]
+                              if recenter_lower_data else None)
+    recenter_current_upper = (recenter_upper_data[-1]["value"]
+                              if recenter_upper_data else None)
+
     candles_json        = json.dumps(candles)
     volume_json         = json.dumps(volume_data)
     markers_json        = json.dumps(markers)
@@ -185,6 +226,20 @@ def plot_grid_chart_v2(
     )
     trailing_up_stop_json   = json.dumps(tr_up_val)
     trailing_down_stop_json = json.dumps(tr_dn_val)
+
+    recenter_lower_json = json.dumps(recenter_lower_data)
+    recenter_upper_json = json.dumps(recenter_upper_data)
+    # Erste und letzte Kerze fuer die statische Range-Fill-AreaSeries.
+    first_ts_json = json.dumps(df_start_ts)
+    last_ts_json  = json.dumps(df_end_ts)
+    # Fuer Trailing/Recentering: aktuelle (juengste) Range als Konstante.
+    trailing_fill_lower_json = json.dumps(trailing_current_lower)
+    trailing_fill_upper_json = json.dumps(trailing_current_upper)
+    recenter_fill_lower_json = json.dumps(recenter_current_lower)
+    recenter_fill_upper_json = json.dumps(recenter_current_upper)
+    show_range_fill_js       = "true" if show_range_fill else "false"
+    show_trailing_fill_js    = "true" if show_trailing_fill else "false"
+    show_recentering_fill_js = "true" if show_recentering_fill else "false"
 
     HEADER_H = 44
     chart_h  = height - HEADER_H
@@ -322,6 +377,17 @@ def plot_grid_chart_v2(
   const takeProfitPrice = {take_profit_json};
   const trailingUpStop   = {trailing_up_stop_json};
   const trailingDownStop = {trailing_down_stop_json};
+  const recenterLowerData = {recenter_lower_json};
+  const recenterUpperData = {recenter_upper_json};
+  const firstTs           = {first_ts_json};
+  const lastTs            = {last_ts_json};
+  const trailingFillLower = {trailing_fill_lower_json};
+  const trailingFillUpper = {trailing_fill_upper_json};
+  const recenterFillLower = {recenter_fill_lower_json};
+  const recenterFillUpper = {recenter_fill_upper_json};
+  const showRangeFill        = {show_range_fill_js};
+  const showTrailingFill     = {show_trailing_fill_js};
+  const showRecenteringFill  = {show_recentering_fill_js};
 
   // Marker colours — slightly darker than original
   const BUY_COLOR  = '#158A50';  // darker green
@@ -462,6 +528,88 @@ def plot_grid_chart_v2(
       crosshairMarkerVisible:false,
     }});
     trailUpperSeries.setData(trailUpperData);
+  }}
+
+  // ── Recentering-Stufen (gelb, analog Trailing) ────────────
+  if (recenterLowerData.length > 0) {{
+    const recLowerSeries = chart.addLineSeries({{
+      color:'#FCD34D', lineWidth:2,
+      lineStyle:LightweightCharts.LineStyle.Solid,
+      lineType:LightweightCharts.LineType.WithSteps,
+      priceLineVisible:false, lastValueVisible:false,
+      crosshairMarkerVisible:false,
+    }});
+    recLowerSeries.setData(recenterLowerData);
+  }}
+  if (recenterUpperData.length > 0) {{
+    const recUpperSeries = chart.addLineSeries({{
+      color:'#FCD34D', lineWidth:2,
+      lineStyle:LightweightCharts.LineStyle.Solid,
+      lineType:LightweightCharts.LineType.WithSteps,
+      priceLineVisible:false, lastValueVisible:false,
+      crosshairMarkerVisible:false,
+    }});
+    recUpperSeries.setData(recenterUpperData);
+  }}
+
+  // ── Range-Fuelle (statisch, blau) ─────────────────────────
+  // AreaSeries mit baseValue = lower und value = upper fuellt die Flaeche
+  // zwischen Lower und Upper transparent ein. Linie unsichtbar.
+  if (showRangeFill && upperPrice !== null && lowerPrice !== null
+      && firstTs !== null && lastTs !== null) {{
+    const rangeFillSeries = chart.addAreaSeries({{
+      topColor:    'rgba(59,130,246,0.10)',
+      bottomColor: 'rgba(59,130,246,0.10)',
+      lineColor:   'rgba(0,0,0,0)', lineWidth:1,
+      priceLineVisible:false, lastValueVisible:false,
+      crosshairMarkerVisible:false,
+      baseValue: {{ type:'price', price: lowerPrice }},
+    }});
+    rangeFillSeries.setData([
+      {{ time: firstTs, value: upperPrice }},
+      {{ time: lastTs,  value: upperPrice }},
+    ]);
+  }}
+
+  // ── Trailing-Range-Fuelle (aktueller Step, orange) ────────
+  if (showTrailingFill && trailingFillLower !== null && trailingFillUpper !== null
+      && firstTs !== null && lastTs !== null) {{
+    const trailFillSeries = chart.addAreaSeries({{
+      topColor:    'rgba(249,115,22,0.10)',
+      bottomColor: 'rgba(249,115,22,0.10)',
+      lineColor:   'rgba(0,0,0,0)', lineWidth:1,
+      priceLineVisible:false, lastValueVisible:false,
+      crosshairMarkerVisible:false,
+      baseValue: {{ type:'price', price: trailingFillLower }},
+    }});
+    // Faerbe ab dem juengsten Trailing-Event bis ans Chart-Ende.
+    const trailStartTs = trailUpperData.length > 0
+      ? trailUpperData[trailUpperData.length - 1].time
+      : firstTs;
+    trailFillSeries.setData([
+      {{ time: trailStartTs, value: trailingFillUpper }},
+      {{ time: lastTs,       value: trailingFillUpper }},
+    ]);
+  }}
+
+  // ── Recentering-Range-Fuelle (aktueller Step, gelb) ───────
+  if (showRecenteringFill && recenterFillLower !== null && recenterFillUpper !== null
+      && firstTs !== null && lastTs !== null) {{
+    const recFillSeries = chart.addAreaSeries({{
+      topColor:    'rgba(252,211,77,0.10)',
+      bottomColor: 'rgba(252,211,77,0.10)',
+      lineColor:   'rgba(0,0,0,0)', lineWidth:1,
+      priceLineVisible:false, lastValueVisible:false,
+      crosshairMarkerVisible:false,
+      baseValue: {{ type:'price', price: recenterFillLower }},
+    }});
+    const recStartTs = recenterUpperData.length > 0
+      ? recenterUpperData[recenterUpperData.length - 1].time
+      : firstTs;
+    recFillSeries.setData([
+      {{ time: recStartTs, value: recenterFillUpper }},
+      {{ time: lastTs,     value: recenterFillUpper }},
+    ]);
   }}
 
   // ── Magnet-Crosshair-Marker ───────────────────────────────

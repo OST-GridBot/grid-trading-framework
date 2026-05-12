@@ -177,6 +177,16 @@ def render_tab_chart(
             pass
         trailing_events_display.append(ev2)
 
+    # Recentering-Events analog
+    recentering_events_display = []
+    for ev in (view.get("recentering_events") or []):
+        ev2 = dict(ev)
+        try:
+            ev2["timestamp"] = utc_to_zurich(ev2["timestamp"])
+        except Exception:
+            pass
+        recentering_events_display.append(ev2)
+
     plot_grid_chart_v2(
         df                  = df_display,
         grid_lines          = grid_lines,
@@ -201,4 +211,9 @@ def render_tab_chart(
         trailing_up_stop    = tr_up_stop,
         trailing_down_stop  = tr_down_stop,
         show_trailing_stops = settings["show_trailing_stops"],
+        recentering_events     = recentering_events_display,
+        show_recentering_steps = settings["show_recentering_steps"],
+        show_range_fill        = settings["show_range_fill"],
+        show_trailing_fill     = settings["show_trailing_fill"],
+        show_recentering_fill  = settings["show_recentering_fill"],
     )
