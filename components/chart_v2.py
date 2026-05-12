@@ -146,6 +146,10 @@ def plot_grid_chart_v2(
             return [{"time": t, "value": v} for t, v in sorted(seen.items())]
         trail_lower_data = _dedup(trail_lower_data)
         trail_upper_data = _dedup(trail_upper_data)
+        # Juengsten Original-Event-Timestamp merken VOR der Verlaengerung
+        # (Fill-Start = ab hier ist die Range konstant bis Chart-Ende).
+        trailing_fill_start_ts = (trail_upper_data[-1]["time"]
+                                   if trail_upper_data else None)
         # Step-Linie bis Chart-Ende verlaengern, damit auch ein einzelner
         # Event sichtbar ist (WithSteps zeichnet sonst nur einen Punkt).
         if df_end_ts is not None:
@@ -157,6 +161,8 @@ def plot_grid_chart_v2(
                 trail_upper_data.append(
                     {"time": df_end_ts, "value": trail_upper_data[-1]["value"]}
                 )
+    else:
+        trailing_fill_start_ts = None
 
     # Recentering-Events analog Trailing aufbereiten.
     recenter_lower_data = []
@@ -182,6 +188,9 @@ def plot_grid_chart_v2(
             return [{"time": t, "value": v} for t, v in sorted(seen.items())]
         recenter_lower_data = _dedup_rc(recenter_lower_data)
         recenter_upper_data = _dedup_rc(recenter_upper_data)
+        # Juengsten Original-Event-Timestamp merken VOR der Verlaengerung
+        recenter_fill_start_ts = (recenter_upper_data[-1]["time"]
+                                   if recenter_upper_data else None)
         # Step-Linie bis Chart-Ende verlaengern (analog Trailing).
         if df_end_ts is not None:
             if recenter_lower_data and recenter_lower_data[-1]["time"] < df_end_ts:
@@ -192,6 +201,8 @@ def plot_grid_chart_v2(
                 recenter_upper_data.append(
                     {"time": df_end_ts, "value": recenter_upper_data[-1]["value"]}
                 )
+    else:
+        recenter_fill_start_ts = None
 
     # Aktuelle Range fuer Trailing-/Recentering-Fill (jeweils juengster Step).
     # Falls keine Events: fill verwendet Initial-Lower/Upper.
@@ -258,6 +269,10 @@ def plot_grid_chart_v2(
     trailing_fill_upper_json = json.dumps(trailing_current_upper)
     recenter_fill_lower_json = json.dumps(recenter_current_lower)
     recenter_fill_upper_json = json.dumps(recenter_current_upper)
+    # Start-Timestamps der Trailing-/Recentering-Fill (juengster Original-Event,
+    # NICHT der kuenstliche Verlaengerungspunkt). None falls keine Events.
+    trailing_fill_start_json = json.dumps(trailing_fill_start_ts)
+    recenter_fill_start_json = json.dumps(recenter_fill_start_ts)
     show_range_fill_js       = "true" if show_range_fill else "false"
     show_trailing_fill_js    = "true" if show_trailing_fill else "false"
     show_recentering_fill_js = "true" if show_recentering_fill else "false"
@@ -406,6 +421,8 @@ def plot_grid_chart_v2(
   const trailingFillUpper = {trailing_fill_upper_json};
   const recenterFillLower = {recenter_fill_lower_json};
   const recenterFillUpper = {recenter_fill_upper_json};
+  const trailingFillStartTs = {trailing_fill_start_json};
+  const recenterFillStartTs = {recenter_fill_start_json};
   const showRangeFill        = {show_range_fill_js};
   const showTrailingFill     = {show_trailing_fill_js};
   const showRecenteringFill  = {show_recentering_fill_js};
@@ -613,13 +630,15 @@ def plot_grid_chart_v2(
       crosshairMarkerVisible:false,
     }});
     // Faerbe ab dem juengsten Trailing-Event bis ans Chart-Ende.
-    const trailStartTs = trailUpperData.length > 0
-      ? trailUpperData[trailUpperData.length - 1].time
-      : firstTs;
-    trailFillSeries.setData([
-      {{ time: trailStartTs, value: trailingFillUpper }},
-      {{ time: lastTs,       value: trailingFillUpper }},
-    ]);
+    // trailingFillStartTs ist der Original-Event-Timestamp (NICHT der
+    // kuenstliche Verlaengerungspunkt der Step-Linie).
+    const trailStartTs = trailingFillStartTs !== null ? trailingFillStartTs : firstTs;
+    if (trailStartTs < lastTs) {{
+      trailFillSeries.setData([
+        {{ time: trailStartTs, value: trailingFillUpper }},
+        {{ time: lastTs,       value: trailingFillUpper }},
+      ]);
+    }}
   }}
 
   // ── Recentering-Range-Fuelle (aktueller Step, gelb) ───────
@@ -637,13 +656,13 @@ def plot_grid_chart_v2(
       priceLineVisible:false, lastValueVisible:false,
       crosshairMarkerVisible:false,
     }});
-    const recStartTs = recenterUpperData.length > 0
-      ? recenterUpperData[recenterUpperData.length - 1].time
-      : firstTs;
-    recFillSeries.setData([
-      {{ time: recStartTs, value: recenterFillUpper }},
-      {{ time: lastTs,     value: recenterFillUpper }},
-    ]);
+    const recStartTs = recenterFillStartTs !== null ? recenterFillStartTs : firstTs;
+    if (recStartTs < lastTs) {{
+      recFillSeries.setData([
+        {{ time: recStartTs, value: recenterFillUpper }},
+        {{ time: lastTs,     value: recenterFillUpper }},
+      ]);
+    }}
   }}
 
   // ── Magnet-Crosshair-Marker ───────────────────────────────
