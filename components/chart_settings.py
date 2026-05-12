@@ -25,6 +25,8 @@ _DEFAULTS = {
     "magnet_crosshair":    False,
     "show_volume":         True,
     "show_trailing_steps": True,
+    "show_stop_loss":      True,
+    "show_take_profit":    True,
 }
 
 
@@ -73,5 +75,15 @@ def render_chart_settings(key_prefix: str) -> dict:
                 "Grid Trailing-Stufen (orange)",
                 value=_DEFAULTS["show_trailing_steps"],
                 key=f"chs_{key_prefix}_trailing_steps"
+            )
+            settings["show_stop_loss"] = st.checkbox(
+                "Stop-Loss-Linie (rot)",
+                value=_DEFAULTS["show_stop_loss"],
+                key=f"chs_{key_prefix}_stop_loss"
+            )
+            settings["show_take_profit"] = st.checkbox(
+                "Take-Profit-Linie (grün)",
+                value=_DEFAULTS["show_take_profit"],
+                key=f"chs_{key_prefix}_take_profit"
             )
     return settings

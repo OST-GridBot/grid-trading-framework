@@ -138,6 +138,26 @@ def render_tab_chart(
     upper = float(grid_lines[-1]) if grid_lines else float(cfg.get("upper_price", 0))
     lower = float(grid_lines[0])  if grid_lines else float(cfg.get("lower_price", 0))
 
+    # ── SL/TP-Preise bestimmen ──────────────────────────────────────────────
+    # PT/LT: aus persistiertem State (bot.stop_loss_price / take_profit_price).
+    # BT  : aus Config neu berechnen (identische Formel wie GridBot.__init__).
+    sl_price = state.get("stop_loss_price")
+    tp_price = state.get("take_profit_price")
+    if sl_price is None:
+        try:
+            sl_pct = cfg.get("stop_loss_pct")
+            if sl_pct is not None and lower > 0:
+                sl_price = float(lower) * (1 - float(sl_pct))
+        except Exception:
+            sl_price = None
+    if tp_price is None:
+        try:
+            tp_pct = cfg.get("take_profit_pct")
+            if tp_pct is not None and upper > 0:
+                tp_price = float(upper) * (1 + float(tp_pct))
+        except Exception:
+            tp_price = None
+
     # Trailing-Events: Timestamps nach Zurich konvertieren (analog Trade-Log)
     trailing_events_display = []
     for ev in (view.get("trailing_events") or []):
@@ -165,4 +185,8 @@ def render_tab_chart(
         magnet_crosshair    = settings["magnet_crosshair"],
         trailing_events     = trailing_events_display,
         show_trailing_steps = settings["show_trailing_steps"],
+        stop_loss_price     = sl_price,
+        take_profit_price   = tp_price,
+        show_stop_loss      = settings["show_stop_loss"],
+        show_take_profit    = settings["show_take_profit"],
     )

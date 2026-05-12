@@ -521,6 +521,18 @@ def _render_chart_main(params: dict) -> None:
         # Chart-Einstellungen (Bot-Start gibts in der Setup-Vorschau nicht)
         settings = render_chart_settings(key_prefix="setup")
 
+        # SL/TP live aus aktuellen Slider-Werten (identische Formel wie GridBot)
+        sl_pct_v = params.get("stop_loss_pct")
+        tp_pct_v = params.get("take_profit_pct")
+        sl_price_v = (
+            float(lower) * (1 - float(sl_pct_v))
+            if (sl_pct_v is not None and lower > 0) else None
+        )
+        tp_price_v = (
+            float(upper) * (1 + float(tp_pct_v))
+            if (tp_pct_v is not None and upper > 0) else None
+        )
+
         plot_grid_chart_v2(
             df                  = df_disp,
             grid_lines          = gl,
@@ -536,6 +548,10 @@ def _render_chart_main(params: dict) -> None:
             show_order_markers  = settings["show_order_markers"],
             bot_start_timestamp = None,  # Setup-Vorschau hat keinen Bot-Start
             magnet_crosshair    = settings["magnet_crosshair"],
+            stop_loss_price     = sl_price_v,
+            take_profit_price   = tp_price_v,
+            show_stop_loss      = settings["show_stop_loss"],
+            show_take_profit    = settings["show_take_profit"],
         )
     except Exception as e:
         st.caption(f"Chart nicht verfügbar: {e}")
