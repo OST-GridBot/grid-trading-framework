@@ -562,12 +562,11 @@ def _section_stop_loss(mode: str, lower_price: float = 0.0) -> dict:
     enabled = st.checkbox(
         "Stop-Loss aktivieren", key=f"{mode}_new_sl",
         help=("Schliesst alle Positionen, wenn der Preis um den eingestellten "
-              "Prozentsatz UNTER die untere Grid-Grenze faellt "
-              "(Industrie-Standard fuer Spot-Grid-Bots, fix ab Bot-Start)."),
+              "Prozentsatz unter die untere Grid-Grenze fällt."),
     )
     pct = None
     if enabled:
-        pct = st.slider("", 5.0, 50.0,
+        pct = st.slider("", 1.0, 50.0,
                          float(st.session_state.get(f"{mode}_new_sl_pct", 20.0)),
                          1.0, key=f"{mode}_new_sl_pct",
                          label_visibility="collapsed") / 100
@@ -576,7 +575,7 @@ def _section_stop_loss(mode: str, lower_price: float = 0.0) -> dict:
             sl_price = lower_price * (1 - pct)
             st.markdown(
                 _caption(
-                    f"🔻 Stop-Loss bei <b style='color:#E2E8F0;'>"
+                    f"Stop-Loss bei <b style='color:#E2E8F0;'>"
                     f"{sl_price:,.2f} USDT</b> "
                     f"(Lower {lower_price:,.2f} × −{int(pct*100)}%)"
                 ),
@@ -589,12 +588,11 @@ def _section_take_profit(mode: str, upper_price: float = 0.0) -> dict:
     enabled = st.checkbox(
         "Take-Profit aktivieren", key=f"{mode}_new_tp",
         help=("Schliesst alle Positionen, wenn der Preis um den eingestellten "
-              "Prozentsatz UEBER die obere Grid-Grenze steigt "
-              "(Industrie-Standard fuer Spot-Grid-Bots, fix ab Bot-Start)."),
+              "Prozentsatz über die obere Grid-Grenze steigt."),
     )
     pct = None
     if enabled:
-        pct = st.slider("", 5.0, 100.0,
+        pct = st.slider("", 1.0, 100.0,
                          float(st.session_state.get(f"{mode}_new_tp_pct", 20.0)),
                          1.0, key=f"{mode}_new_tp_pct",
                          label_visibility="collapsed") / 100
@@ -603,7 +601,7 @@ def _section_take_profit(mode: str, upper_price: float = 0.0) -> dict:
             tp_price = upper_price * (1 + pct)
             st.markdown(
                 _caption(
-                    f"🔺 Take-Profit bei <b style='color:#E2E8F0;'>"
+                    f"Take-Profit bei <b style='color:#E2E8F0;'>"
                     f"{tp_price:,.2f} USDT</b> "
                     f"(Upper {upper_price:,.2f} × +{int(pct*100)}%)"
                 ),
