@@ -146,6 +146,17 @@ def plot_grid_chart_v2(
             return [{"time": t, "value": v} for t, v in sorted(seen.items())]
         trail_lower_data = _dedup(trail_lower_data)
         trail_upper_data = _dedup(trail_upper_data)
+        # Step-Linie bis Chart-Ende verlaengern, damit auch ein einzelner
+        # Event sichtbar ist (WithSteps zeichnet sonst nur einen Punkt).
+        if df_end_ts is not None:
+            if trail_lower_data and trail_lower_data[-1]["time"] < df_end_ts:
+                trail_lower_data.append(
+                    {"time": df_end_ts, "value": trail_lower_data[-1]["value"]}
+                )
+            if trail_upper_data and trail_upper_data[-1]["time"] < df_end_ts:
+                trail_upper_data.append(
+                    {"time": df_end_ts, "value": trail_upper_data[-1]["value"]}
+                )
 
     # Recentering-Events analog Trailing aufbereiten.
     recenter_lower_data = []
@@ -171,6 +182,16 @@ def plot_grid_chart_v2(
             return [{"time": t, "value": v} for t, v in sorted(seen.items())]
         recenter_lower_data = _dedup_rc(recenter_lower_data)
         recenter_upper_data = _dedup_rc(recenter_upper_data)
+        # Step-Linie bis Chart-Ende verlaengern (analog Trailing).
+        if df_end_ts is not None:
+            if recenter_lower_data and recenter_lower_data[-1]["time"] < df_end_ts:
+                recenter_lower_data.append(
+                    {"time": df_end_ts, "value": recenter_lower_data[-1]["value"]}
+                )
+            if recenter_upper_data and recenter_upper_data[-1]["time"] < df_end_ts:
+                recenter_upper_data.append(
+                    {"time": df_end_ts, "value": recenter_upper_data[-1]["value"]}
+                )
 
     # Aktuelle Range fuer Trailing-/Recentering-Fill (jeweils juengster Step).
     # Falls keine Events: fill verwendet Initial-Lower/Upper.
@@ -553,17 +574,22 @@ def plot_grid_chart_v2(
   }}
 
   // ── Range-Fuelle (statisch, blau) ─────────────────────────
-  // AreaSeries mit baseValue = lower und value = upper fuellt die Flaeche
-  // zwischen Lower und Upper transparent ein. Linie unsichtbar.
+  // BaselineSeries: faerbt nur den Bereich ZWISCHEN baseValue (lower)
+  // und der Linie (upper) ein. Unterhalb von baseValue bleibt unsichtbar
+  // (bottomFillColor transparent). Linie selbst unsichtbar.
   if (showRangeFill && upperPrice !== null && lowerPrice !== null
       && firstTs !== null && lastTs !== null) {{
-    const rangeFillSeries = chart.addAreaSeries({{
-      topColor:    'rgba(59,130,246,0.10)',
-      bottomColor: 'rgba(59,130,246,0.10)',
-      lineColor:   'rgba(0,0,0,0)', lineWidth:1,
+    const rangeFillSeries = chart.addBaselineSeries({{
+      baseValue:         {{ type:'price', price: lowerPrice }},
+      topLineColor:      'rgba(0,0,0,0)',
+      topFillColor1:     'rgba(59,130,246,0.08)',
+      topFillColor2:     'rgba(59,130,246,0.08)',
+      bottomLineColor:   'rgba(0,0,0,0)',
+      bottomFillColor1:  'rgba(0,0,0,0)',
+      bottomFillColor2:  'rgba(0,0,0,0)',
+      lineWidth:1,
       priceLineVisible:false, lastValueVisible:false,
       crosshairMarkerVisible:false,
-      baseValue: {{ type:'price', price: lowerPrice }},
     }});
     rangeFillSeries.setData([
       {{ time: firstTs, value: upperPrice }},
@@ -574,13 +600,17 @@ def plot_grid_chart_v2(
   // ── Trailing-Range-Fuelle (aktueller Step, orange) ────────
   if (showTrailingFill && trailingFillLower !== null && trailingFillUpper !== null
       && firstTs !== null && lastTs !== null) {{
-    const trailFillSeries = chart.addAreaSeries({{
-      topColor:    'rgba(249,115,22,0.10)',
-      bottomColor: 'rgba(249,115,22,0.10)',
-      lineColor:   'rgba(0,0,0,0)', lineWidth:1,
+    const trailFillSeries = chart.addBaselineSeries({{
+      baseValue:         {{ type:'price', price: trailingFillLower }},
+      topLineColor:      'rgba(0,0,0,0)',
+      topFillColor1:     'rgba(249,115,22,0.08)',
+      topFillColor2:     'rgba(249,115,22,0.08)',
+      bottomLineColor:   'rgba(0,0,0,0)',
+      bottomFillColor1:  'rgba(0,0,0,0)',
+      bottomFillColor2:  'rgba(0,0,0,0)',
+      lineWidth:1,
       priceLineVisible:false, lastValueVisible:false,
       crosshairMarkerVisible:false,
-      baseValue: {{ type:'price', price: trailingFillLower }},
     }});
     // Faerbe ab dem juengsten Trailing-Event bis ans Chart-Ende.
     const trailStartTs = trailUpperData.length > 0
@@ -595,13 +625,17 @@ def plot_grid_chart_v2(
   // ── Recentering-Range-Fuelle (aktueller Step, gelb) ───────
   if (showRecenteringFill && recenterFillLower !== null && recenterFillUpper !== null
       && firstTs !== null && lastTs !== null) {{
-    const recFillSeries = chart.addAreaSeries({{
-      topColor:    'rgba(252,211,77,0.10)',
-      bottomColor: 'rgba(252,211,77,0.10)',
-      lineColor:   'rgba(0,0,0,0)', lineWidth:1,
+    const recFillSeries = chart.addBaselineSeries({{
+      baseValue:         {{ type:'price', price: recenterFillLower }},
+      topLineColor:      'rgba(0,0,0,0)',
+      topFillColor1:     'rgba(252,211,77,0.08)',
+      topFillColor2:     'rgba(252,211,77,0.08)',
+      bottomLineColor:   'rgba(0,0,0,0)',
+      bottomFillColor1:  'rgba(0,0,0,0)',
+      bottomFillColor2:  'rgba(0,0,0,0)',
+      lineWidth:1,
       priceLineVisible:false, lastValueVisible:false,
       crosshairMarkerVisible:false,
-      baseValue: {{ type:'price', price: recenterFillLower }},
     }});
     const recStartTs = recenterUpperData.length > 0
       ? recenterUpperData[recenterUpperData.length - 1].time
