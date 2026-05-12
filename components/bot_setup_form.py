@@ -197,7 +197,7 @@ def _smart_combos_count(objective: str) -> int:
     # Mechanismus-Kombis je nach Objective (gleiche Mapping wie im Backend)
     table = {
         "maximize_roi":      (3, 1, 1, 1),  # mech, sl, dd, vo  -> 288
-        "maximize_sharpe":   (3, 1, 1, 2),  # 576
+        "maximize_sharpe":   (3, 1, 3, 3),  # 96 × 3 × 3 × 3   -> 2592
         "maximize_calmar":   (3, 1, 2, 1),  # 576
         "minimize_drawdown": (1, 2, 2, 1),  # 384
     }
@@ -720,61 +720,75 @@ def _section_recentering(mode: str, trailing_active: bool) -> dict:
         "Recentering aktivieren",
         key=f"{mode}_new_recenter",
         disabled=trailing_active,
-        help="Nicht kombinierbar mit Grid Trailing" if trailing_active else None,
+        help=("Nicht kombinierbar mit Grid Trailing" if trailing_active else
+              "Verschiebt das Grid-Zentrum auf den aktuellen Preis, wenn "
+              "dieser um die Schwelle ueber die obere Range-Grenze steigt. "
+              "Up-only (Industrie-Standard fuer Spot-Grid-Bots)."),
     )
     if trailing_active and enabled:
         enabled = False
-    up, down, thr = False, False, 0.05
+    # Recentering im UI implizit Up-only. Backend-Parameter
+    # enable_recentering_down bleibt fuer Backward-Compat existieren,
+    # wird hier aber immer False gesetzt.
+    up, thr = False, 0.05
     if enabled:
-        if f"{mode}_new_recenter_up" not in st.session_state:
-            st.session_state[f"{mode}_new_recenter_up"] = True
-        c1, c2 = st.columns([1, 17])
-        with c2:
-            up   = st.checkbox("Recentering Up",   value=True,
-                                key=f"{mode}_new_recenter_up")
-            down = st.checkbox("Recentering Down", value=False,
-                                key=f"{mode}_new_recenter_down")
+        up = True
         st.markdown(_caption("Recentering-Schwelle (%)"), unsafe_allow_html=True)
         thr = st.slider("", 1.0, 20.0, 5.0, 1.0,
                          key=f"{mode}_new_recenter_thr",
                          label_visibility="collapsed") / 100
-    return {"enable_recentering_up":  up,
-            "enable_recentering_down": down,
-            "recenter_threshold":     thr}
+    return {"enable_recentering_up":   up,
+            "enable_recentering_down": False,
+            "recenter_threshold":      thr}
 
 
 def _section_trailing(mode: str, recenter_active: bool,
                       lower: float, upper: float) -> dict:
+    """
+    Grid-Trailing-Section, Up-only (Industrie-Standard fuer Spot-Grid-Bots).
+
+    Backend-Parameter enable_trailing_down und trailing_down_stop bleiben
+    fuer Backward-Compat existieren, werden hier aber immer auf
+    False/None gesetzt. Trailing-Up-Stop wird als Prozent ueber der
+    Upper-Grenze konfiguriert (Default +10%, analog zu SL/TP).
+    """
     enabled = st.checkbox(
         "Grid Trailing aktivieren",
         key=f"{mode}_new_trailing",
         disabled=recenter_active,
-        help="Nicht kombinierbar mit Recentering" if recenter_active else None,
+        help=("Nicht kombinierbar mit Recentering" if recenter_active else
+              "Verschiebt das Grid einen Schritt nach oben, sobald der "
+              "Preis die obere Range-Grenze beruehrt. Wird durch den "
+              "Trailing-Up-Stop nach oben gedeckelt. Up-only."),
     )
     if recenter_active and enabled:
         enabled = False
-    up, down, up_stop, down_stop = False, False, None, None
+    up      = False
+    up_stop = None
     if enabled:
-        up   = st.checkbox("Trailing Up",   value=True, key=f"{mode}_new_tr_up")
-        down = st.checkbox("Trailing Down", value=True, key=f"{mode}_new_tr_down")
-        if up:
-            st.markdown(_caption("Trailing Up Stop ($)"), unsafe_allow_html=True)
-            v = st.number_input("", min_value=0.0,
-                                 value=float(upper * 1.10) if upper > 0 else 0.0,
-                                 step=10.0, key=f"{mode}_new_tr_up_stop",
-                                 label_visibility="collapsed")
-            up_stop = v if v > 0 else None
-        if down:
-            st.markdown(_caption("Trailing Down Stop ($)"), unsafe_allow_html=True)
-            v = st.number_input("", min_value=0.0,
-                                 value=float(lower * 0.90) if lower > 0 else 0.0,
-                                 step=10.0, key=f"{mode}_new_tr_down_stop",
-                                 label_visibility="collapsed")
-            down_stop = v if v > 0 else None
+        up = True
+        # Trailing-Up-Stop als Prozent ueber upper_price (Default +10%).
+        # Analog zur Take-Profit-Logik aus Sub SL/TP-2.
+        st.markdown(_caption("Trailing-Up-Stop (% über Upper)"),
+                    unsafe_allow_html=True)
+        pct = st.slider("", 1.0, 50.0,
+                         float(st.session_state.get(f"{mode}_new_tr_up_pct", 10.0)),
+                         1.0, key=f"{mode}_new_tr_up_pct",
+                         label_visibility="collapsed") / 100
+        if upper and upper > 0:
+            up_stop = float(upper) * (1 + pct)
+            st.markdown(
+                _caption(
+                    f"Trailing-Up-Stop bei <b style='color:#E2E8F0;'>"
+                    f"{up_stop:,.2f} USDT</b> "
+                    f"(Upper {upper:,.2f} × +{int(pct*100)}%)"
+                ),
+                unsafe_allow_html=True,
+            )
     return {"enable_trailing_up":   up,
-            "enable_trailing_down": down,
+            "enable_trailing_down": False,
             "trailing_up_stop":     up_stop,
-            "trailing_down_stop":   down_stop}
+            "trailing_down_stop":   None}
 
 
 # ---------------------------------------------------------------------------
