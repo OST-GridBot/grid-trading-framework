@@ -84,6 +84,8 @@ def _default_params(mode: str) -> dict:
         "reserve_pct":      DEFAULT_RESERVE_PCT,
         "stop_loss_pct":    None,
         "take_profit_pct":  None,
+        "stop_loss_roi_pct":   None,
+        "take_profit_roi_pct": None,
         "enable_dd_throttle":     False,
         "dd_threshold_1":         0.10,
         "dd_threshold_2":         0.20,
@@ -644,20 +646,36 @@ def _section_risk(mode: str) -> dict:
             "_fee_pct": fee_pct}
 
 
-def _section_stop_loss(mode: str, lower_price: float = 0.0) -> dict:
+def _section_stop_loss(mode: str, lower_price: float = 0.0,
+                        total_investment: float = 0.0) -> dict:
+    """
+    Stop-Loss-Sektion mit zwei einzeln aktivierbaren Triggern:
+      - Preis-basiert: Preis faellt unter lower * (1 - sl_pct)
+      - ROI-basiert  : Bot-ROI (realisiert + floating) faellt unter -roi_pct
+
+    Beide Trigger sind ODER-verknuepft: was zuerst feuert, stoppt den Bot.
+    """
     st.markdown(_divider(), unsafe_allow_html=True)
-    enabled = st.checkbox(
-        "Stop-Loss aktivieren", key=f"{mode}_new_sl",
+    st.markdown(
+        _caption(
+            "<b style='color:#CBD5E1;'>Stop-Loss</b> &nbsp;"
+            "<span style='color:#64748B;'>(beide Trigger ODER-verknüpft)</span>"
+        ),
+        unsafe_allow_html=True,
+    )
+
+    # ── Preis-basiert ───────────────────────────────────────────────────────
+    enabled_price = st.checkbox(
+        "Preis-basiert", key=f"{mode}_new_sl",
         help=("Schliesst alle Positionen, wenn der Preis um den eingestellten "
               "Prozentsatz unter die untere Grid-Grenze fällt."),
     )
     pct = None
-    if enabled:
-        pct = st.slider("", 1.0, 50.0,
+    if enabled_price:
+        pct = st.slider("Preis-basiert (%)", 1.0, 50.0,
                          float(st.session_state.get(f"{mode}_new_sl_pct", 20.0)),
                          1.0, key=f"{mode}_new_sl_pct",
                          label_visibility="collapsed") / 100
-        # Live-Anzeige des berechneten Preis-Schwellwerts (analog Backend-Logik).
         if lower_price and lower_price > 0:
             sl_price = lower_price * (1 - pct)
             st.markdown(
@@ -668,22 +686,61 @@ def _section_stop_loss(mode: str, lower_price: float = 0.0) -> dict:
                 ),
                 unsafe_allow_html=True,
             )
-    return {"stop_loss_pct": pct}
+
+    # ── ROI-basiert ─────────────────────────────────────────────────────────
+    enabled_roi = st.checkbox(
+        "ROI-basiert", key=f"{mode}_new_sl_roi",
+        help=("Schliesst alle Positionen, wenn der Bot-ROI "
+              "(realisierte + Floating-Gewinne) den negativen Schwellenwert "
+              "erreicht."),
+    )
+    roi_pct = None
+    if enabled_roi:
+        roi_pct = st.slider("ROI-basiert (%)", 5.0, 30.0,
+                             float(st.session_state.get(f"{mode}_new_sl_roi_pct", 15.0)),
+                             1.0, key=f"{mode}_new_sl_roi_pct",
+                             label_visibility="collapsed") / 100
+        if total_investment and total_investment > 0:
+            loss_usdt = total_investment * roi_pct
+            st.markdown(
+                _caption(
+                    f"Stop-Loss bei Bot-ROI <b style='color:#E2E8F0;'>"
+                    f"≤ −{int(roi_pct*100)}%</b> "
+                    f"(Verlust von ${loss_usdt:,.2f} USDT)"
+                ),
+                unsafe_allow_html=True,
+            )
+
+    return {"stop_loss_pct": pct, "stop_loss_roi_pct": roi_pct}
 
 
-def _section_take_profit(mode: str, upper_price: float = 0.0) -> dict:
-    enabled = st.checkbox(
-        "Take-Profit aktivieren", key=f"{mode}_new_tp",
+def _section_take_profit(mode: str, upper_price: float = 0.0,
+                          total_investment: float = 0.0) -> dict:
+    """
+    Take-Profit-Sektion mit zwei einzeln aktivierbaren Triggern (ODER):
+      - Preis-basiert: Preis steigt ueber upper * (1 + tp_pct)
+      - ROI-basiert  : Bot-ROI (realisiert + floating) erreicht +roi_pct
+    """
+    st.markdown(
+        _caption(
+            "<b style='color:#CBD5E1;'>Take-Profit</b> &nbsp;"
+            "<span style='color:#64748B;'>(beide Trigger ODER-verknüpft)</span>"
+        ),
+        unsafe_allow_html=True,
+    )
+
+    # ── Preis-basiert ───────────────────────────────────────────────────────
+    enabled_price = st.checkbox(
+        "Preis-basiert", key=f"{mode}_new_tp",
         help=("Schliesst alle Positionen, wenn der Preis um den eingestellten "
               "Prozentsatz über die obere Grid-Grenze steigt."),
     )
     pct = None
-    if enabled:
-        pct = st.slider("", 1.0, 100.0,
+    if enabled_price:
+        pct = st.slider("Preis-basiert (%)", 1.0, 100.0,
                          float(st.session_state.get(f"{mode}_new_tp_pct", 20.0)),
                          1.0, key=f"{mode}_new_tp_pct",
                          label_visibility="collapsed") / 100
-        # Live-Anzeige des berechneten Preis-Schwellwerts (analog Backend-Logik).
         if upper_price and upper_price > 0:
             tp_price = upper_price * (1 + pct)
             st.markdown(
@@ -694,7 +751,32 @@ def _section_take_profit(mode: str, upper_price: float = 0.0) -> dict:
                 ),
                 unsafe_allow_html=True,
             )
-    return {"take_profit_pct": pct}
+
+    # ── ROI-basiert ─────────────────────────────────────────────────────────
+    enabled_roi = st.checkbox(
+        "ROI-basiert", key=f"{mode}_new_tp_roi",
+        help=("Schliesst alle Positionen, wenn der Bot-ROI "
+              "(realisierte + Floating-Gewinne) den positiven Schwellenwert "
+              "erreicht. Gewinnmitnahme."),
+    )
+    roi_pct = None
+    if enabled_roi:
+        roi_pct = st.slider("ROI-basiert (%)", 5.0, 100.0,
+                             float(st.session_state.get(f"{mode}_new_tp_roi_pct", 20.0)),
+                             1.0, key=f"{mode}_new_tp_roi_pct",
+                             label_visibility="collapsed") / 100
+        if total_investment and total_investment > 0:
+            gain_usdt = total_investment * roi_pct
+            st.markdown(
+                _caption(
+                    f"Take-Profit bei Bot-ROI <b style='color:#E2E8F0;'>"
+                    f"≥ +{int(roi_pct*100)}%</b> "
+                    f"(Gewinn von ${gain_usdt:,.2f} USDT)"
+                ),
+                unsafe_allow_html=True,
+            )
+
+    return {"take_profit_pct": pct, "take_profit_roi_pct": roi_pct}
 
 
 def _section_grid_trigger(mode: str, lower: float, upper: float,
@@ -928,8 +1010,12 @@ def render_bot_setup_form(
         # Header kommt aus _section_risk (Label "Risiko & Kapital")
         risk = _section_risk(mode)
         params.update({k: v for k, v in risk.items() if not k.startswith("_")})
-        params.update(_section_stop_loss(mode, params["lower_price"]))
-        params.update(_section_take_profit(mode, params["upper_price"]))
+        params.update(_section_stop_loss(
+            mode, params["lower_price"], params["total_investment"]
+        ))
+        params.update(_section_take_profit(
+            mode, params["upper_price"], params["total_investment"]
+        ))
         params.update(_section_grid_trigger(
             mode, params["lower_price"], params["upper_price"], current_price
         ))

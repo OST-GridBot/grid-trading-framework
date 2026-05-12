@@ -113,6 +113,10 @@ class GridBot:
         reserve_pct:         float = DEFAULT_RESERVE_PCT,
         stop_loss_pct:       Optional[float] = None,
         take_profit_pct:     Optional[float] = None,
+        # ROI-basierter Trigger (zusaetzlich zu preis-basiert).
+        # ODER-Verknuepft: was zuerst triggert, stoppt den Bot.
+        stop_loss_roi_pct:   Optional[float] = None,
+        take_profit_roi_pct: Optional[float] = None,
         enable_recentering_up:   bool  = False,
         enable_recentering_down: bool  = False,
         recenter_threshold:  float = 0.05,
@@ -150,8 +154,11 @@ class GridBot:
         self.grid_mode          = grid_mode
         self.fee_rate           = fee_rate
         self.reserve_pct        = reserve_pct
-        self.stop_loss_pct      = stop_loss_pct
-        self.take_profit_pct    = take_profit_pct
+        self.stop_loss_pct       = stop_loss_pct
+        self.take_profit_pct     = take_profit_pct
+        # ROI-basierte SL/TP-Schwellen (ODER-Verknuepfung zur preis-basierten)
+        self.stop_loss_roi_pct   = stop_loss_roi_pct
+        self.take_profit_roi_pct = take_profit_roi_pct
         # Preis-Schwellen einmalig beim Bot-Start berechnen (Industrie-Standard,
         # entspricht GoodCrypto/Binance-Spot-Grid-Bot-Verhalten):
         #   SL-Preis = lower_price * (1 - sl_pct)  -> unter der Lower-Grenze
@@ -513,13 +520,13 @@ class GridBot:
             if self.enable_dd_throttle:
                 self._update_dd_throttle(portfolio_value)
 
-            # Stop-Loss pruefen (Preis-basiert)
-            if self._check_stop_loss(current_price):
+            # Stop-Loss pruefen (Preis- und/oder ROI-basiert, ODER-verknuepft)
+            if self._check_stop_loss(current_price, portfolio_value):
                 self.stop_loss_triggered = True
                 return
 
-            # Take-Profit pruefen (Preis-basiert)
-            if self._check_take_profit(current_price):
+            # Take-Profit pruefen (Preis- und/oder ROI-basiert, ODER-verknuepft)
+            if self._check_take_profit(current_price, portfolio_value):
                 self.take_profit_triggered = True
                 return
 
@@ -703,45 +710,76 @@ class GridBot:
     # Stop-Loss
     # -----------------------------------------------------------------------
 
-    def _check_stop_loss(self, current_price: float) -> bool:
+    def _check_stop_loss(self, current_price: float,
+                          portfolio_value: float) -> bool:
         """
         Prueft ob der Stop-Loss ausgeloest wurde.
 
-        Preis-basierte Logik: feuert wenn current_price <= stop_loss_price.
-        stop_loss_price wird einmalig beim Bot-Start aus
-        lower_price * (1 - stop_loss_pct) berechnet (Industrie-Standard).
+        ODER-Verknuepfung zweier Trigger (Industrie-Standard-Doppelschutz):
+
+        1) Preis-basiert: feuert wenn current_price <= stop_loss_price.
+           stop_loss_price wird einmalig beim Bot-Start aus
+           lower_price * (1 - stop_loss_pct) berechnet.
+
+        2) ROI-basiert: feuert wenn der Bot-ROI (realisiert + floating)
+           den negativen Schwellenwert erreicht:
+           (portfolio_value - total_investment) / total_investment
+              <= -stop_loss_roi_pct
 
         Args:
-            current_price: Aktueller Marktpreis
+            current_price   : Aktueller Marktpreis
+            portfolio_value : Aktueller Portfolio-Wert (usdt + coin*price)
 
         Returns:
-            True wenn Stop-Loss ausgeloest
+            True wenn einer der aktiven Trigger ausgeloest hat.
         """
-        if self.stop_loss_price is None:
-            return False
-        return current_price <= self.stop_loss_price
+        # Preis-basiert
+        if (self.stop_loss_price is not None
+                and current_price <= self.stop_loss_price):
+            return True
+        # ROI-basiert
+        if self.stop_loss_roi_pct is not None and self.total_investment > 0:
+            roi = (portfolio_value - self.total_investment) / self.total_investment
+            if roi <= -self.stop_loss_roi_pct:
+                return True
+        return False
 
     # -----------------------------------------------------------------------
     # Take-Profit
     # -----------------------------------------------------------------------
 
-    def _check_take_profit(self, current_price: float) -> bool:
+    def _check_take_profit(self, current_price: float,
+                            portfolio_value: float) -> bool:
         """
         Prueft ob der Take-Profit ausgeloest wurde.
 
-        Preis-basierte Logik: feuert wenn current_price >= take_profit_price.
-        take_profit_price wird einmalig beim Bot-Start aus
-        upper_price * (1 + take_profit_pct) berechnet.
+        ODER-Verknuepfung zweier Trigger (analog Stop-Loss):
+
+        1) Preis-basiert: feuert wenn current_price >= take_profit_price.
+           take_profit_price = upper_price * (1 + take_profit_pct).
+
+        2) ROI-basiert: feuert wenn der Bot-ROI (realisiert + floating)
+           den positiven Schwellenwert erreicht:
+           (portfolio_value - total_investment) / total_investment
+              >= take_profit_roi_pct
 
         Args:
-            current_price: Aktueller Marktpreis
+            current_price   : Aktueller Marktpreis
+            portfolio_value : Aktueller Portfolio-Wert (usdt + coin*price)
 
         Returns:
-            True wenn Take-Profit ausgeloest
+            True wenn einer der aktiven Trigger ausgeloest hat.
         """
-        if self.take_profit_price is None:
-            return False
-        return current_price >= self.take_profit_price
+        # Preis-basiert
+        if (self.take_profit_price is not None
+                and current_price >= self.take_profit_price):
+            return True
+        # ROI-basiert
+        if self.take_profit_roi_pct is not None and self.total_investment > 0:
+            roi = (portfolio_value - self.total_investment) / self.total_investment
+            if roi >= self.take_profit_roi_pct:
+                return True
+        return False
 
     # -----------------------------------------------------------------------
     # Recentering
@@ -943,6 +981,8 @@ class GridBot:
             "take_profit_triggered": self.take_profit_triggered,
             "stop_loss_price":     self.stop_loss_price,
             "take_profit_price":   self.take_profit_price,
+            "stop_loss_roi_pct":   self.stop_loss_roi_pct,
+            "take_profit_roi_pct": self.take_profit_roi_pct,
             "dd_throttle_factor":  self.dd_throttle_factor,
             "enable_atr_adjust":   self.enable_atr_adjust,
             "atr_multiplier":      self.atr_multiplier,
@@ -995,6 +1035,11 @@ class GridBot:
             # rekonstruieren, falls vorhanden im State -> uebernehmen.
             self.stop_loss_price = state.get("stop_loss_price", self.stop_loss_price)
             self.take_profit_price = state.get("take_profit_price", self.take_profit_price)
+            # ROI-basierte Schwellen (Backward-Compat: alte States -> aus __init__)
+            self.stop_loss_roi_pct   = state.get("stop_loss_roi_pct",
+                                                  self.stop_loss_roi_pct)
+            self.take_profit_roi_pct = state.get("take_profit_roi_pct",
+                                                  self.take_profit_roi_pct)
             self.dd_throttle_factor   = state.get("dd_throttle_factor", 1.0)
             self.enable_atr_adjust      = state.get("enable_atr_adjust", False)
             self.atr_multiplier         = state.get("atr_multiplier", 1.0)
@@ -1094,6 +1139,8 @@ def simulate_grid_bot(
     reserve_pct:         float = DEFAULT_RESERVE_PCT,
     stop_loss_pct:       Optional[float] = None,
     take_profit_pct:     Optional[float] = None,
+    stop_loss_roi_pct:   Optional[float] = None,
+    take_profit_roi_pct: Optional[float] = None,
     enable_recentering_up:   bool  = False,
     enable_recentering_down: bool  = False,
     recenter_threshold:  float = 0.05,
@@ -1165,6 +1212,8 @@ def simulate_grid_bot(
             reserve_pct        = reserve_pct,
             stop_loss_pct      = stop_loss_pct,
             take_profit_pct    = take_profit_pct,
+            stop_loss_roi_pct   = stop_loss_roi_pct,
+            take_profit_roi_pct = take_profit_roi_pct,
             enable_recentering_up   = enable_recentering_up,
             enable_recentering_down = enable_recentering_down,
             recenter_threshold = recenter_threshold,

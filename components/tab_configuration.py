@@ -22,19 +22,30 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 
 def _label_stop_loss(cfg: dict) -> str:
-    """Stop-Loss-Status als lesbares Label."""
+    """
+    Stop-Loss-Status als lesbares Label. Beruecksichtigt beide Trigger
+    (preis-basiert + ROI-basiert), kommagetrennt.
+    """
+    parts = []
     pct = cfg.get("stop_loss_pct")
     if pct:
-        return f"Aktiv ({pct * 100:.0f}%)"
-    return "Inaktiv"
+        parts.append(f"Preis {pct * 100:.0f}%")
+    roi = cfg.get("stop_loss_roi_pct")
+    if roi:
+        parts.append(f"ROI {roi * 100:.0f}%")
+    return "Aktiv (" + " / ".join(parts) + ")" if parts else "Inaktiv"
 
 
 def _label_take_profit(cfg: dict) -> str:
-    """Take-Profit-Status als lesbares Label."""
+    """Take-Profit-Status (Preis + ROI)."""
+    parts = []
     pct = cfg.get("take_profit_pct")
     if pct:
-        return f"Aktiv ({pct * 100:.0f}%)"
-    return "Inaktiv"
+        parts.append(f"Preis {pct * 100:.0f}%")
+    roi = cfg.get("take_profit_roi_pct")
+    if roi:
+        parts.append(f"ROI {roi * 100:.0f}%")
+    return "Aktiv (" + " / ".join(parts) + ")" if parts else "Inaktiv"
 
 
 def _label_dd_throttle(cfg: dict) -> str:

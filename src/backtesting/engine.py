@@ -52,6 +52,8 @@ def run_backtest(
     end_date:   Optional[date] = None,
     stop_loss_pct:      Optional[float] = None,
     take_profit_pct:    Optional[float] = None,
+    stop_loss_roi_pct:  Optional[float] = None,
+    take_profit_roi_pct: Optional[float] = None,
     enable_recentering_up:   bool    = False,
     enable_recentering_down: bool    = False,
     recenter_threshold: float   = 0.05,
@@ -128,6 +130,8 @@ def run_backtest(
         reserve_pct        = reserve_pct,
         stop_loss_pct      = stop_loss_pct,
         take_profit_pct    = take_profit_pct,
+        stop_loss_roi_pct   = stop_loss_roi_pct,
+        take_profit_roi_pct = take_profit_roi_pct,
         enable_recentering_up   = enable_recentering_up,
         enable_recentering_down = enable_recentering_down,
         recenter_threshold = recenter_threshold,
@@ -210,8 +214,8 @@ def run_backtest(
         "mechanism_active":    {
             "recentering": enable_recentering_up or enable_recentering_down,
             "trailing":    enable_trailing_up or enable_trailing_down,
-            "stop_loss":   stop_loss_pct is not None,
-            "take_profit": take_profit_pct is not None,
+            "stop_loss":   stop_loss_pct is not None or stop_loss_roi_pct is not None,
+            "take_profit": take_profit_pct is not None or take_profit_roi_pct is not None,
         },
         # Slippage existiert in der Backtest-Simulation nicht (Trade laeuft am
         # exakten Grid-Preis). Sobald PaperBroker/LiveBroker aktiv ist, kommt
