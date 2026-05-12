@@ -281,7 +281,7 @@ def plot_grid_chart_v2(
     border-bottom:1px solid rgba(255,255,255,0.07);
     display:flex; align-items:center; padding:0 12px; gap:16px; flex-shrink:0;
   }}
-  #hdr-info {{ display:flex; align-items:center; gap:10px; flex:1; min-width:0; }}
+  #hdr-info {{ display:flex; align-items:center; gap:10px; min-width:0; flex-shrink:0; }}
   #hdr-coin {{ font-size:15px; font-weight:600; color:#E2E8F0; letter-spacing:0.01em; }}
   #hdr-interval {{
     font-size:11px; color:#60A5FA;
@@ -289,6 +289,18 @@ def plot_grid_chart_v2(
     border-radius:4px; padding:2px 7px; letter-spacing:0.03em;
   }}
   #hdr-dates {{ font-size:11px; color:#475569; letter-spacing:0.01em; }}
+
+  /* OHLC + Volumen der Hover-Kerze (mittig) */
+  #hdr-ohlc {{
+    display:flex; align-items:center; gap:12px;
+    flex:1; justify-content:center; min-width:0;
+    font-size:11px; letter-spacing:0.02em;
+  }}
+  .ohlc-pair {{ display:flex; align-items:center; gap:4px; }}
+  .ohlc-lbl  {{ color:#475569; font-weight:600; }}
+  .ohlc-val  {{ color:#CBD5E1; font-variant-numeric:tabular-nums; }}
+  .ohlc-up   {{ color:#34D399; }}
+  .ohlc-down {{ color:#F87171; }}
 
   /* Toolbar */
   #toolbar {{ display:flex; gap:4px; align-items:center; flex-shrink:0; }}
@@ -312,13 +324,6 @@ def plot_grid_chart_v2(
     position:absolute; top:0; left:0;
     width:100%; height:100%;
     pointer-events:none; overflow:hidden; z-index:10;
-  }}
-
-  /* Vol label */
-  #vol-label {{
-    position:absolute; bottom:28px; right:80px; z-index:90;
-    font-size:11px; color:rgba(148,163,184,0.6);
-    pointer-events:none; display:none; letter-spacing:0.02em;
   }}
 
   /* Tooltip */
@@ -347,6 +352,15 @@ def plot_grid_chart_v2(
       <span id="hdr-interval"></span>
       <span id="hdr-dates"></span>
     </div>
+    <div class="tb-sep"></div>
+    <div id="hdr-ohlc">
+      <span class="ohlc-pair"><span class="ohlc-lbl">O</span><span class="ohlc-val" id="hdr-o">—</span></span>
+      <span class="ohlc-pair"><span class="ohlc-lbl">H</span><span class="ohlc-val" id="hdr-h">—</span></span>
+      <span class="ohlc-pair"><span class="ohlc-lbl">L</span><span class="ohlc-val" id="hdr-l">—</span></span>
+      <span class="ohlc-pair"><span class="ohlc-lbl">C</span><span class="ohlc-val" id="hdr-c">—</span></span>
+      <span class="ohlc-pair"><span class="ohlc-lbl">V</span><span class="ohlc-val" id="hdr-v">—</span></span>
+    </div>
+    <div class="tb-sep"></div>
     <div id="toolbar">
       <button class="tb-btn" onclick="fitAll()">Fit</button>
       <button class="tb-btn" onclick="zoomIn()">+</button>
@@ -357,7 +371,6 @@ def plot_grid_chart_v2(
   <div id="chart-wrap">
     <div id="chart"></div>
     <div id="marker-overlay"></div>
-    <div id="vol-label"></div>
   </div>
 </div>
 
@@ -733,8 +746,13 @@ def plot_grid_chart_v2(
   }}
 
   // ── Tooltip ───────────────────────────────────────────────
-  const tooltip  = document.getElementById('tooltip');
-  const volLabel = document.getElementById('vol-label');
+  const tooltip = document.getElementById('tooltip');
+  // Header-OHLC-Spans (mittlere Sektion, aktualisiert bei Crosshair-Move)
+  const hdrO = document.getElementById('hdr-o');
+  const hdrH = document.getElementById('hdr-h');
+  const hdrL = document.getElementById('hdr-l');
+  const hdrC = document.getElementById('hdr-c');
+  const hdrV = document.getElementById('hdr-v');
   let mouseX=0, mouseY=0;
   document.addEventListener('mousemove', e => {{ mouseX=e.clientX; mouseY=e.clientY; }});
 
@@ -743,18 +761,42 @@ def plot_grid_chart_v2(
   const fmtVol = v => typeof v==='number'
     ? v.toLocaleString('de-CH', {{maximumFractionDigits:2}}) : '—';
 
+  // Reset Header-OHLC auf "—" wenn kein Crosshair-Wert verfuegbar
+  function _resetHdrOHLC() {{
+    hdrO.textContent = '—';
+    hdrH.textContent = '—';
+    hdrL.textContent = '—';
+    hdrC.textContent = '—'; hdrC.className = 'ohlc-val';
+    hdrV.textContent = '—';
+  }}
+
   chart.subscribeCrosshairMove(param => {{
     // Redraw markers so they stay in sync with crosshair movement
     drawMarkers();
 
     if (!param || !param.time || !param.seriesData) {{
-      tooltip.style.display='none'; volLabel.style.display='none'; return;
+      tooltip.style.display='none';
+      _resetHdrOHLC();
+      return;
     }}
     const data = param.seriesData.get(candleSeries);
-    if (!data) {{ tooltip.style.display='none'; return; }}
+    if (!data) {{ tooltip.style.display='none'; _resetHdrOHLC(); return; }}
 
     const isUp = data.close >= data.open;
     const ms   = markerMap[param.time];
+
+    // Header-OHLC + Volumen aktualisieren
+    hdrO.textContent = fmt(data.open);
+    hdrH.textContent = fmt(data.high);
+    hdrL.textContent = fmt(data.low);
+    hdrC.textContent = fmt(data.close);
+    hdrC.className   = 'ohlc-val ' + (isUp ? 'ohlc-up' : 'ohlc-down');
+    if (hasVol) {{
+      const vol = volMap[param.time];
+      hdrV.textContent = (vol !== undefined) ? fmtVol(vol) : '—';
+    }} else {{
+      hdrV.textContent = '—';
+    }}
 
     if (ms && ms.length > 0) {{
       document.getElementById('tt-normal').style.display='none';
@@ -792,13 +834,6 @@ def plot_grid_chart_v2(
       const ttClose = document.getElementById('tt-close');
       ttClose.textContent = fmt(data.close);
       ttClose.className   = 'tt-close ' + (isUp ? 'tt-up' : 'tt-down');
-    }}
-
-    if (hasVol && volVisible) {{
-      const vol = volMap[param.time];
-      if (vol !== undefined) {{
-        volLabel.textContent='Vol  ' + fmtVol(vol); volLabel.style.display='block';
-      }} else {{ volLabel.style.display='none'; }}
     }}
 
     tooltip.style.display='block';
