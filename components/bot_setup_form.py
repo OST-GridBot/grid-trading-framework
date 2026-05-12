@@ -557,26 +557,58 @@ def _section_risk(mode: str) -> dict:
             "_fee_pct": fee_pct}
 
 
-def _section_stop_loss(mode: str) -> dict:
+def _section_stop_loss(mode: str, lower_price: float = 0.0) -> dict:
     st.markdown(_divider(), unsafe_allow_html=True)
-    enabled = st.checkbox("Stop-Loss aktivieren", key=f"{mode}_new_sl")
+    enabled = st.checkbox(
+        "Stop-Loss aktivieren", key=f"{mode}_new_sl",
+        help=("Schliesst alle Positionen, wenn der Preis um den eingestellten "
+              "Prozentsatz UNTER die untere Grid-Grenze faellt "
+              "(Industrie-Standard fuer Spot-Grid-Bots, fix ab Bot-Start)."),
+    )
     pct = None
     if enabled:
         pct = st.slider("", 5.0, 50.0,
                          float(st.session_state.get(f"{mode}_new_sl_pct", 20.0)),
                          1.0, key=f"{mode}_new_sl_pct",
                          label_visibility="collapsed") / 100
+        # Live-Anzeige des berechneten Preis-Schwellwerts (analog Backend-Logik).
+        if lower_price and lower_price > 0:
+            sl_price = lower_price * (1 - pct)
+            st.markdown(
+                _caption(
+                    f"🔻 Stop-Loss bei <b style='color:#E2E8F0;'>"
+                    f"{sl_price:,.2f} USDT</b> "
+                    f"(Lower {lower_price:,.2f} × −{int(pct*100)}%)"
+                ),
+                unsafe_allow_html=True,
+            )
     return {"stop_loss_pct": pct}
 
 
-def _section_take_profit(mode: str) -> dict:
-    enabled = st.checkbox("Take-Profit aktivieren", key=f"{mode}_new_tp")
+def _section_take_profit(mode: str, upper_price: float = 0.0) -> dict:
+    enabled = st.checkbox(
+        "Take-Profit aktivieren", key=f"{mode}_new_tp",
+        help=("Schliesst alle Positionen, wenn der Preis um den eingestellten "
+              "Prozentsatz UEBER die obere Grid-Grenze steigt "
+              "(Industrie-Standard fuer Spot-Grid-Bots, fix ab Bot-Start)."),
+    )
     pct = None
     if enabled:
         pct = st.slider("", 5.0, 100.0,
                          float(st.session_state.get(f"{mode}_new_tp_pct", 20.0)),
                          1.0, key=f"{mode}_new_tp_pct",
                          label_visibility="collapsed") / 100
+        # Live-Anzeige des berechneten Preis-Schwellwerts (analog Backend-Logik).
+        if upper_price and upper_price > 0:
+            tp_price = upper_price * (1 + pct)
+            st.markdown(
+                _caption(
+                    f"🔺 Take-Profit bei <b style='color:#E2E8F0;'>"
+                    f"{tp_price:,.2f} USDT</b> "
+                    f"(Upper {upper_price:,.2f} × +{int(pct*100)}%)"
+                ),
+                unsafe_allow_html=True,
+            )
     return {"take_profit_pct": pct}
 
 
@@ -742,8 +774,8 @@ def render_bot_setup_form(
         # Header kommt aus _section_risk (Label "Risiko & Kapital")
         risk = _section_risk(mode)
         params.update({k: v for k, v in risk.items() if not k.startswith("_")})
-        params.update(_section_stop_loss(mode))
-        params.update(_section_take_profit(mode))
+        params.update(_section_stop_loss(mode, params["lower_price"]))
+        params.update(_section_take_profit(mode, params["upper_price"]))
         params.update(_section_dd_throttle(mode))
         params.update(_section_variable_orders(mode))
 
