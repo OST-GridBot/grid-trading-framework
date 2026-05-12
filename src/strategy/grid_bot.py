@@ -149,6 +149,17 @@ class GridBot:
         self.reserve_pct        = reserve_pct
         self.stop_loss_pct      = stop_loss_pct
         self.take_profit_pct    = take_profit_pct
+        # Preis-Schwellen einmalig beim Bot-Start berechnen (Industrie-Standard,
+        # entspricht GoodCrypto/Binance-Spot-Grid-Bot-Verhalten):
+        #   SL-Preis = lower_price * (1 - sl_pct)  -> unter der Lower-Grenze
+        #   TP-Preis = upper_price * (1 + tp_pct)  -> ueber der Upper-Grenze
+        # Bewusst FIX ab Bot-Start: wandert bei Trailing/Recentering NICHT mit.
+        self.stop_loss_price = (
+            lower_price * (1 - stop_loss_pct) if stop_loss_pct is not None else None
+        )
+        self.take_profit_price = (
+            upper_price * (1 + take_profit_pct) if take_profit_pct is not None else None
+        )
         self.enable_recentering_up   = enable_recentering_up
         self.enable_recentering_down = enable_recentering_down
         self.recenter_threshold = recenter_threshold
@@ -354,13 +365,13 @@ class GridBot:
             if self.enable_dd_throttle:
                 self._update_dd_throttle(portfolio_value)
 
-            # Stop-Loss pruefen
-            if self._check_stop_loss(portfolio_value):
+            # Stop-Loss pruefen (Preis-basiert)
+            if self._check_stop_loss(current_price):
                 self.stop_loss_triggered = True
                 return
 
-            # Take-Profit pruefen
-            if self._check_take_profit(portfolio_value):
+            # Take-Profit pruefen (Preis-basiert)
+            if self._check_take_profit(current_price):
                 self.take_profit_triggered = True
                 return
 
@@ -529,41 +540,45 @@ class GridBot:
     # Stop-Loss
     # -----------------------------------------------------------------------
 
-    def _check_stop_loss(self, portfolio_value: float) -> bool:
+    def _check_stop_loss(self, current_price: float) -> bool:
         """
         Prueft ob der Stop-Loss ausgeloest wurde.
 
+        Preis-basierte Logik: feuert wenn current_price <= stop_loss_price.
+        stop_loss_price wird einmalig beim Bot-Start aus
+        lower_price * (1 - stop_loss_pct) berechnet (Industrie-Standard).
+
         Args:
-            portfolio_value: Aktueller Portfolio-Wert in USDT
+            current_price: Aktueller Marktpreis
 
         Returns:
             True wenn Stop-Loss ausgeloest
         """
-        if self.stop_loss_pct is None:
+        if self.stop_loss_price is None:
             return False
-
-        loss_pct = (self.total_investment - portfolio_value) / self.total_investment
-        return loss_pct >= self.stop_loss_pct
+        return current_price <= self.stop_loss_price
 
     # -----------------------------------------------------------------------
     # Take-Profit
     # -----------------------------------------------------------------------
 
-    def _check_take_profit(self, portfolio_value: float) -> bool:
+    def _check_take_profit(self, current_price: float) -> bool:
         """
         Prueft ob der Take-Profit ausgeloest wurde.
 
+        Preis-basierte Logik: feuert wenn current_price >= take_profit_price.
+        take_profit_price wird einmalig beim Bot-Start aus
+        upper_price * (1 + take_profit_pct) berechnet.
+
         Args:
-            portfolio_value: Aktueller Portfolio-Wert in USDT
+            current_price: Aktueller Marktpreis
 
         Returns:
             True wenn Take-Profit ausgeloest
         """
-        if self.take_profit_pct is None:
+        if self.take_profit_price is None:
             return False
-
-        profit_pct = (portfolio_value - self.total_investment) / self.total_investment
-        return profit_pct >= self.take_profit_pct
+        return current_price >= self.take_profit_price
 
     # -----------------------------------------------------------------------
     # Recentering
@@ -749,6 +764,8 @@ class GridBot:
             "recentering_count":   self.recentering_count,
             "stop_loss_triggered": self.stop_loss_triggered,
             "take_profit_triggered": self.take_profit_triggered,
+            "stop_loss_price":     self.stop_loss_price,
+            "take_profit_price":   self.take_profit_price,
             "dd_throttle_factor":  self.dd_throttle_factor,
             "enable_atr_adjust":   self.enable_atr_adjust,
             "atr_multiplier":      self.atr_multiplier,
@@ -786,6 +803,11 @@ class GridBot:
             self.recentering_count = state.get("recentering_count", 0)
             self.stop_loss_triggered = state.get("stop_loss_triggered", False)
             self.take_profit_triggered = state.get("take_profit_triggered", False)
+            # Backward-Compat: alte Bot-States haben kein stop_loss_price-Feld.
+            # Aus pct + lower_price (das gerade frisch aus __init__ kam)
+            # rekonstruieren, falls vorhanden im State -> uebernehmen.
+            self.stop_loss_price = state.get("stop_loss_price", self.stop_loss_price)
+            self.take_profit_price = state.get("take_profit_price", self.take_profit_price)
             self.dd_throttle_factor   = state.get("dd_throttle_factor", 1.0)
             self.enable_atr_adjust      = state.get("enable_atr_adjust", False)
             self.atr_multiplier         = state.get("atr_multiplier", 1.0)
