@@ -434,6 +434,23 @@ def plot_grid_chart_v2(
     trailUpperSeries.setData(trailUpperData);
   }}
 
+  // ── Magnet-Crosshair-Marker ───────────────────────────────
+  // CandlestickSeries zeigt keinen Crosshair-Marker. Damit der User im
+  // Magnet-Modus visuelles Feedback bekommt, wo der Crosshair einrastet,
+  // legen wir eine unsichtbare LineSeries (transparent) ueber die Closes
+  // und aktivieren nur den Crosshair-Marker.
+  if (magnetCrosshair) {{
+    const magnetSeries = chart.addLineSeries({{
+      color:'rgba(0,0,0,0)', lineWidth:1,
+      priceLineVisible:false, lastValueVisible:false,
+      crosshairMarkerVisible:true,
+      crosshairMarkerRadius:5,
+      crosshairMarkerBorderColor:'#60A5FA',
+      crosshairMarkerBackgroundColor:'#60A5FA',
+    }});
+    magnetSeries.setData(candles.map(c => ({{ time:c.time, value:c.close }})));
+  }}
+
   chart.timeScale().fitContent();
 
   // ── Volume ────────────────────────────────────────────────

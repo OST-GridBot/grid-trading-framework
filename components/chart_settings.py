@@ -42,7 +42,11 @@ def render_chart_settings(key_prefix: str) -> dict:
         Settings-Dict mit allen Toggle-Werten.
     """
     settings = {}
-    with st.expander("⚙️ Chart-Einstellungen", expanded=False):
+    with st.expander("Chart-Einstellungen", expanded=False):
+        # Layout-Konvention: Toggles werden zeilenweise aufgefuellt.
+        # Aktuell 5 links / 4 rechts. Neue Toggles kommen an die Spalte mit
+        # weniger Eintraegen (also der naechste Toggle nach rechts, dann links
+        # usw.), damit beide Spalten ausgeglichen bleiben.
         col1, col2 = st.columns(2)
         with col1:
             settings["show_grid_lines"] = st.checkbox(
@@ -57,7 +61,6 @@ def render_chart_settings(key_prefix: str) -> dict:
                 "Buy/Sell-Marker", value=_DEFAULTS["show_order_markers"],
                 key=f"chs_{key_prefix}_order_markers"
             )
-        with col2:
             settings["show_bot_start"] = st.checkbox(
                 "Bot-Start-Markierung", value=_DEFAULTS["show_bot_start"],
                 key=f"chs_{key_prefix}_bot_start"
@@ -67,6 +70,7 @@ def render_chart_settings(key_prefix: str) -> dict:
                 value=_DEFAULTS["magnet_crosshair"],
                 key=f"chs_{key_prefix}_magnet"
             )
+        with col2:
             settings["show_volume"] = st.checkbox(
                 "Volumen", value=_DEFAULTS["show_volume"],
                 key=f"chs_{key_prefix}_volume"
