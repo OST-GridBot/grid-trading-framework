@@ -183,6 +183,15 @@ def _fmt_or_dash(value, fmt: str = "{}") -> str:
         return "–"
 
 
+# Linien-Hierarchie im "All"-Tab (von stark nach schwach):
+#   Theme-Header  -> 2px solid rgba(255,255,255,0.22)   (deutlich)
+#   Section-Header-> 1px solid rgba(255,255,255,0.14)   (mittel)
+#   Zeilen-Trenner-> 1px solid rgba(255,255,255,0.07)   (subtil)
+_LINE_THEME   = "2px solid rgba(255,255,255,0.22)"
+_LINE_SECTION = "1px solid rgba(255,255,255,0.14)"
+_LINE_ROW     = "1px solid rgba(255,255,255,0.07)"
+
+
 def _render_section_table(title: str, rows: list) -> None:
     """
     Rendert eine kompakte Section mit Sub-Header + 2-spaltiger Tabelle.
@@ -194,13 +203,16 @@ def _render_section_table(title: str, rows: list) -> None:
                wird in derselben Wert-Spalte in Klammern + grau angehaengt.
                Beispiel-Output: "10% (100 USDT)"
     """
+    # Section-Header mit eigener Unterstreichung (mittlere Linien-Stufe).
     html = (
         f"<div style='font-size:0.85rem; font-weight:600; color:#94A3B8; "
         f"text-transform:uppercase; letter-spacing:0.05em; "
-        f"margin: 10px 0 4px 0;'>{title}</div>"
+        f"margin: 10px 0 0 0; padding-bottom:3px; "
+        f"border-bottom:{_LINE_SECTION};'>{title}</div>"
     )
     html += (
-        "<table style='width:100%; border-collapse:collapse; font-size:0.78rem;'>"
+        "<table style='width:100%; border-collapse:collapse; "
+        "font-size:0.78rem; margin-top:2px;'>"
     )
     for label, value, secondary in rows:
         val_str = value if value is not None else "–"
@@ -213,11 +225,10 @@ def _render_section_table(title: str, rows: list) -> None:
             value_cell = f"<span style='color:#E2E8F0; font-weight:500;'>{val_str}</span>"
         html += (
             "<tr>"
-            f"<td style='padding:3px 8px; color:#94A3B8; "
-            f"border-bottom:1px solid rgba(255,255,255,0.04); width:55%;'>{label}</td>"
-            f"<td style='text-align:right; padding:3px 8px; "
-            f"border-bottom:1px solid rgba(255,255,255,0.04); width:45%;'>"
-            f"{value_cell}</td>"
+            f"<td style='padding:4px 8px; color:#94A3B8; "
+            f"border-bottom:{_LINE_ROW}; width:55%;'>{label}</td>"
+            f"<td style='text-align:right; padding:4px 8px; "
+            f"border-bottom:{_LINE_ROW}; width:45%;'>{value_cell}</td>"
             "</tr>"
         )
     html += "</table>"
@@ -225,11 +236,14 @@ def _render_section_table(title: str, rows: list) -> None:
 
 
 def _render_theme_header(title: str) -> None:
-    """Render-Header fuer ein Tab-Thema (eine Stufe groesser als Section-Header)."""
+    """
+    Render-Header fuer ein Tab-Thema (Top-Level-Stufe der Linien-Hierarchie).
+    Dickste Unterstreichung in der "All"-Tab-Ansicht.
+    """
     st.markdown(
         f"<div style='font-size:1.0rem; font-weight:700; color:#CBD5E1; "
         f"letter-spacing:0.03em; margin: 18px 0 4px 0; "
-        f"border-bottom:1px solid rgba(255,255,255,0.10); padding-bottom:4px;'>"
+        f"border-bottom:{_LINE_THEME}; padding-bottom:6px;'>"
         f"{title}</div>",
         unsafe_allow_html=True,
     )
