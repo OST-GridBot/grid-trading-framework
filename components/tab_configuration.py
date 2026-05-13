@@ -162,15 +162,6 @@ def render_tab_configuration(view: dict) -> None:
             + ("Aus (sofortiger Start)" if not trig else f"${float(trig):,.2f}")
         )
 
-    # ── Initial-Setup (Binance-Standard) ────────────────────────────────────
-    ib_coin = float(view.get("initial_buy_coin_amount", 0.0) or 0.0)
-    if ib_coin > 0:
-        ib_fee   = float(view.get("initial_buy_fee", 0.0) or 0.0)
-        ib_value = float(view.get("initial_buy_value_usdt", 0.0) or 0.0)
-        coin_sym = view.get("coin", "")
-        st.markdown("---")
-        st.markdown(
-            f"**Initial-Setup (Binance-Standard):** "
-            f"{ib_coin:,.6f} {coin_sym} zum Bot-Start gekauft "
-            f"für ${ib_value:,.2f} USDT (Fee ${ib_fee:,.4f})."
-        )
+    # (Auftrag Y.1) Initial-Setup-Text entfernt. Die Aggregat-Daten
+    # bleiben im bot_view (initial_buy_coin_amount etc.) — werden im
+    # "All"-Tab unter "Kapital & Aktivitaet" weiterhin angezeigt.
