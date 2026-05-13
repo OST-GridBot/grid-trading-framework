@@ -168,38 +168,38 @@ def _section_basic(mode: str) -> dict:
 
 def _section_capital(mode: str, current_price: Optional[float] = None) -> dict:
     """
-    Kapital-Sektion (frueher "Startkapital" + "Risiko & Kapital" zusammen):
-      - Startkapital
+    Kapital-&-Start-Sektion:
+      - Startkapital (Default & Step abhaengig vom Mode)
       - Initial-Buy-Toggle (Default an = Binance-Standard)
       - Grid Trigger (eingebettet, ohne eigenen Divider)
+      - --- visueller Trennstrich ---
       - Gebuehrenrate
       - Kapitalreserve
     """
     st.markdown(_divider(), unsafe_allow_html=True)
-    st.markdown(_label("Kapital"), unsafe_allow_html=True)
+    st.markdown(_label("Kapital & Start"), unsafe_allow_html=True)
 
-    # ── Startkapital ────────────────────────────────────────────────────────
+    # ── Startkapital — Defaults mode-abhaengig ──────────────────────────────
+    # BT  : 10'000 / step 500 (typische Backtest-Kapitalbasis)
+    # PT/LT: 150  / step 10  (kleine Live-Beta-Werte)
+    default_val  = 10_000.0 if mode == "backtest" else 150.0
+    default_step =    500.0 if mode == "backtest" else  10.0
     st.markdown(_caption("Startkapital (USDT)"), unsafe_allow_html=True)
-    capital = st.number_input("", min_value=100.0, max_value=1_000_000.0,
-                               value=10_000.0, step=500.0,
+    capital = st.number_input("", min_value=10.0, max_value=1_000_000.0,
+                               value=default_val, step=default_step,
                                key=f"{mode}_new_capital",
                                label_visibility="collapsed")
 
-    # ── Initial-Buy-Toggle ──────────────────────────────────────────────────
-    # Default True = Binance-Standard (Bot baut Coin-Inventar zum Start auf).
-    # False = Bot startet rein mit USDT, ohne sofortige Marktkaeufe.
+    # ── Initial-Buy-Toggle (ohne help-Tooltip nach S.2) ─────────────────────
     enable_initial_buy = st.checkbox(
         "Initial-Buy", value=True, key=f"{mode}_new_initial_buy",
-        help=("Beim Bot-Start werden sofort Coins auf den Sell-Linien über "
-              "dem Startpreis gekauft (Binance-Standard). Deaktivieren = "
-              "Bot startet rein mit USDT und kauft erst, wenn der Preis "
-              "eine Buy-Linie unten durchschreitet."),
     )
 
     # ── Grid Trigger (eingebettet) ──────────────────────────────────────────
     trigger = _section_grid_trigger_inline(mode, current_price)
 
-    # ── Gebuehrenrate + Kapitalreserve ──────────────────────────────────────
+    # ── Visueller Trennstrich + zweiter Abschnitt: Gebuehren + Reserve ──────
+    st.markdown(_divider(), unsafe_allow_html=True)
     st.markdown(_caption("Gebührenrate (%)"), unsafe_allow_html=True)
     fee_pct = st.number_input("", 0.0, 1.0, DEFAULT_FEE_RATE * 100, 0.01,
                                format="%.3f", key=f"{mode}_new_fee",
@@ -416,14 +416,13 @@ def _section_smart_setup(
         st.session_state[f"{mode}_new_lower"] = float(_res.lower_price)
         st.session_state[f"{mode}_new_upper"] = float(_res.upper_price)
         st.session_state[f"{mode}_new_grids"] = int(_res.num_grids)
-        if _res.grid_mode in ("arithmetic", "geometric"):
-            st.session_state[f"{mode}_gm_active"] = "Symmetrisch"
-            st.session_state[f"{mode}_gm_sym"]    = ("Arithmetisch" if _res.grid_mode == "arithmetic"
-                                                     else "Geometrisch")
-        else:
-            st.session_state[f"{mode}_gm_active"] = "Asymmetrisch"
-            st.session_state[f"{mode}_gm_asym"]   = ("Bottom heavy" if _res.grid_mode == "asymmetric_bottom"
-                                                     else "Top heavy")
+        # S.8: Smart-Setup-Resync auf neuen einzelnen Grid-Modus-Key.
+        st.session_state[f"{mode}_gm"] = {
+            "arithmetic":        "Arithmetisch",
+            "geometric":         "Geometrisch",
+            "asymmetric_bottom": "Bottom heavy",
+            "asymmetric_top":    "Top heavy",
+        }.get(_res.grid_mode, "Arithmetisch")
         # Mechanismen aus dem Smart-Setup uebernehmen
         st.session_state[f"{mode}_new_recenter"]      = bool(getattr(_res, "enable_recentering_up", False)
                                                               or getattr(_res, "enable_recentering_down", False))
@@ -445,9 +444,12 @@ def _section_grid_bounds(mode: str, current_price: Optional[float]) -> dict:
     st.markdown(_divider(), unsafe_allow_html=True)
     st.markdown(_label("Grid-Grenzen"), unsafe_allow_html=True)
     if cp > 0:
+        # Bei BT ist "Referenzpreis" der Preis am Von-Datum (nicht der aktuelle
+        # Live-Preis), siehe S.7.
+        _ref_lbl = "Referenzpreis" if mode == "backtest" else "Aktueller Preis"
         st.markdown(
             f"<div style='font-size:0.75rem; color:#94A3B8; margin-bottom:4px;'>"
-            f"Aktueller Preis: <b style='color:#E2E8F0;'>{cp:,.2f} USDT</b></div>",
+            f"{_ref_lbl}: <b style='color:#E2E8F0;'>{cp:,.2f} USDT</b></div>",
             unsafe_allow_html=True
         )
 
@@ -507,10 +509,11 @@ def _section_grid_count_and_mode(
     # _section_risk in der neuen Reihenfolge erst NACH dieser Section laeuft
     fee_rate_pct = st.session_state.get(f"{mode}_new_fee", DEFAULT_FEE_RATE * 100)
     fee = fee_rate_pct / 100
-    _gm_active = st.session_state.get(f"{mode}_gm_active", "Symmetrisch")
-    _gm_sym    = st.session_state.get(f"{mode}_gm_sym", "Arithmetisch")
-    preview_mode = ("arithmetic" if (_gm_active == "Symmetrisch" and _gm_sym == "Arithmetisch")
-                    else "geometric")
+    # S.8: nur noch einzelner gm-Key. Profit/Grid-Vorschau bleibt
+    # symmetrisch (arithmetic/geometric); asymmetrische Modi werden hier
+    # als "arithmetic"-Naeherung angezeigt (gleicher Verlauf wie heute).
+    _gm = st.session_state.get(f"{mode}_gm", "Arithmetisch")
+    preview_mode = "geometric" if _gm == "Geometrisch" else "arithmetic"
     try:
         if preview_mode == "arithmetic":
             step  = (upper_price - lower_price) / num_grids
@@ -553,25 +556,26 @@ def _section_grid_count_and_mode(
     except Exception:
         pass
 
-    # Grid-Modus
+    # Grid-Modus (S.8: ein Radio mit 4 Optionen + Captions-Tooltips)
     st.markdown(_divider(), unsafe_allow_html=True)
     st.markdown(_label("Grid-Modus"), unsafe_allow_html=True)
-    gm_active = st.radio("", ["Symmetrisch", "Asymmetrisch"], horizontal=True,
-                          key=f"{mode}_gm_active", label_visibility="collapsed")
-    st.markdown(_caption("Symmetrisch"), unsafe_allow_html=True)
-    gm_sym = st.radio("", ["Arithmetisch", "Geometrisch"], horizontal=True,
-                       key=f"{mode}_gm_sym",
-                       disabled=(gm_active != "Symmetrisch"),
-                       label_visibility="collapsed")
-    st.markdown(_caption("Asymmetrisch"), unsafe_allow_html=True)
-    gm_asym = st.radio("", ["Bottom heavy", "Top heavy"], horizontal=True,
-                        key=f"{mode}_gm_asym",
-                        disabled=(gm_active != "Asymmetrisch"),
-                        label_visibility="collapsed")
-    if gm_active == "Symmetrisch":
-        grid_mode = "arithmetic" if gm_sym == "Arithmetisch" else "geometric"
-    else:
-        grid_mode = "asymmetric_bottom" if gm_asym == "Bottom heavy" else "asymmetric_top"
+    _gm_options  = ["Arithmetisch", "Geometrisch", "Bottom heavy", "Top heavy"]
+    _gm_captions = [
+        "Gleichmässige Preis-Abstände",
+        "Abstände proportional zum Preis (gleiche %-Sprünge)",
+        "Dichter in der unteren Range-Hälfte",
+        "Dichter in der oberen Range-Hälfte",
+    ]
+    gm_choice = st.radio(
+        "Grid-Modus", _gm_options, captions=_gm_captions,
+        key=f"{mode}_gm", label_visibility="collapsed",
+    )
+    grid_mode = {
+        "Arithmetisch": "arithmetic",
+        "Geometrisch":  "geometric",
+        "Bottom heavy": "asymmetric_bottom",
+        "Top heavy":    "asymmetric_top",
+    }[gm_choice]
 
     return {"num_grids": num_grids, "grid_mode": grid_mode}
 
@@ -882,40 +886,74 @@ def _section_sl_tp(mode: str, lower_price: float = 0.0,
 def _section_grid_trigger_inline(mode: str,
                                   current_price: Optional[float]) -> Optional[float]:
     """
-    Grid Trigger als Sub-Element der Kapital-Sektion. Kein eigener Divider,
-    kein eigenes Section-Label — wird unter Startkapital/Initial-Buy
+    Grid Trigger als Sub-Element der Kapital-&-Start-Sektion. Kein eigener
+    Divider, kein eigenes Section-Label — wird unter Startkapital/Initial-Buy
     eingebettet. Gibt den Trigger-Preis (oder None) zurueck.
+
+    Reihenfolge (Sidebar-Konvention nach S.5): Bezeichnung -> Caption ->
+    Eingabefeld. Kein Text unter dem Eingabefeld. Die +/--Buttons springen
+    auf die naechste bzw. vorherige Grid-Linie (S.6).
     """
-    enabled = st.checkbox(
-        "Grid Trigger", key=f"{mode}_new_trigger",
-        help=("Bot wartet auf Preis-Berührung dieses Werts. Erst dann "
-              "werden Grid und Initial-Orders aufgebaut. Aus = Bot startet "
-              "sofort zum aktuellen Marktpreis."),
-    )
+    enabled = st.checkbox("Grid Trigger", key=f"{mode}_new_trigger")
     if not enabled:
         return None
-    default_trigger = float(current_price) if current_price else 0.0
-    prior = float(st.session_state.get(f"{mode}_new_trigger_price",
-                                        default_trigger))
-    trigger_price = st.number_input(
-        "Trigger-Preis (USDT)",
-        min_value=0.0, value=prior, step=1.0,
-        key=f"{mode}_new_trigger_price", label_visibility="collapsed",
-    )
-    if trigger_price <= 0:
-        return None
+
+    # Caption mit Referenz-Preis (mode-abhaengig nach S.7)
+    ref_label = "Referenzpreis" if mode == "backtest" else "Aktueller Preis"
     if current_price and current_price > 0:
-        direction = ("Anstieg" if current_price < trigger_price
-                     else "Rückgang" if current_price > trigger_price
-                     else "sofort")
         st.markdown(
             _caption(
-                f"Aktueller Preis: <b style='color:#E2E8F0;'>{current_price:,.2f}</b> "
-                f"USDT &nbsp;→&nbsp; wartet auf <b style='color:#E2E8F0;'>{direction}</b>"
+                f"{ref_label}: <b style='color:#E2E8F0;'>"
+                f"{current_price:,.2f}</b> USDT"
             ),
             unsafe_allow_html=True,
         )
-    return float(trigger_price)
+
+    # Initial-Wert: Referenz-Preis (PT/LT = aktueller, BT = Von-Datum)
+    default_trigger = float(current_price) if current_price else 0.0
+    trigger_key = f"{mode}_new_trigger_price"
+    if trigger_key not in st.session_state:
+        st.session_state[trigger_key] = default_trigger
+
+    # ±-Buttons springen zur naechsten/vorherigen Grid-Linie (S.6).
+    # Grid-Linien on-the-fly aus den session_state-Werten der Range-Inputs.
+    _lower  = float(st.session_state.get(f"{mode}_new_lower",  0.0) or 0.0)
+    _upper  = float(st.session_state.get(f"{mode}_new_upper",  0.0) or 0.0)
+    _num    = int(st.session_state.get(f"{mode}_new_grids",   20) or 20)
+    _gm     = st.session_state.get(f"{mode}_gm", "Arithmetisch")
+    _gm_map = {"Arithmetisch": "arithmetic", "Geometrisch": "geometric",
+               "Bottom heavy": "asymmetric_bottom", "Top heavy": "asymmetric_top"}
+    _gm_b   = _gm_map.get(_gm, "arithmetic")
+    try:
+        _grid_lines = (calculate_grid_lines(_lower, _upper, _num, _gm_b)
+                       if _lower > 0 and _upper > 0 else [])
+    except Exception:
+        _grid_lines = []
+
+    col_minus, col_input, col_plus = st.columns([1, 6, 1])
+    cur = float(st.session_state[trigger_key])
+    with col_minus:
+        if st.button("−", key=f"{trigger_key}_minus",
+                      use_container_width=True):
+            below = [g for g in _grid_lines if g < cur - 1e-8]
+            if below:
+                st.session_state[trigger_key] = float(below[-1])
+                st.rerun()
+    with col_plus:
+        if st.button("+", key=f"{trigger_key}_plus",
+                      use_container_width=True):
+            above = [g for g in _grid_lines if g > cur + 1e-8]
+            if above:
+                st.session_state[trigger_key] = float(above[0])
+                st.rerun()
+    with col_input:
+        trigger_price = st.number_input(
+            "Trigger-Preis (USDT)",
+            min_value=0.0, step=1.0,
+            key=trigger_key, label_visibility="collapsed",
+        )
+
+    return float(trigger_price) if trigger_price > 0 else None
 
 
 def _section_dd_throttle(mode: str) -> dict:
