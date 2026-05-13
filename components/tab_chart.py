@@ -184,6 +184,44 @@ def render_tab_chart(
             pass
         recentering_events_display.append(ev2)
 
+    # ── M.1: Y-Anker fuer Chart-Zentrierung ─────────────────────────────────
+    # BT  -> erster Close (Preis am Von-Datum), aus df_display.
+    # PT/LT -> letzter Close (aktueller Preis).
+    chart_anchor = None
+    if df_display is not None and not df_display.empty:
+        try:
+            if view.get("mode") == "backtest":
+                chart_anchor = float(df_display["close"].iloc[0])
+            else:
+                chart_anchor = float(df_display["close"].iloc[-1])
+        except Exception:
+            chart_anchor = None
+
+    # ── M.2: SL/TP-Trigger-Daten extrahieren ────────────────────────────────
+    metrics_view = view.get("metrics") or {}
+    sl_trigger_obj = None
+    tp_trigger_obj = None
+    sl_ts_raw = metrics_view.get("stop_loss_trigger_timestamp") \
+                 or state.get("stop_loss_trigger_timestamp")
+    sl_pr_raw = metrics_view.get("stop_loss_trigger_price") \
+                 or state.get("stop_loss_trigger_price")
+    if sl_ts_raw and sl_pr_raw:
+        try:
+            sl_trigger_obj = {"time": utc_to_zurich(sl_ts_raw),
+                              "price": float(sl_pr_raw)}
+        except Exception:
+            sl_trigger_obj = None
+    tp_ts_raw = metrics_view.get("take_profit_trigger_timestamp") \
+                 or state.get("take_profit_trigger_timestamp")
+    tp_pr_raw = metrics_view.get("take_profit_trigger_price") \
+                 or state.get("take_profit_trigger_price")
+    if tp_ts_raw and tp_pr_raw:
+        try:
+            tp_trigger_obj = {"time": utc_to_zurich(tp_ts_raw),
+                              "price": float(tp_pr_raw)}
+        except Exception:
+            tp_trigger_obj = None
+
     plot_grid_chart_v2(
         df                  = df_display,
         grid_lines          = grid_lines,
@@ -212,4 +250,8 @@ def render_tab_chart(
         show_range_fill        = settings["show_range_fill"],
         show_trailing_fill     = settings["show_trailing_fill"],
         show_recentering_fill  = settings["show_recentering_fill"],
+        chart_anchor_price        = chart_anchor,
+        sl_trigger                = sl_trigger_obj,
+        tp_trigger                = tp_trigger_obj,
+        show_sltp_trigger_markers = settings.get("show_sltp_trigger_markers", True),
     )

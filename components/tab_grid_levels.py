@@ -94,6 +94,12 @@ def _compute_grid_levels(view: dict) -> list:
     trades_by_price = {}
     profit_by_price = {}
     for t in trade_log:
+        # Initial-Buys (Binance-Setup) sind keine Grid-Trades — sie liegen
+        # zwar auf den Sell-Linien (price = nominelle Sell-Linie seit M.4),
+        # gehoeren aber zum Setup-Pool und werden hier ausgefiltert.
+        # Konsistent mit src/analysis/metrics.py:num_trades-Filter.
+        if str(t.get("type", "")).upper() == "BUY" and t.get("initial"):
+            continue
         p = t.get("price")
         if p is None or (isinstance(p, (int, float)) and p <= 0):
             continue

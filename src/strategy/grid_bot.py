@@ -226,6 +226,12 @@ class GridBot:
         self.recentering_count: int = 0
         self.stop_loss_triggered: bool = False
         self.take_profit_triggered: bool = False
+        # Trigger-Zeitpunkt + Preis (gesetzt beim Auslosen, fuer Chart-Marker).
+        # Datentyp: pd.Timestamp | None; Preis = current_price der Ausloese-Kerze.
+        self.stop_loss_trigger_timestamp = None
+        self.stop_loss_trigger_price: Optional[float] = None
+        self.take_profit_trigger_timestamp = None
+        self.take_profit_trigger_price: Optional[float] = None
         # Event-Log fuer dynamische Marker im Chart. Pro Trailing-Trigger
         # ein Dict mit timestamp, new_lower, new_upper, direction.
         self.trailing_events: List[dict] = []
@@ -421,13 +427,18 @@ class GridBot:
                 (amount, initial_price, self._current_timestamp)
             )
             # Initial-Buy im trade_log loggen.
-            #   price  = grid.price  (die Sell-Linie, auf der die Order kommt)
-            #   cprice = initial_price (tatsaechlicher Marktpreis)
+            #   price  = grid.price       (nominelle Sell-Linie, fuer Chart-
+            #                              Marker und tab_grid_levels-Match)
+            #   cprice = initial_price    (tatsaechlicher Marktpreis = der
+            #                              echte Buy-Preis fuers Inventar)
+            # Inventar (coin_inventory) bleibt mit buy_price=initial_price —
+            # so ist die Profit-Berechnung beim spaeteren Sell auf diese
+            # Linie weiterhin korrekt: (sell_price - initial_price).
             self.trade_log.append({
                 "timestamp":    self._current_timestamp,
                 "type":         "BUY",
                 "cprice":       float(initial_price),
-                "price":        float(initial_price),
+                "price":        float(price),
                 "amount":       float(amount),
                 "fee":          float(fee),
                 "profit":       0.0,
@@ -551,11 +562,15 @@ class GridBot:
             # Stop-Loss pruefen (Preis- und/oder ROI-basiert, ODER-verknuepft)
             if self._check_stop_loss(current_price, portfolio_value):
                 self.stop_loss_triggered = True
+                self.stop_loss_trigger_timestamp = self._current_timestamp
+                self.stop_loss_trigger_price    = float(current_price)
                 return
 
             # Take-Profit pruefen (Preis- und/oder ROI-basiert, ODER-verknuepft)
             if self._check_take_profit(current_price, portfolio_value):
                 self.take_profit_triggered = True
+                self.take_profit_trigger_timestamp = self._current_timestamp
+                self.take_profit_trigger_price    = float(current_price)
                 return
 
             # Reset des Intra-Candle BUY-Trackers
@@ -1011,6 +1026,12 @@ class GridBot:
             "recentering_count":   self.recentering_count,
             "stop_loss_triggered": self.stop_loss_triggered,
             "take_profit_triggered": self.take_profit_triggered,
+            "stop_loss_trigger_timestamp":   (str(self.stop_loss_trigger_timestamp)
+                                              if self.stop_loss_trigger_timestamp else None),
+            "stop_loss_trigger_price":       self.stop_loss_trigger_price,
+            "take_profit_trigger_timestamp": (str(self.take_profit_trigger_timestamp)
+                                              if self.take_profit_trigger_timestamp else None),
+            "take_profit_trigger_price":     self.take_profit_trigger_price,
             "stop_loss_price":     self.stop_loss_price,
             "take_profit_price":   self.take_profit_price,
             "stop_loss_roi_pct":   self.stop_loss_roi_pct,
@@ -1064,6 +1085,17 @@ class GridBot:
             self.recentering_count = state.get("recentering_count", 0)
             self.stop_loss_triggered = state.get("stop_loss_triggered", False)
             self.take_profit_triggered = state.get("take_profit_triggered", False)
+            # Trigger-Daten (M.2). Backward-Compat: alte States ohne Felder -> None.
+            _sl_ts = state.get("stop_loss_trigger_timestamp")
+            _tp_ts = state.get("take_profit_trigger_timestamp")
+            self.stop_loss_trigger_timestamp = (
+                pd.Timestamp(_sl_ts) if _sl_ts else None
+            )
+            self.take_profit_trigger_timestamp = (
+                pd.Timestamp(_tp_ts) if _tp_ts else None
+            )
+            self.stop_loss_trigger_price   = state.get("stop_loss_trigger_price")
+            self.take_profit_trigger_price = state.get("take_profit_trigger_price")
             # Backward-Compat: alte Bot-States haben kein stop_loss_price-Feld.
             # Aus pct + lower_price (das gerade frisch aus __init__ kam)
             # rekonstruieren, falls vorhanden im State -> uebernehmen.
@@ -1350,6 +1382,11 @@ def simulate_grid_bot(
             "trailing_events":     bot.trailing_events,
             "stop_loss_triggered": bot.stop_loss_triggered,
             "take_profit_triggered": bot.take_profit_triggered,
+            # Trigger-Daten fuer Chart-Marker (M.2)
+            "stop_loss_trigger_timestamp":   bot.stop_loss_trigger_timestamp,
+            "stop_loss_trigger_price":       bot.stop_loss_trigger_price,
+            "take_profit_trigger_timestamp": bot.take_profit_trigger_timestamp,
+            "take_profit_trigger_price":     bot.take_profit_trigger_price,
             # Initial-Buy-Aggregate + Bot-Status + Grid Trigger
             "initial_buy_coin_amount": bot.initial_buy_coin_amount,
             "initial_buy_fee":         bot.initial_buy_fee,
@@ -1381,6 +1418,10 @@ def simulate_grid_bot(
             "recentering_events":  [],
             "stop_loss_triggered": False,
             "take_profit_triggered": False,
+            "stop_loss_trigger_timestamp":   None,
+            "stop_loss_trigger_price":       None,
+            "take_profit_trigger_timestamp": None,
+            "take_profit_trigger_price":     None,
             "initial_buy_coin_amount": 0.0,
             "initial_buy_fee":         0.0,
             "initial_buy_value_usdt":  0.0,

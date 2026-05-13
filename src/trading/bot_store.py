@@ -281,6 +281,8 @@ class BotStore:
             "capital_per_grid", "active_levels_ratio", "runtime",
             "recentering_count", "trailing_count",
             "stop_loss_triggered", "take_profit_triggered",
+            "stop_loss_trigger_timestamp", "stop_loss_trigger_price",
+            "take_profit_trigger_timestamp", "take_profit_trigger_price",
         }
         metrics = {k: v for k, v in result.items() if k in METRIC_KEYS}
 

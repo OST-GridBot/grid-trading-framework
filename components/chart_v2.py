@@ -38,6 +38,12 @@ def plot_grid_chart_v2(
     show_range_fill:        bool  = True,
     show_trailing_fill:     bool  = True,
     show_recentering_fill:  bool  = True,
+    # M.1 — Anker fuer Y-Achsen-Zentrierung (None = Auto-Scale)
+    chart_anchor_price:        Optional[float] = None,
+    # M.2 — SL/TP-Trigger-Marker
+    sl_trigger:                Optional[dict]  = None,  # {time, price}
+    tp_trigger:                Optional[dict]  = None,
+    show_sltp_trigger_markers: bool            = True,
 ) -> None:
 
     def _to_unix(ts_val):
@@ -256,6 +262,23 @@ def plot_grid_chart_v2(
     # bleiben fuer Debugging, fliessen aber nicht ins JS.
     _ = trailing_fill_start_ts, recenter_fill_start_ts
 
+    # M.1 — Y-Anker fuer autoscaleInfoProvider
+    chart_anchor_json = json.dumps(
+        round(float(chart_anchor_price), 4) if chart_anchor_price else None
+    )
+
+    # M.2 — SL/TP-Trigger-Marker als {time, price}
+    def _serialize_trigger(trig):
+        if not trig or not show_sltp_trigger_markers:
+            return None
+        ts = _to_unix(trig.get("time")) if isinstance(trig, dict) else None
+        pr = trig.get("price") if isinstance(trig, dict) else None
+        if ts is None or pr is None:
+            return None
+        return {"time": ts, "price": round(float(pr), 4)}
+    sl_trigger_json = json.dumps(_serialize_trigger(sl_trigger))
+    tp_trigger_json = json.dumps(_serialize_trigger(tp_trigger))
+
     HEADER_H = 44
     chart_h  = height - HEADER_H
 
@@ -281,7 +304,8 @@ def plot_grid_chart_v2(
     background:rgba(59,130,246,0.12); border:1px solid rgba(59,130,246,0.25);
     border-radius:4px; padding:2px 7px; letter-spacing:0.03em;
   }}
-  #hdr-dates {{ font-size:11px; color:#475569; letter-spacing:0.01em; }}
+  #hdr-date  {{ font-size:11px; color:#94A3B8; letter-spacing:0.01em;
+                 font-variant-numeric:tabular-nums; }}
 
   /* OHLC + Volumen der Hover-Kerze (mittig) */
   #hdr-ohlc {{
@@ -343,8 +367,9 @@ def plot_grid_chart_v2(
     <div id="hdr-info">
       <span id="hdr-coin"></span>
       <span id="hdr-interval"></span>
-      <span id="hdr-dates"></span>
     </div>
+    <div class="tb-sep"></div>
+    <span id="hdr-date">—</span>
     <div class="tb-sep"></div>
     <div id="hdr-ohlc">
       <span class="ohlc-pair"><span class="ohlc-lbl">O</span><span class="ohlc-val" id="hdr-o">—</span></span>
@@ -411,6 +436,9 @@ def plot_grid_chart_v2(
   const showRangeFill        = {show_range_fill_js};
   const showTrailingFill     = {show_trailing_fill_js};
   const showRecenteringFill  = {show_recentering_fill_js};
+  const chartAnchorPrice     = {chart_anchor_json};
+  const slTrigger            = {sl_trigger_json};
+  const tpTrigger            = {tp_trigger_json};
 
   // Marker colours — slightly darker than original
   const BUY_COLOR  = '#158A50';  // darker green
@@ -418,7 +446,6 @@ def plot_grid_chart_v2(
 
   document.getElementById('hdr-coin').textContent     = coinName + '/USDT';
   document.getElementById('hdr-interval').textContent = interval;
-  document.getElementById('hdr-dates').textContent    = '';
 
   // Marker lookup by timestamp
   const markerMap = {{}};
@@ -484,15 +511,65 @@ def plot_grid_chart_v2(
   }});
   candleSeries.setData(candles);
 
-  // Bot-Start-Marker (nur wenn timestamp im sichtbaren Kerzen-Bereich liegt)
+  // ── M.1 — Y-Achsen-Zentrierung um Anker-Preis ─────────────
+  // Wenn chartAnchorPrice gesetzt ist, ueberschreibt der Auto-Scale-Info-
+  // Provider den Default-Bereich so, dass der Anker (PT/LT: aktueller
+  // Preis; BT: Preis am Von-Datum) vertikal in der Y-Achsen-Mitte liegt.
+  // halfRange wird aus der maximalen Kerzen-Abweichung vom Anker
+  // berechnet, sodass alle Daten sichtbar bleiben (+5% Padding).
+  if (chartAnchorPrice !== null && candles.length > 0) {{
+    let maxAbs = 0;
+    candles.forEach(c => {{
+      maxAbs = Math.max(maxAbs,
+                         Math.abs(c.high - chartAnchorPrice),
+                         Math.abs(c.low  - chartAnchorPrice));
+    }});
+    const halfRange = (maxAbs > 0 ? maxAbs : chartAnchorPrice * 0.05) * 1.05;
+    candleSeries.applyOptions({{
+      autoscaleInfoProvider: () => ({{
+        priceRange: {{
+          minValue: chartAnchorPrice - halfRange,
+          maxValue: chartAnchorPrice + halfRange,
+        }},
+      }}),
+    }});
+  }}
+
+  // Bot-Start + SL/TP-Trigger-Marker auf der candleSeries.
+  // setMarkers() ersetzt die komplette Marker-Liste, deshalb wird hier
+  // ein gemeinsames Array gebaut und einmal gesetzt.
+  const seriesMarkers = [];
   if (botStartTs !== null) {{
-    candleSeries.setMarkers([{{
+    seriesMarkers.push({{
       time:     botStartTs,
       position: 'belowBar',
       color:    '#60A5FA',
       shape:    'arrowUp',
       text:     'Bot Start',
-    }}]);
+    }});
+  }}
+  if (slTrigger !== null) {{
+    seriesMarkers.push({{
+      time:     slTrigger.time,
+      position: 'aboveBar',
+      color:    '#EF4444',
+      shape:    'circle',
+      text:     'SL',
+    }});
+  }}
+  if (tpTrigger !== null) {{
+    seriesMarkers.push({{
+      time:     tpTrigger.time,
+      position: 'aboveBar',
+      color:    '#10B981',
+      shape:    'circle',
+      text:     'TP',
+    }});
+  }}
+  // setMarkers erwartet aufsteigende Zeitstempel
+  seriesMarkers.sort((a, b) => a.time - b.time);
+  if (seriesMarkers.length > 0) {{
+    candleSeries.setMarkers(seriesMarkers);
   }}
 
   priceLines.forEach((p, idx) => candleSeries.createPriceLine({{
@@ -735,12 +812,27 @@ def plot_grid_chart_v2(
 
   // ── Tooltip ───────────────────────────────────────────────
   const tooltip = document.getElementById('tooltip');
-  // Header-OHLC-Spans (mittlere Sektion, aktualisiert bei Crosshair-Move)
-  const hdrO = document.getElementById('hdr-o');
-  const hdrH = document.getElementById('hdr-h');
-  const hdrL = document.getElementById('hdr-l');
-  const hdrC = document.getElementById('hdr-c');
-  const hdrV = document.getElementById('hdr-v');
+  // Header-OHLC-Spans + Hover-Datum (mittlere Sektion, aktualisiert bei
+  // Crosshair-Move)
+  const hdrO    = document.getElementById('hdr-o');
+  const hdrH    = document.getElementById('hdr-h');
+  const hdrL    = document.getElementById('hdr-l');
+  const hdrC    = document.getElementById('hdr-c');
+  const hdrV    = document.getElementById('hdr-v');
+  const hdrDate = document.getElementById('hdr-date');
+
+  // M.5 — Hover-Datum-Formatter ("13. Mai 2026 14:30")
+  function _fmtHoverDate(unixTs) {{
+    if (typeof unixTs !== 'number') return '—';
+    const d = new Date(unixTs * 1000);
+    const day = String(d.getDate()).padStart(2, '0');
+    const months = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+    const month = months[d.getMonth()];
+    const year = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return day + '. ' + month + ' ' + year + ' ' + hh + ':' + mm;
+  }}
   let mouseX=0, mouseY=0;
   document.addEventListener('mousemove', e => {{ mouseX=e.clientX; mouseY=e.clientY; }});
 
@@ -749,13 +841,14 @@ def plot_grid_chart_v2(
   const fmtVol = v => typeof v==='number'
     ? v.toLocaleString('de-CH', {{maximumFractionDigits:2}}) : '—';
 
-  // Reset Header-OHLC auf "—" wenn kein Crosshair-Wert verfuegbar
+  // Reset Header-OHLC + Hover-Datum auf "—" wenn kein Crosshair-Wert
   function _resetHdrOHLC() {{
     hdrO.textContent = '—';
     hdrH.textContent = '—';
     hdrL.textContent = '—';
     hdrC.textContent = '—'; hdrC.className = 'ohlc-val';
     hdrV.textContent = '—';
+    hdrDate.textContent = '—';
   }}
 
   chart.subscribeCrosshairMove(param => {{
@@ -773,7 +866,8 @@ def plot_grid_chart_v2(
     const isUp = data.close >= data.open;
     const ms   = markerMap[param.time];
 
-    // Header-OHLC + Volumen aktualisieren
+    // Header-Datum + OHLC + Volumen aktualisieren
+    hdrDate.textContent = _fmtHoverDate(param.time);
     hdrO.textContent = fmt(data.open);
     hdrH.textContent = fmt(data.high);
     hdrL.textContent = fmt(data.low);

@@ -658,6 +658,16 @@ def _render_chart_main(params: dict, mode: str = "paper") -> None:
             show_range_fill        = settings["show_range_fill"],
             show_trailing_fill     = settings["show_trailing_fill"],
             show_recentering_fill  = settings["show_recentering_fill"],
+            # M.1: Vorschau-Chart vertikal auf den Anker-Preis zentrieren.
+            # BT  -> erster Close im DF (= Von-Datum-Preis).
+            # PT/LT -> letzter Close (aktueller Preis).
+            chart_anchor_price        = (float(df["close"].iloc[0])
+                                          if mode == "backtest"
+                                          else float(df["close"].iloc[-1])),
+            # SL/TP-Trigger gibt's im Setup-Stadium noch nicht
+            sl_trigger                = None,
+            tp_trigger                = None,
+            show_sltp_trigger_markers = settings.get("show_sltp_trigger_markers", True),
         )
     except Exception as e:
         st.caption(f"Chart nicht verfügbar: {e}")

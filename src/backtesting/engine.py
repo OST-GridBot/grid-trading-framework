@@ -208,6 +208,11 @@ def run_backtest(
         "recentering_events":  sim.get("recentering_events", []),
         "stop_loss_triggered": sim["stop_loss_triggered"],
         "take_profit_triggered": sim.get("take_profit_triggered", False),
+        # Trigger-Daten fuer Chart-Marker (M.2)
+        "stop_loss_trigger_timestamp":   sim.get("stop_loss_trigger_timestamp"),
+        "stop_loss_trigger_price":       sim.get("stop_loss_trigger_price"),
+        "take_profit_trigger_timestamp": sim.get("take_profit_trigger_timestamp"),
+        "take_profit_trigger_price":     sim.get("take_profit_trigger_price"),
         # Initial-Buy-Aggregate + Bot-Status + Grid Trigger (Binance-Standard)
         "initial_buy_coin_amount": sim.get("initial_buy_coin_amount", 0.0),
         "initial_buy_fee":         sim.get("initial_buy_fee", 0.0),
