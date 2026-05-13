@@ -88,6 +88,9 @@ def _pt_handle_submit(params: dict) -> None:
         return
     # Name nachtragen (create_bot speichert keinen Namen)
     bot_store.update_bot(bot_id, {"name": name})
+    # W.1: Smart-Setup-Vorschlag aus der Sidebar zuruecksetzen
+    from components.bot_setup_form import reset_smart_setup
+    reset_smart_setup("paper")
     st.session_state.pt_show_new_bot = False
     st.session_state.pt_selected_bot = bot_id
     st.rerun()

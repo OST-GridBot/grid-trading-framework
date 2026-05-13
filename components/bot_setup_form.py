@@ -309,6 +309,18 @@ _SMART_INFO = {
 }
 
 
+def reset_smart_setup(mode: str) -> None:
+    """
+    Loescht den Smart-Setup-Vorschlag fuer einen Mode aus dem session_state.
+    Wird von den Submit-Handlern (BT / PT / LT) nach erfolgreicher
+    Simulation bzw. Bot-Erstellung aufgerufen (Auftrag W.1) — der Vorschlag
+    soll nicht im UI haengen bleiben, sobald sich der Benutzer entschieden
+    hat.
+    """
+    st.session_state.pop(f"{mode}_smart_result", None)
+    st.session_state.pop(f"{mode}_smart_error",  None)
+
+
 def _section_smart_setup(
     mode:             str,
     coin:             str,

@@ -141,6 +141,10 @@ def _handle_bt_submit(params: dict) -> None:
     # Pending-Result + Params-Snapshot in session_state -> Anzeige im Router
     st.session_state.bt_pending_result = result
     st.session_state.bt_pending_params = dict(params)
+    # W.1: Smart-Setup-Vorschlag zuruecksetzen — Vorschlag soll nach
+    # erfolgreicher Simulation nicht mehr in der Sidebar haengen bleiben.
+    from components.bot_setup_form import reset_smart_setup
+    reset_smart_setup("backtest")
     st.rerun()
 
 
