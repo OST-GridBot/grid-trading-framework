@@ -663,19 +663,90 @@ def _render_chart_main(params: dict, mode: str = "paper") -> None:
         st.caption(f"Chart nicht verfügbar: {e}")
 
 
+def _sl_tp_price_pair(side: str, mode: str, ref_price: float,
+                       sub_mode: str) -> Optional[float]:
+    """
+    Rendert ein Pair aus zwei halbbreiten number_inputs fuer den Price-Modus:
+      links : absoluter USDT-Preis
+      rechts: Prozent relativ zur Grenze (Upper bei TP, Lower bei SL)
+    Je nach sub_mode ist eines aktiv und das andere disabled mit dem
+    automatisch berechneten Aequivalent als Anzeige.
+
+    Returns: finalen take_profit_pct/stop_loss_pct (relativ zur Grenze)
+             als Backend-kompatibler Wert. None wenn ref_price <= 0.
+    """
+    if ref_price <= 0:
+        return None
+    # Default-Werte (15 %): TP = +15 %, SL = +15 % unter lower
+    default_pct = 15.0
+    default_abs = (ref_price * 1.15 if side == "tp" else ref_price * 0.85)
+    abs_key  = f"{mode}_new_{side}_price_abs"
+    pct_key  = f"{mode}_new_{side}_price_pct"
+
+    # Defaults wenn noch nicht in session_state
+    if abs_key not in st.session_state:
+        st.session_state[abs_key] = float(default_abs)
+    if pct_key not in st.session_state:
+        st.session_state[pct_key] = float(default_pct)
+
+    # Vor dem Render das disabled-Feld synchronisieren, sodass beide
+    # Felder immer konsistent zueinander sind. Source-of-truth ist das
+    # aktive Feld (sub_mode bestimmt das).
+    if sub_mode == "Manuell (USDT)":
+        abs_v = float(st.session_state[abs_key])
+        if side == "tp":
+            st.session_state[pct_key] = (abs_v / ref_price - 1.0) * 100.0
+        else:
+            st.session_state[pct_key] = (1.0 - abs_v / ref_price) * 100.0
+    else:  # "% von Grenze"
+        pct_v = float(st.session_state[pct_key])
+        if side == "tp":
+            st.session_state[abs_key] = ref_price * (1.0 + pct_v / 100.0)
+        else:
+            st.session_state[abs_key] = ref_price * (1.0 - pct_v / 100.0)
+
+    col_l, col_r = st.columns(2)
+    with col_l:
+        abs_v = st.number_input(
+            "Preis (USDT)", step=1.0, key=abs_key,
+            disabled=(sub_mode != "Manuell (USDT)"),
+        )
+    with col_r:
+        pct_v = st.number_input(
+            "% von Grenze", step=0.1, key=pct_key,
+            disabled=(sub_mode != "% von Grenze"),
+        )
+
+    # Backend-Wert immer aus dem AKTIVEN Feld berechnen.
+    if sub_mode == "Manuell (USDT)":
+        if side == "tp":
+            return float(abs_v) / ref_price - 1.0
+        return 1.0 - float(abs_v) / ref_price
+    else:
+        return float(pct_v) / 100.0
+
+
 def _section_sl_tp(mode: str, lower_price: float = 0.0,
                     upper_price: float = 0.0,
                     total_investment: float = 0.0) -> dict:
     """
     Kombinierte Take-Profit / Stop-Loss-Sektion (Binance-Style).
 
-    Eine Hauptcheckbox aktiviert die Sektion. Daraufhin Modus-Wahl
-    (exklusiv: %ROI / Price / P/L) und zwei horizontale Boxen
-    (Take-Profit oben, Stop-Loss unten), beide einzeln optional.
+    Hauptcheckbox aktiviert die Sektion. Daraufhin Modus-Wahl (exklusiv:
+    %ROI oder Price) und zwei horizontale Boxen (Take-Profit oben,
+    Stop-Loss unten), beide einzeln optional.
 
-    Modus-Wahl ist UI-only (session_state). Backend bekommt nur die
-    Felder des gewaehlten Modus, die anderen vier bleiben None — somit
-    bleibt das Verhalten ueber alle Modi konsistent exklusiv.
+    Im Price-Modus zusaetzlich ein Sub-Modus-Radio "Manuell (USDT)" /
+    "% von Grenze" — User kann den Stop-Preis entweder absolut in USDT
+    oder als Prozent ueber/unter der Grid-Grenze eingeben. Beide Felder
+    werden immer nebeneinander gerendert, das jeweils inaktive ist
+    disabled und zeigt das automatisch berechnete Aequivalent.
+
+    Modus-Wahl + Sub-Modus sind UI-only (session_state). Backend bekommt
+    nur die Felder des gewaehlten Modus.
+
+    P/L-Modus aktuell nicht in der UI exponiert (Backend-Code bleibt fuer
+    eventuelle Reaktivierung — analog Sharpe-Branch im Optimizer).
     """
     st.markdown(_divider(), unsafe_allow_html=True)
     main_enabled = st.checkbox(
@@ -684,7 +755,6 @@ def _section_sl_tp(mode: str, lower_price: float = 0.0,
         help=("Schliesst alle Positionen, sobald die Take-Profit- oder "
               "Stop-Loss-Schwelle erreicht ist."),
     )
-    # Alle sechs Felder default None. Nur das Modus-Set wird befuellt.
     empty = {
         "stop_loss_pct":       None, "take_profit_pct":       None,
         "stop_loss_roi_pct":   None, "take_profit_roi_pct":   None,
@@ -693,170 +763,109 @@ def _section_sl_tp(mode: str, lower_price: float = 0.0,
     if not main_enabled:
         return empty
 
-    # ── Modus-Wahl (exklusiv, UI-only in session_state) ─────────────────────
+    # ── Modus-Wahl (exklusiv, UI-only) ──────────────────────────────────────
     chosen_mode = st.radio(
-        "Modus", options=["%ROI", "Price", "P/L"],
+        "Modus", options=["%ROI", "Price"],
         horizontal=True, key=f"{mode}_new_sltp_mode",
         label_visibility="collapsed",
     )
 
+    # Sub-Modus-Wahl nur im Price-Modus
+    sub_mode = "Manuell (USDT)"
+    if chosen_mode == "Price":
+        sub_mode = st.radio(
+            "Eingabe-Modus",
+            options=["Manuell (USDT)", "% von Grenze"],
+            horizontal=True, key=f"{mode}_new_sltp_price_sub",
+            label_visibility="collapsed",
+        )
+
     # ── Take-Profit Box ─────────────────────────────────────────────────────
-    tp_val: Optional[float] = None
+    tp_pct_backend: Optional[float] = None
     with st.container(border=True):
         st.markdown(
             "<div style='color:#CBD5E1; font-weight:600; font-size:0.82rem; "
             "margin-bottom:4px;'>Take-Profit</div>",
             unsafe_allow_html=True,
         )
-        tp_enabled = st.checkbox(
-            "Aktivieren", key=f"{mode}_new_tp_enabled",
-        )
+        tp_enabled = st.checkbox("Aktivieren", key=f"{mode}_new_tp_enabled")
         if tp_enabled:
             if chosen_mode == "%ROI":
-                tp_val = st.number_input(
-                    "ROI in %", value=float(st.session_state.get(
+                tp_roi = st.number_input(
+                    "ROI in %",
+                    value=float(st.session_state.get(
                         f"{mode}_new_tp_roi_pct_v", 15.0)),
                     step=1.0, key=f"{mode}_new_tp_roi_pct_v",
                     label_visibility="collapsed",
                 )
-                if total_investment > 0 and tp_val:
-                    gain = total_investment * (tp_val / 100.0)
+                if total_investment > 0 and tp_roi:
+                    gain = total_investment * (tp_roi / 100.0)
                     st.markdown(
                         _caption(
-                            f"Take-Profit bei Bot-ROI <b style='color:#E2E8F0;'>"
-                            f"≥ +{tp_val:.1f}%</b> "
+                            f"Take-Profit bei Bot-ROI "
+                            f"<b style='color:#E2E8F0;'>≥ +{tp_roi:.1f}%</b> "
                             f"(Gewinn von <b>${gain:,.2f}</b> USDT)"
                         ),
                         unsafe_allow_html=True,
                     )
-            elif chosen_mode == "Price":
-                default_price = (float(upper_price) * 1.15
-                                  if upper_price > 0 else 0.0)
-                tp_val = st.number_input(
-                    "Preis (USDT)", value=float(st.session_state.get(
-                        f"{mode}_new_tp_price_v", default_price)),
-                    step=1.0, key=f"{mode}_new_tp_price_v",
-                    label_visibility="collapsed",
-                )
-                if tp_val and upper_price > 0:
-                    diff_pct = (tp_val / upper_price - 1) * 100
-                    st.markdown(
-                        _caption(
-                            f"Take-Profit bei <b style='color:#E2E8F0;'>"
-                            f"{tp_val:,.2f} USDT</b> "
-                            f"(Upper {upper_price:,.2f} {diff_pct:+.1f}%)"
-                        ),
-                        unsafe_allow_html=True,
-                    )
-            else:  # P/L
-                default_pl = (float(total_investment) * 0.15
-                              if total_investment > 0 else 0.0)
-                tp_val = st.number_input(
-                    "Gewinn (USDT)", value=float(st.session_state.get(
-                        f"{mode}_new_tp_pl_v", default_pl)),
-                    step=1.0, key=f"{mode}_new_tp_pl_v",
-                    label_visibility="collapsed",
-                )
-                if tp_val and total_investment > 0:
-                    roi_eq = tp_val / total_investment * 100
-                    st.markdown(
-                        _caption(
-                            f"Take-Profit bei Gewinn <b style='color:#E2E8F0;'>"
-                            f"≥ +${tp_val:,.2f} USDT</b> "
-                            f"(entspricht +{roi_eq:.1f}% ROI)"
-                        ),
-                        unsafe_allow_html=True,
-                    )
+                if tp_roi and tp_roi > 0:
+                    tp_pct_backend = ("roi", float(tp_roi) / 100.0)
+            else:  # Price
+                tp_pct_backend = ("price",
+                                   _sl_tp_price_pair("tp", mode,
+                                                      upper_price, sub_mode))
 
     # ── Stop-Loss Box ───────────────────────────────────────────────────────
-    sl_val: Optional[float] = None
+    sl_pct_backend: Optional[float] = None
     with st.container(border=True):
         st.markdown(
             "<div style='color:#CBD5E1; font-weight:600; font-size:0.82rem; "
             "margin-bottom:4px;'>Stop-Loss</div>",
             unsafe_allow_html=True,
         )
-        sl_enabled = st.checkbox(
-            "Aktivieren", key=f"{mode}_new_sl_enabled",
-        )
+        sl_enabled = st.checkbox("Aktivieren", key=f"{mode}_new_sl_enabled")
         if sl_enabled:
             if chosen_mode == "%ROI":
-                sl_val = st.number_input(
-                    "ROI in %", value=float(st.session_state.get(
+                sl_roi = st.number_input(
+                    "ROI in %",
+                    value=float(st.session_state.get(
                         f"{mode}_new_sl_roi_pct_v", 15.0)),
                     step=1.0, key=f"{mode}_new_sl_roi_pct_v",
                     label_visibility="collapsed",
                 )
-                if total_investment > 0 and sl_val:
-                    loss = total_investment * (sl_val / 100.0)
+                if total_investment > 0 and sl_roi:
+                    loss = total_investment * (sl_roi / 100.0)
                     st.markdown(
                         _caption(
-                            f"Stop-Loss bei Bot-ROI <b style='color:#E2E8F0;'>"
-                            f"≤ −{sl_val:.1f}%</b> "
+                            f"Stop-Loss bei Bot-ROI "
+                            f"<b style='color:#E2E8F0;'>≤ −{sl_roi:.1f}%</b> "
                             f"(Verlust von <b>${loss:,.2f}</b> USDT)"
                         ),
                         unsafe_allow_html=True,
                     )
-            elif chosen_mode == "Price":
-                default_price = (float(lower_price) * 0.85
-                                  if lower_price > 0 else 0.0)
-                sl_val = st.number_input(
-                    "Preis (USDT)", value=float(st.session_state.get(
-                        f"{mode}_new_sl_price_v", default_price)),
-                    step=1.0, key=f"{mode}_new_sl_price_v",
-                    label_visibility="collapsed",
-                )
-                if sl_val and lower_price > 0:
-                    diff_pct = (sl_val / lower_price - 1) * 100
-                    st.markdown(
-                        _caption(
-                            f"Stop-Loss bei <b style='color:#E2E8F0;'>"
-                            f"{sl_val:,.2f} USDT</b> "
-                            f"(Lower {lower_price:,.2f} {diff_pct:+.1f}%)"
-                        ),
-                        unsafe_allow_html=True,
-                    )
-            else:  # P/L
-                default_pl = (float(total_investment) * 0.15
-                              if total_investment > 0 else 0.0)
-                sl_val = st.number_input(
-                    "Verlust (USDT)", value=float(st.session_state.get(
-                        f"{mode}_new_sl_pl_v", default_pl)),
-                    step=1.0, key=f"{mode}_new_sl_pl_v",
-                    label_visibility="collapsed",
-                )
-                if sl_val and total_investment > 0:
-                    roi_eq = sl_val / total_investment * 100
-                    st.markdown(
-                        _caption(
-                            f"Stop-Loss bei Verlust <b style='color:#E2E8F0;'>"
-                            f"≥ ${sl_val:,.2f} USDT</b> "
-                            f"(entspricht −{roi_eq:.1f}% ROI)"
-                        ),
-                        unsafe_allow_html=True,
-                    )
+                if sl_roi and sl_roi > 0:
+                    sl_pct_backend = ("roi", float(sl_roi) / 100.0)
+            else:  # Price
+                sl_pct_backend = ("price",
+                                   _sl_tp_price_pair("sl", mode,
+                                                      lower_price, sub_mode))
 
-    # ── Modus-spezifische Befuellung der Backend-Felder ─────────────────────
+    # ── Backend-Felder befuellen ────────────────────────────────────────────
     result = dict(empty)
-    if chosen_mode == "%ROI":
-        if tp_val and tp_val > 0:
-            result["take_profit_roi_pct"] = float(tp_val) / 100.0
-        if sl_val and sl_val > 0:
-            result["stop_loss_roi_pct"]   = float(sl_val) / 100.0
-    elif chosen_mode == "Price":
-        # Backend kennt stop_loss_pct / take_profit_pct als Prozent
-        # relativ zu lower/upper. Umrechnung aus absolutem Preis:
-        #   tp_pct = (tp_price / upper) - 1
-        #   sl_pct = 1 - (sl_price / lower)
-        if tp_val and tp_val > 0 and upper_price > 0:
-            result["take_profit_pct"] = float(tp_val) / upper_price - 1
-        if sl_val and sl_val > 0 and lower_price > 0:
-            result["stop_loss_pct"]   = 1 - float(sl_val) / lower_price
-    else:  # P/L
-        if tp_val and tp_val > 0:
-            result["take_profit_pl_usdt"] = float(tp_val)
-        if sl_val and sl_val > 0:
-            result["stop_loss_pl_usdt"]   = float(sl_val)
+    if isinstance(tp_pct_backend, tuple):
+        kind, val = tp_pct_backend
+        if val and val > 0:
+            if kind == "roi":
+                result["take_profit_roi_pct"] = val
+            else:
+                result["take_profit_pct"] = val
+    if isinstance(sl_pct_backend, tuple):
+        kind, val = sl_pct_backend
+        if val and val > 0:
+            if kind == "roi":
+                result["stop_loss_roi_pct"] = val
+            else:
+                result["stop_loss_pct"] = val
     return result
 
 
