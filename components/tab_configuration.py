@@ -23,8 +23,9 @@ import streamlit as st
 
 def _label_stop_loss(cfg: dict) -> str:
     """
-    Stop-Loss-Status als lesbares Label. Beruecksichtigt beide Trigger
-    (preis-basiert + ROI-basiert), kommagetrennt.
+    Stop-Loss-Status als lesbares Label. UI ist ein-Modus exklusiv, das
+    Backend speichert aber alle drei Trigger-Varianten getrennt
+    (Preis / ROI / P/L). Wir listen alle gesetzten Werte kommagetrennt.
     """
     parts = []
     pct = cfg.get("stop_loss_pct")
@@ -33,11 +34,14 @@ def _label_stop_loss(cfg: dict) -> str:
     roi = cfg.get("stop_loss_roi_pct")
     if roi:
         parts.append(f"ROI {roi * 100:.0f}%")
+    pl = cfg.get("stop_loss_pl_usdt")
+    if pl:
+        parts.append(f"P/L ${pl:,.0f}")
     return "Aktiv (" + " / ".join(parts) + ")" if parts else "Inaktiv"
 
 
 def _label_take_profit(cfg: dict) -> str:
-    """Take-Profit-Status (Preis + ROI)."""
+    """Take-Profit-Status (Preis / ROI / P/L)."""
     parts = []
     pct = cfg.get("take_profit_pct")
     if pct:
@@ -45,6 +49,9 @@ def _label_take_profit(cfg: dict) -> str:
     roi = cfg.get("take_profit_roi_pct")
     if roi:
         parts.append(f"ROI {roi * 100:.0f}%")
+    pl = cfg.get("take_profit_pl_usdt")
+    if pl:
+        parts.append(f"P/L ${pl:,.0f}")
     return "Aktiv (" + " / ".join(parts) + ")" if parts else "Inaktiv"
 
 
