@@ -152,6 +152,10 @@ class GridBot:
         # Initial-Buy aktivieren (Binance-Standard). False = Bot startet
         # rein mit USDT, ohne sofortige Marktkaeufe auf den Sell-Linien.
         enable_initial_buy:     bool  = True,
+        # Wenn True: nach TP/SL-Force-Sell wird der Bot komplett gestoppt
+        # (bot_status="stopped", keine weiteren Trades). Wenn False:
+        # Force-Sell, danach laeuft der Bot weiter mit aktiven Buy-Limits.
+        stop_bot_on_trigger:    bool  = False,
     ):
         self._validate_inputs(total_investment, lower_price, upper_price,
                               num_grids, fee_rate)
@@ -257,6 +261,7 @@ class GridBot:
         self.grid_trigger_price: Optional[float] = grid_trigger_price
         # Initial-Buy aktivieren (Default = Binance-Standard).
         self.enable_initial_buy: bool = enable_initial_buy
+        self.stop_bot_on_trigger: bool = stop_bot_on_trigger
         # Richtung des Triggers ("up" = warte auf Anstieg, "down" = auf
         # Rueckgang). Wird bei der ersten Kerze anhand des Close-Preises
         # bestimmt — in __init__ ist der Initial-Preis evtl. None.
@@ -564,6 +569,14 @@ class GridBot:
                 self.stop_loss_triggered = True
                 self.stop_loss_trigger_timestamp = self._current_timestamp
                 self.stop_loss_trigger_price    = float(current_price)
+                # Force-Sell aller Positionen zum aktuellen Marktpreis
+                self._force_sell_all_inventory(current_price, timestamp)
+                if self.stop_bot_on_trigger:
+                    self.bot_status = "stopped"
+                    return
+                # Sonst: Bot laeuft weiter (Buy-Limits aktiv, neue Trades
+                # moeglich). Nichts mehr in dieser Kerze tun (keine
+                # weitere Trade-Loop, Trailing/Recentering ueberspringen).
                 return
 
             # Take-Profit pruefen (Preis- und/oder ROI-basiert, ODER-verknuepft)
@@ -571,6 +584,10 @@ class GridBot:
                 self.take_profit_triggered = True
                 self.take_profit_trigger_timestamp = self._current_timestamp
                 self.take_profit_trigger_price    = float(current_price)
+                self._force_sell_all_inventory(current_price, timestamp)
+                if self.stop_bot_on_trigger:
+                    self.bot_status = "stopped"
+                    return
                 return
 
             # Reset des Intra-Candle BUY-Trackers
@@ -748,6 +765,48 @@ class GridBot:
 
         except Exception as e:
             raise RuntimeError(f"Trade-Fehler bei {grid.price}: {e}")
+
+    # -----------------------------------------------------------------------
+    # Force-Sell bei TP/SL-Trigger
+    # -----------------------------------------------------------------------
+
+    def _force_sell_all_inventory(self, current_price: float, timestamp) -> None:
+        """
+        Verkauft das gesamte Coin-Inventar zum aktuellen Marktpreis.
+        Wird bei TP/SL-Trigger aufgerufen — semantisch korrekt fuer
+        klassisches "Stop-Loss" / "Take-Profit" im Spot-Trading.
+
+        - Pro Inventar-Position ein SELL-Eintrag im trade_log mit
+          profit_gross = (current_price - buy_price) × amount und
+          fee = amount × current_price × fee_rate.
+        - position["coin"] und coin_inventory werden geleert.
+        - Eintraege bekommen das Marker-Feld "force_sell": True, damit
+          UI/Tests sie von normalen Grid-Sells unterscheiden koennen.
+        """
+        while self.coin_inventory:
+            amount, buy_price, _ts = self.coin_inventory.pop(0)
+            if self.position["coin"] < amount - 1e-10:
+                # Sicherheits-Schutz: sollte nicht passieren, aber falls
+                # Inventar und position["coin"] inkonsistent sind, ignorieren.
+                continue
+            profit_gross = (current_price - buy_price) * amount
+            fee          = amount * current_price * self.fee_rate
+            profit       = profit_gross - fee
+            self.position["coin"] -= amount
+            self.position["usdt"] += (amount * current_price) - fee
+            self.trade_log.append({
+                "timestamp":    timestamp,
+                "type":         "SELL",
+                "cprice":       float(current_price),
+                "price":        float(current_price),
+                "amount":       float(amount),
+                "fee":          float(fee),
+                "profit":       float(profit),
+                "profit_gross": float(profit_gross),
+                "force_sell":   True,
+            })
+        # Safety: Position-Coin auf 0 setzen (Float-Rauschen vermeiden)
+        self.position["coin"] = 0.0
 
     # -----------------------------------------------------------------------
     # Stop-Loss
@@ -1057,6 +1116,7 @@ class GridBot:
             "grid_trigger_price":     self.grid_trigger_price,
             "_trigger_direction":     self._trigger_direction,
             "enable_initial_buy":     self.enable_initial_buy,
+            "stop_bot_on_trigger":    self.stop_bot_on_trigger,
             # Initial-Buy-Aggregate (Binance-Standard)
             "initial_buy_coin_amount": self.initial_buy_coin_amount,
             "initial_buy_fee":         self.initial_buy_fee,
@@ -1133,6 +1193,8 @@ class GridBot:
             self._trigger_direction = state.get("_trigger_direction", None)
             self.enable_initial_buy = state.get("enable_initial_buy",
                                                 self.enable_initial_buy)
+            self.stop_bot_on_trigger = state.get("stop_bot_on_trigger",
+                                                  self.stop_bot_on_trigger)
             # Initial-Buy-Aggregate
             self.initial_buy_coin_amount = state.get("initial_buy_coin_amount", 0.0)
             self.initial_buy_fee         = state.get("initial_buy_fee", 0.0)
@@ -1234,6 +1296,7 @@ def simulate_grid_bot(
     trail_stop_levels:      bool  = False,
     grid_trigger_price:     Optional[float] = None,
     enable_initial_buy:     bool  = True,
+    stop_bot_on_trigger:    bool  = False,
     df_for_atr:             Optional[object] = None,
 ) -> dict:
     """
@@ -1310,6 +1373,7 @@ def simulate_grid_bot(
             df                     = df_for_atr,
             grid_trigger_price     = grid_trigger_price,
             enable_initial_buy     = enable_initial_buy,
+            stop_bot_on_trigger    = stop_bot_on_trigger,
         )
 
         # Initial-Buy-Timestamps auf erste Kerze setzen (im __init__ war

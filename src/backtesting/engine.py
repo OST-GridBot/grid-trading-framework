@@ -74,6 +74,7 @@ def run_backtest(
     trail_stop_levels:      bool  = False,
     grid_trigger_price:     Optional[float] = None,
     enable_initial_buy:     bool  = True,
+    stop_bot_on_trigger:    bool  = False,
     force_reload:           bool  = False,
 ) -> dict:
     """
@@ -154,6 +155,7 @@ def run_backtest(
         trail_stop_levels      = trail_stop_levels,
         grid_trigger_price     = grid_trigger_price,
         enable_initial_buy     = enable_initial_buy,
+        stop_bot_on_trigger    = stop_bot_on_trigger,
     )
 
     if sim.get("error"):

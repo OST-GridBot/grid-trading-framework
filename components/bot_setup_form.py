@@ -108,6 +108,8 @@ def _default_params(mode: str) -> dict:
         "grid_trigger_price":     None,
         # Initial-Buy (Binance-Standard True). False = Bot startet rein USDT.
         "enable_initial_buy":     True,
+        # Bot beim TP/SL-Trigger stoppen (Default aus = Force-Sell + weiter)
+        "stop_bot_on_trigger":    False,
     }
 
 
@@ -691,30 +693,32 @@ def _sl_tp_price_pair(side: str, mode: str, ref_price: float,
     """
     if ref_price <= 0:
         return None
-    # Default-Werte (15 %): TP = +15 %, SL = +15 % unter lower
-    default_pct = 15.0
-    default_abs = (ref_price * 1.15 if side == "tp" else ref_price * 0.85)
+    # U.3b: Default 0 = inaktiv. User muss aktiv einen Wert eingeben.
     abs_key  = f"{mode}_new_{side}_price_abs"
     pct_key  = f"{mode}_new_{side}_price_pct"
 
     # Defaults wenn noch nicht in session_state
     if abs_key not in st.session_state:
-        st.session_state[abs_key] = float(default_abs)
+        st.session_state[abs_key] = 0.0
     if pct_key not in st.session_state:
-        st.session_state[pct_key] = float(default_pct)
+        st.session_state[pct_key] = 0.0
 
-    # Vor dem Render das disabled-Feld synchronisieren, sodass beide
-    # Felder immer konsistent zueinander sind. Source-of-truth ist das
-    # aktive Feld (sub_mode bestimmt das).
+    # Vor dem Render das disabled-Feld synchronisieren. Source-of-truth
+    # ist das aktive Feld (sub_mode bestimmt das). Bei aktivem Wert == 0
+    # bleibt das andere Feld auch 0 (= inaktiv, U.3b).
     if sub_mode == "Manuell (USDT)":
         abs_v = float(st.session_state[abs_key])
-        if side == "tp":
+        if abs_v <= 0:
+            st.session_state[pct_key] = 0.0
+        elif side == "tp":
             st.session_state[pct_key] = (abs_v / ref_price - 1.0) * 100.0
         else:
             st.session_state[pct_key] = (1.0 - abs_v / ref_price) * 100.0
     else:  # "% von Grenze"
         pct_v = float(st.session_state[pct_key])
-        if side == "tp":
+        if pct_v <= 0:
+            st.session_state[abs_key] = 0.0
+        elif side == "tp":
             st.session_state[abs_key] = ref_price * (1.0 + pct_v / 100.0)
         else:
             st.session_state[abs_key] = ref_price * (1.0 - pct_v / 100.0)
@@ -726,8 +730,9 @@ def _sl_tp_price_pair(side: str, mode: str, ref_price: float,
             disabled=(sub_mode != "Manuell (USDT)"),
         )
     with col_r:
+        # U.3d: ±-Buttons in 1%-Schritten (step=1.0 statt 0.1)
         pct_v = st.number_input(
-            "% von Grenze", step=0.1, key=pct_key,
+            "% von Grenze", step=1.0, key=pct_key,
             disabled=(sub_mode != "% von Grenze"),
         )
 
@@ -763,16 +768,16 @@ def _section_sl_tp(mode: str, lower_price: float = 0.0,
     eventuelle Reaktivierung — analog Sharpe-Branch im Optimizer).
     """
     st.markdown(_divider(), unsafe_allow_html=True)
+    # U.3a: Hilfstext entfernt.
     main_enabled = st.checkbox(
         "Take-Profit / Stop-Loss",
         key=f"{mode}_new_sltp",
-        help=("Schliesst alle Positionen, sobald die Take-Profit- oder "
-              "Stop-Loss-Schwelle erreicht ist."),
     )
     empty = {
         "stop_loss_pct":       None, "take_profit_pct":       None,
         "stop_loss_roi_pct":   None, "take_profit_roi_pct":   None,
         "stop_loss_pl_usdt":   None, "take_profit_pl_usdt":   None,
+        "stop_bot_on_trigger": False,
     }
     if not main_enabled:
         return empty
@@ -795,6 +800,8 @@ def _section_sl_tp(mode: str, lower_price: float = 0.0,
         )
 
     # ── Take-Profit Box ─────────────────────────────────────────────────────
+    # U.3b: keine "Aktivieren"-Sub-Checkbox mehr. User schreibt direkt
+    # in das Eingabefeld; Wert > 0 = aktiv, 0 = inaktiv.
     tp_pct_backend: Optional[float] = None
     with st.container(border=True):
         st.markdown(
@@ -802,32 +809,30 @@ def _section_sl_tp(mode: str, lower_price: float = 0.0,
             "margin-bottom:4px;'>Take-Profit</div>",
             unsafe_allow_html=True,
         )
-        tp_enabled = st.checkbox("Aktivieren", key=f"{mode}_new_tp_enabled")
-        if tp_enabled:
-            if chosen_mode == "%ROI":
-                tp_roi = st.number_input(
-                    "ROI in %",
-                    value=float(st.session_state.get(
-                        f"{mode}_new_tp_roi_pct_v", 15.0)),
-                    step=1.0, key=f"{mode}_new_tp_roi_pct_v",
-                    label_visibility="collapsed",
+        if chosen_mode == "%ROI":
+            tp_roi = st.number_input(
+                "ROI in %",
+                value=float(st.session_state.get(
+                    f"{mode}_new_tp_roi_pct_v", 0.0)),
+                step=1.0, key=f"{mode}_new_tp_roi_pct_v",
+                label_visibility="collapsed",
+            )
+            if total_investment > 0 and tp_roi:
+                gain = total_investment * (tp_roi / 100.0)
+                st.markdown(
+                    _caption(
+                        f"Take-Profit bei Bot-ROI "
+                        f"<b style='color:#E2E8F0;'>≥ +{tp_roi:.1f}%</b> "
+                        f"(Gewinn von <b>${gain:,.2f}</b> USDT)"
+                    ),
+                    unsafe_allow_html=True,
                 )
-                if total_investment > 0 and tp_roi:
-                    gain = total_investment * (tp_roi / 100.0)
-                    st.markdown(
-                        _caption(
-                            f"Take-Profit bei Bot-ROI "
-                            f"<b style='color:#E2E8F0;'>≥ +{tp_roi:.1f}%</b> "
-                            f"(Gewinn von <b>${gain:,.2f}</b> USDT)"
-                        ),
-                        unsafe_allow_html=True,
-                    )
-                if tp_roi and tp_roi > 0:
-                    tp_pct_backend = ("roi", float(tp_roi) / 100.0)
-            else:  # Price
-                tp_pct_backend = ("price",
-                                   _sl_tp_price_pair("tp", mode,
-                                                      upper_price, sub_mode))
+            if tp_roi and tp_roi > 0:
+                tp_pct_backend = ("roi", float(tp_roi) / 100.0)
+        else:  # Price
+            tp_pct_backend = ("price",
+                               _sl_tp_price_pair("tp", mode,
+                                                  upper_price, sub_mode))
 
     # ── Stop-Loss Box ───────────────────────────────────────────────────────
     sl_pct_backend: Optional[float] = None
@@ -837,35 +842,42 @@ def _section_sl_tp(mode: str, lower_price: float = 0.0,
             "margin-bottom:4px;'>Stop-Loss</div>",
             unsafe_allow_html=True,
         )
-        sl_enabled = st.checkbox("Aktivieren", key=f"{mode}_new_sl_enabled")
-        if sl_enabled:
-            if chosen_mode == "%ROI":
-                sl_roi = st.number_input(
-                    "ROI in %",
-                    value=float(st.session_state.get(
-                        f"{mode}_new_sl_roi_pct_v", 15.0)),
-                    step=1.0, key=f"{mode}_new_sl_roi_pct_v",
-                    label_visibility="collapsed",
+        if chosen_mode == "%ROI":
+            sl_roi = st.number_input(
+                "ROI in %",
+                value=float(st.session_state.get(
+                    f"{mode}_new_sl_roi_pct_v", 0.0)),
+                step=1.0, key=f"{mode}_new_sl_roi_pct_v",
+                label_visibility="collapsed",
+            )
+            if total_investment > 0 and sl_roi:
+                loss = total_investment * (sl_roi / 100.0)
+                st.markdown(
+                    _caption(
+                        f"Stop-Loss bei Bot-ROI "
+                        f"<b style='color:#E2E8F0;'>≤ −{sl_roi:.1f}%</b> "
+                        f"(Verlust von <b>${loss:,.2f}</b> USDT)"
+                    ),
+                    unsafe_allow_html=True,
                 )
-                if total_investment > 0 and sl_roi:
-                    loss = total_investment * (sl_roi / 100.0)
-                    st.markdown(
-                        _caption(
-                            f"Stop-Loss bei Bot-ROI "
-                            f"<b style='color:#E2E8F0;'>≤ −{sl_roi:.1f}%</b> "
-                            f"(Verlust von <b>${loss:,.2f}</b> USDT)"
-                        ),
-                        unsafe_allow_html=True,
-                    )
-                if sl_roi and sl_roi > 0:
-                    sl_pct_backend = ("roi", float(sl_roi) / 100.0)
-            else:  # Price
-                sl_pct_backend = ("price",
-                                   _sl_tp_price_pair("sl", mode,
-                                                      lower_price, sub_mode))
+            if sl_roi and sl_roi > 0:
+                sl_pct_backend = ("roi", float(sl_roi) / 100.0)
+        else:  # Price
+            sl_pct_backend = ("price",
+                               _sl_tp_price_pair("sl", mode,
+                                                  lower_price, sub_mode))
+
+    # ── U.3c: "Bot beim Trigger stoppen"-Checkbox ───────────────────────────
+    # Default aus = Force-Sell, Bot laeuft weiter.
+    # An      = Force-Sell, Bot wird gestoppt (bot_status="stopped").
+    stop_bot = st.checkbox(
+        "Bot beim Trigger stoppen", value=False,
+        key=f"{mode}_new_sltp_stop_bot",
+    )
 
     # ── Backend-Felder befuellen ────────────────────────────────────────────
     result = dict(empty)
+    result["stop_bot_on_trigger"] = bool(stop_bot)
     if isinstance(tp_pct_backend, tuple):
         kind, val = tp_pct_backend
         if val and val > 0:
@@ -1003,10 +1015,8 @@ def _section_recentering(mode: str, trailing_active: bool) -> dict:
         "Recentering",
         key=f"{mode}_new_recenter",
         disabled=trailing_active,
-        help=("Nicht kombinierbar mit Grid Trailing" if trailing_active else
-              "Verschiebt das Grid-Zentrum auf den aktuellen Preis, wenn "
-              "dieser um die Schwelle ueber die obere Range-Grenze steigt. "
-              "Up-only (Industrie-Standard fuer Spot-Grid-Bots)."),
+        # Positiver Hilfstext entfernt (U.1). Nur Sperr-Hinweis bleibt.
+        help="Nicht kombinierbar mit Grid Trailing" if trailing_active else None,
     )
     if trailing_active and enabled:
         enabled = False
@@ -1187,11 +1197,17 @@ def render_bot_setup_form(
         ))
 
         # ── Sektion: Dynamische Mechanismen ──────────────────────────────────
+        # Drei visuelle Gruppen (U.2):
+        #   Gruppe 1: DD-Drosselung, Variable Orders, ATR
+        #   Gruppe 2: Recentering, Grid Trailing
+        #   Gruppe 3: TP/SL (Divider in _section_sl_tp selbst)
         st.markdown(_divider(), unsafe_allow_html=True)
         st.markdown(_label("Dynamische Mechanismen"), unsafe_allow_html=True)
         params.update(_section_dd_throttle(mode))
         params.update(_section_variable_orders(mode))
         params.update(_section_atr_adjust(mode))
+        # Gruppen-Trenner: Risiko-/Volatilitaets-Mechs vs. Range-Mechs
+        st.markdown(_divider(), unsafe_allow_html=True)
         # Recentering / Trailing - gegenseitige Verriegelung via session_state
         tr_active = st.session_state.get(f"{mode}_new_trailing", False)
         params.update(_section_recentering(mode, trailing_active=tr_active))

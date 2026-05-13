@@ -156,6 +156,7 @@ class BotStore:
         recenter_threshold:     float = 0.05,
         grid_trigger_price:     Optional[float] = None,
         enable_initial_buy:     bool  = True,
+        stop_bot_on_trigger:    bool  = False,
     ) -> tuple[Optional[str], str]:
         """
         Erstellt einen neuen Bot und speichert ihn.
@@ -213,6 +214,8 @@ class BotStore:
                 "grid_trigger_price":     grid_trigger_price,
                 # Initial-Buy (True = Binance-Standard, False = rein USDT)
                 "enable_initial_buy":     enable_initial_buy,
+                # Bot beim TP/SL-Trigger stoppen (statt nur Force-Sell)
+                "stop_bot_on_trigger":    stop_bot_on_trigger,
             },
             "state":     {},
             "trade_log": [],
