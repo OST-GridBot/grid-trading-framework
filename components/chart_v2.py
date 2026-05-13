@@ -47,11 +47,15 @@ def plot_grid_chart_v2(
 ) -> None:
 
     def _to_unix(ts_val):
+        """
+        Wandelt einen Zurich-lokalen Timestamp in Unix-UTC-Sekunden um.
+        Die Eingangswerte kommen aus convert_df_timestamps/utc_to_zurich
+        und sind damit naive Zurich-Werte. Lightweight Charts erwartet
+        Unix-UTC; Browser lokalisiert danach automatisch.
+        """
         try:
-            ts = pd.to_datetime(ts_val)
-            if ts.tzinfo is not None:
-                ts = ts.tz_localize(None)
-            return int(ts.timestamp())
+            from src.utils.timezone import zurich_to_unix
+            return zurich_to_unix(ts_val)
         except Exception:
             return None
 

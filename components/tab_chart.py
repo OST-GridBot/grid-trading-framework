@@ -128,9 +128,10 @@ def render_tab_chart(
             else:
                 ts = pd.to_datetime(view.get("created_at", ""))
             if ts is not None and not pd.isna(ts):
-                if ts.tzinfo is not None:
-                    ts = ts.tz_localize(None)
-                bot_start_ts = int(ts.timestamp())
+                # Zurich-lokal -> Unix-UTC fuer Lightweight Charts.
+                # Verhindert den +2h-Versatz (Auftrag X.1).
+                from src.utils.timezone import zurich_to_unix
+                bot_start_ts = zurich_to_unix(ts)
         except Exception:
             bot_start_ts = None
 
