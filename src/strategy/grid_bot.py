@@ -134,11 +134,13 @@ class GridBot:
         atr_multiplier:         float = 1.0,
         enable_atr_dynamic:     bool  = False,
         atr_dynamic_threshold:  float = 0.15,
-        # Grid Trailing
+        # Grid Trailing (nur Up-Variante, Binance-Standard)
         enable_trailing_up:     bool  = False,
-        enable_trailing_down:   bool  = False,
         trailing_up_stop:       Optional[float] = None,
-        trailing_down_stop:     Optional[float] = None,
+        # Wenn aktiv: preis-basierte SL/TP-Schwellen wandern bei jedem
+        # Trailing-Up-Shift um genau einen Grid-Step nach oben mit.
+        # ROI-basierte Schwellen sind preis-unabhaengig und bleiben.
+        trail_stop_levels:      bool  = False,
         # Grid Trigger (optional): Bot wartet bis Marktpreis diesen Wert
         # beruehrt, bevor Initial-Setup ausgefuehrt wird.
         grid_trigger_price:     Optional[float] = None,
@@ -187,9 +189,8 @@ class GridBot:
         self._df                     = df
         self._candle_buffer: list    = []
         self.enable_trailing_up      = enable_trailing_up
-        self.enable_trailing_down    = enable_trailing_down
         self.trailing_up_stop        = trailing_up_stop
-        self.trailing_down_stop      = trailing_down_stop
+        self.trail_stop_levels       = trail_stop_levels
         self.trailing_count          = 0
         self._candle_lowest_buy: Optional[float] = None
 
@@ -559,8 +560,8 @@ class GridBot:
             if self.enable_recentering_up or self.enable_recentering_down:
                 self._check_recentering(current_price)
 
-            # Grid Trailing pruefen
-            if self.enable_trailing_up or self.enable_trailing_down:
+            # Grid Trailing pruefen (nur Up-Variante, Binance-Standard)
+            if self.enable_trailing_up:
                 self._check_trailing(current_price)
 
             # ── Range-Status (rein UI-Hinweis, kein Verhaltens-Effekt) ──────
@@ -891,48 +892,47 @@ class GridBot:
 
     def _check_trailing(self, current_price: float) -> None:
         """
-        Prueft ob das Grid trailing ausgeloest werden soll.
+        Prueft ob das Grid nach oben verschoben werden soll (Binance-Standard).
 
-        Trailing UP:  Preis >= upper_price → Grid 1 Schritt nach oben
-        Trailing DOWN: Preis <= lower_price → Grid 1 Schritt nach unten
+        Trigger: current_price >= upper_price + grid_step
+                 (Preis muss die obere Grenze um einen vollen Step VERLASSEN
+                 haben, nicht nur beruehren).
+        Aktion : Grid um einen grid_step nach oben (Lower und Upper synchron).
+        Limit  : trailing_up_stop deckelt die maximale Upper-Grenze.
 
-        Stop-Preise verhindern unkontrolliertes Verschieben.
+        Optional (trail_stop_levels=True): preis-basierte SL/TP-Schwellen
+        wandern um denselben grid_step mit nach oben.
+
+        Down-Trailing existiert nicht — Spot-Grid-Bots wandern nur aufwaerts
+        (Industrie-Standard).
         """
+        if not self.enable_trailing_up:
+            return
         grid_step = (self.upper_price - self.lower_price) / self.num_grids
+        if current_price < self.upper_price + grid_step:
+            return
+        new_upper = self.upper_price + grid_step
+        new_lower = self.lower_price + grid_step
+        # Stop-Preis deckelt
+        if self.trailing_up_stop is not None and new_upper > self.trailing_up_stop:
+            return
+        self._shift_grid(new_lower, new_upper, current_price)
+        self.trailing_count += 1
 
-        # Trailing UP
-        if self.enable_trailing_up and current_price >= self.upper_price:
-            new_upper = self.upper_price + grid_step
-            new_lower = self.lower_price + grid_step
-            # Stop-Preis pruefen
-            if self.trailing_up_stop is not None and new_upper > self.trailing_up_stop:
-                return
-            self._shift_grid(new_lower, new_upper, current_price)
-            self.trailing_count += 1
-            if self._current_timestamp is not None:
-                self.trailing_events.append({
-                    "timestamp": self._current_timestamp,
-                    "new_lower": float(self.lower_price),
-                    "new_upper": float(self.upper_price),
-                    "direction": "up",
-                })
+        # Optional: preis-basierte SL/TP-Schwellen mitwandern
+        if self.trail_stop_levels:
+            if self.stop_loss_price is not None:
+                self.stop_loss_price += grid_step
+            if self.take_profit_price is not None:
+                self.take_profit_price += grid_step
 
-        # Trailing DOWN
-        elif self.enable_trailing_down and current_price <= self.lower_price:
-            new_lower = self.lower_price - grid_step
-            new_upper = self.upper_price - grid_step
-            # Stop-Preis pruefen
-            if self.trailing_down_stop is not None and new_lower < self.trailing_down_stop:
-                return
-            self._shift_grid(new_lower, new_upper, current_price)
-            self.trailing_count += 1
-            if self._current_timestamp is not None:
-                self.trailing_events.append({
-                    "timestamp": self._current_timestamp,
-                    "new_lower": float(self.lower_price),
-                    "new_upper": float(self.upper_price),
-                    "direction": "down",
-                })
+        if self._current_timestamp is not None:
+            self.trailing_events.append({
+                "timestamp": self._current_timestamp,
+                "new_lower": float(self.lower_price),
+                "new_upper": float(self.upper_price),
+                "direction": "up",
+            })
 
     def _shift_grid(self, new_lower: float, new_upper: float, current_price: float) -> None:
         """
@@ -989,9 +989,8 @@ class GridBot:
             "enable_atr_dynamic":  self.enable_atr_dynamic,
             "atr_dynamic_threshold": self.atr_dynamic_threshold,
             "enable_trailing_up":  self.enable_trailing_up,
-            "enable_trailing_down": self.enable_trailing_down,
             "trailing_up_stop":    self.trailing_up_stop,
-            "trailing_down_stop":  self.trailing_down_stop,
+            "trail_stop_levels":   self.trail_stop_levels,
             "trailing_count":      self.trailing_count,
             "trailing_events":     self.trailing_events,
             "recentering_events":  self.recentering_events,
@@ -1046,9 +1045,10 @@ class GridBot:
             self.enable_atr_dynamic     = state.get("enable_atr_dynamic", False)
             self.atr_dynamic_threshold  = state.get("atr_dynamic_threshold", 0.15)
             self.enable_trailing_up   = state.get("enable_trailing_up", False)
-            self.enable_trailing_down = state.get("enable_trailing_down", False)
             self.trailing_up_stop     = state.get("trailing_up_stop", None)
-            self.trailing_down_stop   = state.get("trailing_down_stop", None)
+            # Alte Felder enable_trailing_down/trailing_down_stop werden
+            # beim Laden ignoriert (Down-Trailing existiert nicht mehr).
+            self.trail_stop_levels    = state.get("trail_stop_levels", False)
             self.trailing_count       = state.get("trailing_count", 0)
             self.trailing_events      = state.get("trailing_events", [])
             self.recentering_events   = state.get("recentering_events", [])
@@ -1155,9 +1155,8 @@ def simulate_grid_bot(
     enable_atr_dynamic:     bool  = False,
     atr_dynamic_threshold:  float = 0.15,
     enable_trailing_up:     bool  = False,
-    enable_trailing_down:   bool  = False,
     trailing_up_stop:       Optional[float] = None,
-    trailing_down_stop:     Optional[float] = None,
+    trail_stop_levels:      bool  = False,
     grid_trigger_price:     Optional[float] = None,
     df_for_atr:             Optional[object] = None,
 ) -> dict:
@@ -1228,9 +1227,8 @@ def simulate_grid_bot(
             enable_atr_dynamic     = enable_atr_dynamic,
             atr_dynamic_threshold  = atr_dynamic_threshold,
             enable_trailing_up     = enable_trailing_up,
-            enable_trailing_down   = enable_trailing_down,
             trailing_up_stop       = trailing_up_stop,
-            trailing_down_stop     = trailing_down_stop,
+            trail_stop_levels      = trail_stop_levels,
             df                     = df_for_atr,
             grid_trigger_price     = grid_trigger_price,
         )

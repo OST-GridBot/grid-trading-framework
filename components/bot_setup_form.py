@@ -100,9 +100,8 @@ def _default_params(mode: str) -> dict:
         "enable_recentering_down": False,
         "recenter_threshold":      0.05,
         "enable_trailing_up":     False,
-        "enable_trailing_down":   False,
         "trailing_up_stop":       None,
-        "trailing_down_stop":     None,
+        "trail_stop_levels":      False,
         # Grid Trigger (None = Bot startet sofort, Wert = Bot wartet auf Touch)
         "grid_trigger_price":     None,
     }
@@ -348,13 +347,8 @@ def _section_smart_setup(
     elif _rc_dn:            _rc_lbl = "Nur Down"
     else:                   _rc_lbl = "Inaktiv"
 
-    # Trailing-Label
-    _tr_up = bool(getattr(_res, "enable_trailing_up",   False))
-    _tr_dn = bool(getattr(_res, "enable_trailing_down", False))
-    if _tr_up and _tr_dn:   _tr_lbl = "Up + Down"
-    elif _tr_up:            _tr_lbl = "Nur Up"
-    elif _tr_dn:            _tr_lbl = "Nur Down"
-    else:                   _tr_lbl = "Inaktiv"
+    # Trailing-Label (nur Up-Variante, Binance-Standard)
+    _tr_lbl = "Aktiv" if bool(getattr(_res, "enable_trailing_up", False)) else "Inaktiv"
 
     # Optionale Mechanismen (nur anzeigen wenn aktiv)
     _box_html = (
@@ -617,7 +611,6 @@ def _render_chart_main(params: dict, mode: str = "paper") -> None:
             show_stop_loss      = settings["show_stop_loss"],
             show_take_profit    = settings["show_take_profit"],
             trailing_up_stop    = params.get("trailing_up_stop"),
-            trailing_down_stop  = params.get("trailing_down_stop"),
             show_trailing_stops = settings["show_trailing_stops"],
             # Setup-Vorschau hat keine Events (Bot existiert noch nicht)
             recentering_events     = [],
@@ -893,50 +886,79 @@ def _section_recentering(mode: str, trailing_active: bool) -> dict:
 def _section_trailing(mode: str, recenter_active: bool,
                       lower: float, upper: float) -> dict:
     """
-    Grid-Trailing-Section, Up-only (Industrie-Standard fuer Spot-Grid-Bots).
+    Grid-Trailing-Section (Binance-Standard, nur Up-Variante).
 
-    Backend-Parameter enable_trailing_down und trailing_down_stop bleiben
-    fuer Backward-Compat existieren, werden hier aber immer auf
-    False/None gesetzt. Trailing-Up-Stop wird als Prozent ueber der
-    Upper-Grenze konfiguriert (Default +10%, analog zu SL/TP).
+    Trigger im Backend: current_price >= upper + grid_step.
+    Trailing-Up-Stop ist immer ein absoluter USDT-Preis im Backend.
+    Die UI bietet zwei Eingabe-Modi (Prozent oder Absolut) ueber ein
+    Dropdown — Modus-Wahl ist UI-only, nicht persistiert.
+
+    Optional: trail_stop_levels laesst preis-basierte SL/TP-Schwellen
+    bei jedem Trailing-Shift um einen Grid-Step mitwandern.
     """
     enabled = st.checkbox(
-        "Grid Trailing aktivieren",
+        "Grid Trailing",
         key=f"{mode}_new_trailing",
         disabled=recenter_active,
-        help=("Nicht kombinierbar mit Recentering" if recenter_active else
-              "Verschiebt das Grid einen Schritt nach oben, sobald der "
-              "Preis die obere Range-Grenze beruehrt. Wird durch den "
-              "Trailing-Up-Stop nach oben gedeckelt. Up-only."),
+        help=("Nicht kombinierbar mit Recentering"
+              if recenter_active else None),
     )
     if recenter_active and enabled:
         enabled = False
-    up      = False
-    up_stop = None
+    up           = False
+    up_stop      = None
+    trail_levels = False
     if enabled:
         up = True
-        # Trailing-Up-Stop als Prozent ueber upper_price (Default +10%).
-        # Analog zur Take-Profit-Logik aus Sub SL/TP-2.
-        st.markdown(_caption("Trailing-Up-Stop (% über Upper)"),
-                    unsafe_allow_html=True)
-        pct = st.slider("", 1.0, 50.0,
-                         float(st.session_state.get(f"{mode}_new_tr_up_pct", 10.0)),
-                         1.0, key=f"{mode}_new_tr_up_pct",
-                         label_visibility="collapsed") / 100
-        if upper and upper > 0:
-            up_stop = float(upper) * (1 + pct)
+        # Modus-Wahl Prozent vs. Absolut (UI-only, in session_state).
+        mode_key = f"{mode}_new_tr_up_mode"
+        chosen_mode = st.radio(
+            "Trailing-Up-Stop", options=["%", "Absolut"],
+            horizontal=True, key=mode_key,
+        )
+        if chosen_mode == "%":
+            st.markdown(_caption("Prozent über Upper"),
+                        unsafe_allow_html=True)
+            pct = st.slider("", 1.0, 50.0,
+                             float(st.session_state.get(f"{mode}_new_tr_up_pct", 10.0)),
+                             1.0, key=f"{mode}_new_tr_up_pct",
+                             label_visibility="collapsed") / 100
+            if upper and upper > 0:
+                up_stop = float(upper) * (1 + pct)
+        else:
+            st.markdown(_caption("Absoluter Stop-Preis (USDT)"),
+                        unsafe_allow_html=True)
+            default_abs = float(upper) * 1.10 if upper > 0 else 0.0
+            up_stop = st.number_input(
+                "", min_value=0.0,
+                value=float(st.session_state.get(f"{mode}_new_tr_up_abs", default_abs)),
+                step=1.0, key=f"{mode}_new_tr_up_abs",
+                label_visibility="collapsed",
+            )
+            up_stop = float(up_stop) if up_stop and up_stop > 0 else None
+
+        # Live-Anzeige des absoluten Stop-Preises (immer, unabhaengig vom Modus)
+        if up_stop is not None and upper > 0:
             st.markdown(
                 _caption(
                     f"Trailing-Up-Stop bei <b style='color:#E2E8F0;'>"
-                    f"{up_stop:,.2f} USDT</b> "
-                    f"(Upper {upper:,.2f} × +{int(pct*100)}%)"
+                    f"{up_stop:,.2f} USDT</b>"
                 ),
                 unsafe_allow_html=True,
             )
+
+        # Optionaler Toggle: SL/TP-Schwellen mitwandern
+        trail_levels = st.checkbox(
+            "Stopp-Grenzen mitwandern",
+            key=f"{mode}_new_trail_stop_levels",
+            help=("Preis-basierte SL/TP-Schwellen wandern bei jedem "
+                  "Trailing-Shift um einen Grid-Step nach oben mit. "
+                  "ROI-basierte Schwellen sind preis-unabhängig und "
+                  "bleiben unverändert."),
+        )
     return {"enable_trailing_up":   up,
-            "enable_trailing_down": False,
             "trailing_up_stop":     up_stop,
-            "trailing_down_stop":   None}
+            "trail_stop_levels":    trail_levels}
 
 
 # ---------------------------------------------------------------------------

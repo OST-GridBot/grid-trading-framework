@@ -68,9 +68,8 @@ def run_backtest(
     enable_atr_dynamic:     bool  = False,
     atr_dynamic_threshold:  float = 0.15,
     enable_trailing_up:     bool  = False,
-    enable_trailing_down:   bool  = False,
     trailing_up_stop:       Optional[float] = None,
-    trailing_down_stop:     Optional[float] = None,
+    trail_stop_levels:      bool  = False,
     grid_trigger_price:     Optional[float] = None,
     force_reload:           bool  = False,
 ) -> dict:
@@ -146,9 +145,8 @@ def run_backtest(
         enable_atr_dynamic     = enable_atr_dynamic,
         atr_dynamic_threshold  = atr_dynamic_threshold,
         enable_trailing_up     = enable_trailing_up,
-        enable_trailing_down   = enable_trailing_down,
         trailing_up_stop       = trailing_up_stop,
-        trailing_down_stop     = trailing_down_stop,
+        trail_stop_levels      = trail_stop_levels,
         grid_trigger_price     = grid_trigger_price,
     )
 
@@ -213,7 +211,7 @@ def run_backtest(
         # Mechanismus-Aktivierung (fuer Tab "Mechanisms")
         "mechanism_active":    {
             "recentering": enable_recentering_up or enable_recentering_down,
-            "trailing":    enable_trailing_up or enable_trailing_down,
+            "trailing":    enable_trailing_up,
             "stop_loss":   stop_loss_pct is not None or stop_loss_roi_pct is not None,
             "take_profit": take_profit_pct is not None or take_profit_roi_pct is not None,
         },

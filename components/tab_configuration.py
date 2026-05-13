@@ -95,20 +95,14 @@ def _label_atr(cfg: dict) -> str:
 
 
 def _label_trailing(cfg: dict) -> str:
-    """Grid-Trailing-Status mit Up/Down-Stop-Preisen."""
-    up = cfg.get("enable_trailing_up", False)
-    dn = cfg.get("enable_trailing_down", False)
-    if not (up or dn):
+    """Grid-Trailing-Status (nur Up-Variante, Binance-Standard)."""
+    if not cfg.get("enable_trailing_up", False):
         return "Inaktiv"
-    parts = []
-    if up:
-        v = cfg.get("trailing_up_stop")
-        s = f"\\${v:,.2f}" if isinstance(v, (int, float)) else "–"
-        parts.append(f"Up Stop: {s}")
-    if dn:
-        v = cfg.get("trailing_down_stop")
-        s = f"\\${v:,.2f}" if isinstance(v, (int, float)) else "–"
-        parts.append(f"Down Stop: {s}")
+    v = cfg.get("trailing_up_stop")
+    stop_str = f"\\${v:,.2f}" if isinstance(v, (int, float)) else "–"
+    parts = [f"Stop: {stop_str}"]
+    if cfg.get("trail_stop_levels"):
+        parts.append("SL/TP wandern mit")
     return f"Aktiv ({' / '.join(parts)})"
 
 

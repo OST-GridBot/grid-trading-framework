@@ -158,14 +158,11 @@ def render_tab_chart(
         except Exception:
             tp_price = None
 
-    # ── Trailing-Stops bestimmen ────────────────────────────────────────────
+    # ── Trailing-Up-Stop bestimmen (Binance-Standard: nur Up-Variante) ──────
     # PT/LT aus State (BotRunner persistiert die Werte), BT aus Config.
-    tr_up_stop   = state.get("trailing_up_stop")
-    tr_down_stop = state.get("trailing_down_stop")
+    tr_up_stop = state.get("trailing_up_stop")
     if tr_up_stop is None:
         tr_up_stop = cfg.get("trailing_up_stop")
-    if tr_down_stop is None:
-        tr_down_stop = cfg.get("trailing_down_stop")
 
     # Trailing-Events: Timestamps nach Zurich konvertieren (analog Trade-Log)
     trailing_events_display = []
@@ -209,7 +206,6 @@ def render_tab_chart(
         show_stop_loss      = settings["show_stop_loss"],
         show_take_profit    = settings["show_take_profit"],
         trailing_up_stop    = tr_up_stop,
-        trailing_down_stop  = tr_down_stop,
         show_trailing_stops = settings["show_trailing_stops"],
         recentering_events     = recentering_events_display,
         show_recentering_steps = settings["show_recentering_steps"],

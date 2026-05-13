@@ -166,9 +166,7 @@ class SmartSetupResult:
     enable_recentering_up:   bool
     enable_recentering_down: bool
     enable_trailing_up:   bool
-    enable_trailing_down: bool
     trailing_up_stop:     Optional[float]
-    trailing_down_stop:   Optional[float]
     expected_roi_pct:     float
     num_tested:           int
     stop_loss_pct:           Optional[float] = None
@@ -323,9 +321,7 @@ def smart_grid_setup(
                                     enable_recentering_down=False,
                                     recenter_threshold=0.05,
                                     enable_trailing_up=use_trailing,
-                                    enable_trailing_down=False,
                                     trailing_up_stop=tr_up_stop,
-                                    trailing_down_stop=None,
                                     stop_loss_pct=sl,
                                     enable_dd_throttle=dd_on,
                                     dd_threshold_1=dd_t1,
@@ -353,9 +349,7 @@ def smart_grid_setup(
                                         "enable_recentering_up":   use_recenter,
                                         "enable_recentering_down": False,
                                         "enable_trailing_up":   use_trailing,
-                                        "enable_trailing_down": False,
                                         "trailing_up_stop":     tr_up_stop,
-                                        "trailing_down_stop":   None,
                                         "stop_loss_pct":        sl,
                                         "enable_dd_throttle":   dd_on,
                                         "dd_threshold_1":       dd_t1,
@@ -377,9 +371,7 @@ def smart_grid_setup(
         enable_recentering_up   = best_cfg["enable_recentering_up"],
         enable_recentering_down = best_cfg["enable_recentering_down"],
         enable_trailing_up   = best_cfg["enable_trailing_up"],
-        enable_trailing_down = best_cfg["enable_trailing_down"],
         trailing_up_stop     = best_cfg["trailing_up_stop"],
-        trailing_down_stop   = best_cfg["trailing_down_stop"],
         expected_roi_pct     = best_cfg["expected_roi_pct"],
         num_tested           = num_tested,
         stop_loss_pct          = best_cfg.get("stop_loss_pct"),

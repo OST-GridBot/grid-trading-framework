@@ -32,7 +32,6 @@ def plot_grid_chart_v2(
     show_stop_loss:      bool  = True,
     show_take_profit:    bool  = True,
     trailing_up_stop:    Optional[float] = None,
-    trailing_down_stop:  Optional[float] = None,
     show_trailing_stops: bool  = True,
     recentering_events:     Optional[list] = None,
     show_recentering_steps: bool  = True,
@@ -242,13 +241,7 @@ def plot_grid_chart_v2(
         if (show_trailing_stops and trailing_up_stop is not None and trailing_up_stop > 0)
         else None
     )
-    tr_dn_val = (
-        round(float(trailing_down_stop), 4)
-        if (show_trailing_stops and trailing_down_stop is not None and trailing_down_stop > 0)
-        else None
-    )
     trailing_up_stop_json   = json.dumps(tr_up_val)
-    trailing_down_stop_json = json.dumps(tr_dn_val)
 
     recenter_lower_json = json.dumps(recenter_lower_data)
     recenter_upper_json = json.dumps(recenter_upper_data)
@@ -411,7 +404,6 @@ def plot_grid_chart_v2(
   const stopLossPrice  = {stop_loss_json};
   const takeProfitPrice = {take_profit_json};
   const trailingUpStop   = {trailing_up_stop_json};
-  const trailingDownStop = {trailing_down_stop_json};
   const recenterLowerData = {recenter_lower_json};
   const recenterUpperData = {recenter_upper_json};
   const firstTs           = {first_ts_json};
@@ -533,10 +525,6 @@ def plot_grid_chart_v2(
   if (trailingUpStop !== null) candleSeries.createPriceLine({{
     price:trailingUpStop, color:'#F97316', lineWidth:2,
     lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'Trail-Up Stop',
-  }});
-  if (trailingDownStop !== null) candleSeries.createPriceLine({{
-    price:trailingDownStop, color:'#F97316', lineWidth:2,
-    lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'Trail-Down Stop',
   }});
   // ── Grid Trailing-Stufen (orange Step-Linien) ─────────────
   // Pro Trailing-Trigger ein Datenpunkt; Stufen entstehen via LineType.WithSteps.
