@@ -252,11 +252,12 @@ def _smart_combos_count(objective: str) -> int:
     return n_range * n_grids * n_modes * mech * sl * dd * vo
 
 
+# Smart-Setup-Info-Texte. Aktuell wird in der UI nur ROI angeboten — die
+# anderen Branches im Backend-Optimizer bleiben fuer eventuelle spaetere
+# Reaktivierung erhalten, sind aber hier nicht mehr referenziert.
 _SMART_INFO = {
-    "maximize_roi":    ("Sucht die Konfiguration mit dem hoechsten Gesamtgewinn. "
-                        "Variiert: Range, Anzahl Grids, Modus, Recentering, Trailing."),
-    "maximize_sharpe": ("Sucht das beste Verhaeltnis von Gewinn zu Volatilitaet "
-                        "(risikobereinigt). Variiert zusaetzlich: Variable Orders."),
+    "maximize_roi": ("Sucht die Konfiguration mit dem höchsten Gesamtgewinn. "
+                     "Variiert: Range, Anzahl Grids, Modus, Recentering, Trailing."),
 }
 
 
@@ -273,32 +274,25 @@ def _section_smart_setup(
     st.caption("Findet automatisch die beste Parametrisierung anhand "
                 "historischer Daten.")
 
-    # H1: nur zwei UI-Optionen (Backend kennt weiterhin alle 4 Objectives)
-    options = {
-        "maximize_roi":    "Maximales ROI",
-        "maximize_sharpe": "Bester Sharpe",
-    }
-    obj = st.radio("Optimierungsziel",
-                    list(options.keys()),
-                    format_func=lambda x: options[x],
-                    horizontal=True,
-                    key=f"{mode}_smart_obj",
-                    label_visibility="collapsed")
+    # Aktuell wird ausschliesslich auf ROI optimiert. Die Optimierungsziel-
+    # Wahl ist bewusst aus der UI entfernt; die anderen Branches im Backend
+    # (Sharpe/Calmar/MinDrawdown) bleiben fuer eventuelle Reaktivierung.
+    obj = "maximize_roi"
 
-    # H3: Transparenz-Info-Box - was wird optimiert + Kombi-Counter
-    _info  = _SMART_INFO.get(obj, "")
+    # Transparenz-Info-Box: was wird optimiert + Kombi-Counter
+    _info  = _SMART_INFO[obj]
     _combo = _smart_combos_count(obj)
     st.markdown(
         f"<div style='font-size:0.72rem; color:#94A3B8; padding:6px 10px; "
         f"background:rgba(255,255,255,0.02); border-radius:4px; "
         f"margin-top:4px; margin-bottom:6px;'>"
-        f"<b style='color:#CBD5E1;'>🎯 {options[obj]}:</b> {_info} "
+        f"<b style='color:#CBD5E1;'>Maximales ROI:</b> {_info} "
         f"<span style='color:#64748B;'>{_combo} Kombinationen werden getestet.</span>"
         f"</div>",
         unsafe_allow_html=True
     )
 
-    if st.button("🎯 Optimale Parameter berechnen", key=f"{mode}_smart_run",
+    if st.button("Optimale Parameter berechnen", key=f"{mode}_smart_run",
                   use_container_width=True):
         try:
             # H2: konsolidierte Backend-Funktion mit range_basis-Param.
