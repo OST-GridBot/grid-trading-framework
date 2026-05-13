@@ -71,6 +71,7 @@ def run_backtest(
     trailing_up_stop:       Optional[float] = None,
     trail_stop_levels:      bool  = False,
     grid_trigger_price:     Optional[float] = None,
+    enable_initial_buy:     bool  = True,
     force_reload:           bool  = False,
 ) -> dict:
     """
@@ -148,6 +149,7 @@ def run_backtest(
         trailing_up_stop       = trailing_up_stop,
         trail_stop_levels      = trail_stop_levels,
         grid_trigger_price     = grid_trigger_price,
+        enable_initial_buy     = enable_initial_buy,
     )
 
     if sim.get("error"):

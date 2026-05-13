@@ -104,6 +104,8 @@ def _default_params(mode: str) -> dict:
         "trail_stop_levels":      False,
         # Grid Trigger (None = Bot startet sofort, Wert = Bot wartet auf Touch)
         "grid_trigger_price":     None,
+        # Initial-Buy (Binance-Standard True). False = Bot startet rein USDT.
+        "enable_initial_buy":     True,
     }
 
 
@@ -162,15 +164,57 @@ def _section_basic(mode: str) -> dict:
     return p
 
 
-def _section_capital(mode: str) -> dict:
-    """Startkapital."""
+def _section_capital(mode: str, current_price: Optional[float] = None) -> dict:
+    """
+    Kapital-Sektion (frueher "Startkapital" + "Risiko & Kapital" zusammen):
+      - Startkapital
+      - Initial-Buy-Toggle (Default an = Binance-Standard)
+      - Grid Trigger (eingebettet, ohne eigenen Divider)
+      - Gebuehrenrate
+      - Kapitalreserve
+    """
     st.markdown(_divider(), unsafe_allow_html=True)
-    st.markdown(_label("Startkapital"), unsafe_allow_html=True)
-    val = st.number_input("", min_value=100.0, max_value=1_000_000.0,
-                           value=10_000.0, step=500.0,
-                           key=f"{mode}_new_capital",
-                           label_visibility="collapsed")
-    return {"total_investment": float(val)}
+    st.markdown(_label("Kapital"), unsafe_allow_html=True)
+
+    # ── Startkapital ────────────────────────────────────────────────────────
+    st.markdown(_caption("Startkapital (USDT)"), unsafe_allow_html=True)
+    capital = st.number_input("", min_value=100.0, max_value=1_000_000.0,
+                               value=10_000.0, step=500.0,
+                               key=f"{mode}_new_capital",
+                               label_visibility="collapsed")
+
+    # ── Initial-Buy-Toggle ──────────────────────────────────────────────────
+    # Default True = Binance-Standard (Bot baut Coin-Inventar zum Start auf).
+    # False = Bot startet rein mit USDT, ohne sofortige Marktkaeufe.
+    enable_initial_buy = st.checkbox(
+        "Initial-Buy", value=True, key=f"{mode}_new_initial_buy",
+        help=("Beim Bot-Start werden sofort Coins auf den Sell-Linien über "
+              "dem Startpreis gekauft (Binance-Standard). Deaktivieren = "
+              "Bot startet rein mit USDT und kauft erst, wenn der Preis "
+              "eine Buy-Linie unten durchschreitet."),
+    )
+
+    # ── Grid Trigger (eingebettet) ──────────────────────────────────────────
+    trigger = _section_grid_trigger_inline(mode, current_price)
+
+    # ── Gebuehrenrate + Kapitalreserve ──────────────────────────────────────
+    st.markdown(_caption("Gebührenrate (%)"), unsafe_allow_html=True)
+    fee_pct = st.number_input("", 0.0, 1.0, DEFAULT_FEE_RATE * 100, 0.01,
+                               format="%.3f", key=f"{mode}_new_fee",
+                               label_visibility="collapsed")
+    st.markdown(_caption("Kapitalreserve (%)"), unsafe_allow_html=True)
+    reserve_pct = st.slider("", 0.0, 20.0, DEFAULT_RESERVE_PCT * 100, 1.0,
+                             key=f"{mode}_new_reserve",
+                             label_visibility="collapsed") / 100
+
+    return {
+        "total_investment":   float(capital),
+        "enable_initial_buy": bool(enable_initial_buy),
+        "grid_trigger_price": trigger,
+        "fee_rate":           fee_pct / 100,
+        "reserve_pct":        float(reserve_pct),
+        "_fee_pct":           fee_pct,
+    }
 
 
 def _load_current_price(
@@ -617,22 +661,6 @@ def _render_chart_main(params: dict, mode: str = "paper") -> None:
         st.caption(f"Chart nicht verfügbar: {e}")
 
 
-def _section_risk(mode: str) -> dict:
-    """Gebuehrenrate + Kapitalreserve."""
-    st.markdown(_divider(), unsafe_allow_html=True)
-    st.markdown(_label("Risiko & Kapital"), unsafe_allow_html=True)
-    st.markdown(_caption("Gebührenrate (%)"), unsafe_allow_html=True)
-    fee_pct = st.number_input("", 0.0, 1.0, DEFAULT_FEE_RATE * 100, 0.01,
-                               format="%.3f", key=f"{mode}_new_fee",
-                               label_visibility="collapsed")
-    st.markdown(_caption("Kapitalreserve (%)"), unsafe_allow_html=True)
-    reserve_pct = st.slider("", 0.0, 20.0, DEFAULT_RESERVE_PCT * 100, 1.0,
-                             key=f"{mode}_new_reserve",
-                             label_visibility="collapsed") / 100
-    return {"fee_rate": fee_pct / 100, "reserve_pct": float(reserve_pct),
-            "_fee_pct": fee_pct}
-
-
 def _section_stop_loss(mode: str, lower_price: float = 0.0,
                         total_investment: float = 0.0) -> dict:
     """
@@ -766,46 +794,43 @@ def _section_take_profit(mode: str, upper_price: float = 0.0,
     return {"take_profit_pct": pct, "take_profit_roi_pct": roi_pct}
 
 
-def _section_grid_trigger(mode: str, lower: float, upper: float,
-                          current_price: Optional[float]) -> dict:
+def _section_grid_trigger_inline(mode: str,
+                                  current_price: Optional[float]) -> Optional[float]:
     """
-    Optionaler Grid Trigger Price. Bot wartet bis Marktpreis diesen Wert
-    beruehrt — dann erst wird das Initial-Setup ausgefuehrt.
+    Grid Trigger als Sub-Element der Kapital-Sektion. Kein eigener Divider,
+    kein eigenes Section-Label — wird unter Startkapital/Initial-Buy
+    eingebettet. Gibt den Trigger-Preis (oder None) zurueck.
     """
-    st.markdown(_divider(), unsafe_allow_html=True)
     enabled = st.checkbox(
-        "Grid Trigger aktivieren", key=f"{mode}_new_trigger",
-        help=("Bot wartet auf Preis-Beruehrung dieses Werts. Erst dann "
-              "werden Grid und Initial-Orders aufgebaut. Leer = Bot startet "
+        "Grid Trigger", key=f"{mode}_new_trigger",
+        help=("Bot wartet auf Preis-Berührung dieses Werts. Erst dann "
+              "werden Grid und Initial-Orders aufgebaut. Aus = Bot startet "
               "sofort zum aktuellen Marktpreis."),
     )
-    trigger_price = None
-    if enabled:
-        # Default = Mitte der Range
-        default_trigger = float((lower + upper) / 2.0) if (lower and upper) else (
-            float(current_price) if current_price else 0.0
+    if not enabled:
+        return None
+    default_trigger = float(current_price) if current_price else 0.0
+    prior = float(st.session_state.get(f"{mode}_new_trigger_price",
+                                        default_trigger))
+    trigger_price = st.number_input(
+        "Trigger-Preis (USDT)",
+        min_value=0.0, value=prior, step=1.0,
+        key=f"{mode}_new_trigger_price", label_visibility="collapsed",
+    )
+    if trigger_price <= 0:
+        return None
+    if current_price and current_price > 0:
+        direction = ("Anstieg" if current_price < trigger_price
+                     else "Rückgang" if current_price > trigger_price
+                     else "sofort")
+        st.markdown(
+            _caption(
+                f"Aktueller Preis: <b style='color:#E2E8F0;'>{current_price:,.2f}</b> "
+                f"USDT &nbsp;→&nbsp; wartet auf <b style='color:#E2E8F0;'>{direction}</b>"
+            ),
+            unsafe_allow_html=True,
         )
-        prior = float(st.session_state.get(f"{mode}_new_trigger_price",
-                                            default_trigger))
-        trigger_price = st.number_input(
-            "Trigger-Preis (USDT)",
-            min_value=0.0, value=prior, step=1.0,
-            key=f"{mode}_new_trigger_price", label_visibility="collapsed",
-        )
-        if trigger_price <= 0:
-            trigger_price = None
-        elif current_price and current_price > 0:
-            direction = "Anstieg" if current_price < trigger_price else (
-                "Rueckgang" if current_price > trigger_price else "sofort"
-            )
-            st.markdown(
-                _caption(
-                    f"Aktueller Preis: <b style='color:#E2E8F0;'>{current_price:,.2f}</b> "
-                    f"USDT &nbsp;→&nbsp; wartet auf <b style='color:#E2E8F0;'>{direction}</b>"
-                ),
-                unsafe_allow_html=True,
-            )
-    return {"grid_trigger_price": trigger_price}
+    return float(trigger_price)
 
 
 def _section_dd_throttle(mode: str) -> dict:
@@ -852,7 +877,7 @@ def _section_atr_adjust(mode: str) -> dict:
 
 def _section_recentering(mode: str, trailing_active: bool) -> dict:
     enabled = st.checkbox(
-        "Recentering aktivieren",
+        "Recentering",
         key=f"{mode}_new_recenter",
         disabled=trailing_active,
         help=("Nicht kombinierbar mit Grid Trailing" if trailing_active else
@@ -1013,18 +1038,24 @@ def render_bot_setup_form(
         st.markdown(_divider(), unsafe_allow_html=True)
 
         params.update(_section_basic(mode))
-        params.update(_section_capital(mode))
-
-        # Smart-Setup
-        _section_smart_setup(mode, params["coin"], params["interval"],
-                              params["total_investment"], params.get("period"))
 
         # Referenz-Preis fuer Range-Default + Live-Chart-Anker:
         # BT -> Schlusskurs am Von-Datum, PT/LT -> letzter Live-Preis.
+        # Wird VOR _section_capital geladen, damit der Grid-Trigger darin
+        # den current_price als Fallback nutzen kann.
         current_price = _load_current_price(
             params["coin"], params["interval"],
             params.get("period"), mode,
         )
+
+        # ── Sektion "Kapital" ────────────────────────────────────────────────
+        # Inhalt: Startkapital, Initial-Buy-Toggle, Grid-Trigger,
+        # Gebuehrenrate, Kapitalreserve.
+        params.update(_section_capital(mode, current_price))
+
+        # Smart-Setup
+        _section_smart_setup(mode, params["coin"], params["interval"],
+                              params["total_investment"], params.get("period"))
 
         params.update(_section_grid_bounds(mode, current_price))
         params.update(_section_grid_count_and_mode(
@@ -1032,25 +1063,11 @@ def render_bot_setup_form(
             params["lower_price"], params["upper_price"],
         ))
 
-        # ── Sektion: Risiko & Kapital ────────────────────────────────────────
-        # Header kommt aus _section_risk (Label "Risiko & Kapital")
-        risk = _section_risk(mode)
-        params.update({k: v for k, v in risk.items() if not k.startswith("_")})
-        params.update(_section_stop_loss(
-            mode, params["lower_price"], params["total_investment"]
-        ))
-        params.update(_section_take_profit(
-            mode, params["upper_price"], params["total_investment"]
-        ))
-        params.update(_section_grid_trigger(
-            mode, params["lower_price"], params["upper_price"], current_price
-        ))
-        params.update(_section_dd_throttle(mode))
-        params.update(_section_variable_orders(mode))
-
         # ── Sektion: Dynamische Mechanismen ──────────────────────────────────
         st.markdown(_divider(), unsafe_allow_html=True)
         st.markdown(_label("Dynamische Mechanismen"), unsafe_allow_html=True)
+        params.update(_section_dd_throttle(mode))
+        params.update(_section_variable_orders(mode))
         params.update(_section_atr_adjust(mode))
         # Recentering / Trailing - gegenseitige Verriegelung via session_state
         tr_active = st.session_state.get(f"{mode}_new_trailing", False)
@@ -1059,6 +1076,12 @@ def render_bot_setup_form(
         params.update(_section_trailing(mode, recenter_active=rc_active,
                                          lower=params["lower_price"],
                                          upper=params["upper_price"]))
+        params.update(_section_stop_loss(
+            mode, params["lower_price"], params["total_investment"]
+        ))
+        params.update(_section_take_profit(
+            mode, params["upper_price"], params["total_investment"]
+        ))
 
         # Submit
         st.markdown(_divider(), unsafe_allow_html=True)

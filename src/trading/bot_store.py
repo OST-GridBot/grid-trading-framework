@@ -153,6 +153,7 @@ class BotStore:
         enable_recentering_down: bool  = False,
         recenter_threshold:     float = 0.05,
         grid_trigger_price:     Optional[float] = None,
+        enable_initial_buy:     bool  = True,
     ) -> tuple[Optional[str], str]:
         """
         Erstellt einen neuen Bot und speichert ihn.
@@ -206,6 +207,8 @@ class BotStore:
                 "recenter_threshold":     recenter_threshold,
                 # Grid Trigger (None = sofortiger Start)
                 "grid_trigger_price":     grid_trigger_price,
+                # Initial-Buy (True = Binance-Standard, False = rein USDT)
+                "enable_initial_buy":     enable_initial_buy,
             },
             "state":     {},
             "trade_log": [],
