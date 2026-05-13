@@ -913,11 +913,11 @@ def _section_trailing(mode: str, recenter_active: bool,
         # Modus-Wahl Prozent vs. Absolut (UI-only, in session_state).
         mode_key = f"{mode}_new_tr_up_mode"
         chosen_mode = st.radio(
-            "Trailing-Up-Stop", options=["%", "Absolut"],
+            "Trailing-Up-Stop", options=["% von Upper", "Absolut"],
             horizontal=True, key=mode_key,
         )
-        if chosen_mode == "%":
-            st.markdown(_caption("Prozent über Upper"),
+        if chosen_mode == "% von Upper":
+            st.markdown(_caption("Prozent über Upper-Grenze"),
                         unsafe_allow_html=True)
             pct = st.slider("", 1.0, 50.0,
                              float(st.session_state.get(f"{mode}_new_tr_up_pct", 10.0)),
@@ -936,6 +936,16 @@ def _section_trailing(mode: str, recenter_active: bool,
                 label_visibility="collapsed",
             )
             up_stop = float(up_stop) if up_stop and up_stop > 0 else None
+
+        # Referenz-Anzeige (Upper-Grenze) - in beiden Modi sichtbar.
+        if upper and upper > 0:
+            st.markdown(
+                _caption(
+                    f"Upper-Grenze ist bei <b style='color:#E2E8F0;'>"
+                    f"{upper:,.2f} USDT</b> gesetzt"
+                ),
+                unsafe_allow_html=True,
+            )
 
         # Live-Anzeige des absoluten Stop-Preises (immer, unabhaengig vom Modus)
         if up_stop is not None and upper > 0:
