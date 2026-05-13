@@ -109,7 +109,7 @@ def _label_trailing(cfg: dict) -> str:
     stop_str = f"\\${v:,.2f}" if isinstance(v, (int, float)) else "–"
     parts = [f"Stop: {stop_str}"]
     if cfg.get("trail_stop_levels"):
-        parts.append("SL/TP wandern mit")
+        parts.append("TP/SL wandern mit")
     return f"Aktiv ({' / '.join(parts)})"
 
 

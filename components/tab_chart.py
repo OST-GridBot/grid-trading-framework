@@ -138,7 +138,7 @@ def render_tab_chart(
     upper = float(grid_lines[-1]) if grid_lines else float(cfg.get("upper_price", 0))
     lower = float(grid_lines[0])  if grid_lines else float(cfg.get("lower_price", 0))
 
-    # ── SL/TP-Preise bestimmen ──────────────────────────────────────────────
+    # ── TP/SL-Preise bestimmen ──────────────────────────────────────────────
     # PT/LT: aus persistiertem State (bot.stop_loss_price / take_profit_price).
     # BT  : aus Config neu berechnen (identische Formel wie GridBot.__init__).
     sl_price = state.get("stop_loss_price")
@@ -197,7 +197,7 @@ def render_tab_chart(
         except Exception:
             chart_anchor = None
 
-    # ── M.2: SL/TP-Trigger-Daten extrahieren ────────────────────────────────
+    # ── M.2: TP/SL-Trigger-Daten extrahieren ────────────────────────────────
     metrics_view = view.get("metrics") or {}
     sl_trigger_obj = None
     tp_trigger_obj = None

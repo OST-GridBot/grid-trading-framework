@@ -207,7 +207,7 @@ def smart_grid_setup(
       maximize_roi (96 x 3 = 288 Kombinationen):
         Nur Fundament + Mech-Optionen. Folgende Mechanismen sind BEWUSST
         nicht im ROI-Suchraum:
-          - SL/TP:           Stop-Mechanismen, beenden den Bot vorzeitig
+          - TP/SL:           Stop-Mechanismen, beenden den Bot vorzeitig
                              und verzerren ROI durch frueh-Abbruch.
           - Variable Orders: Risiko-Mechanismus (Kapital-Allokation),
                              Effekt auf ROI marginal. Gehoert in Sharpe.

@@ -113,7 +113,7 @@ class GridBot:
         reserve_pct:         float = DEFAULT_RESERVE_PCT,
         stop_loss_pct:       Optional[float] = None,
         take_profit_pct:     Optional[float] = None,
-        # SL/TP haben drei moegliche Trigger-Varianten (Backend ODER-verknuepft;
+        # TP/SL haben drei moegliche Trigger-Varianten (Backend ODER-verknuepft;
         # das UI erlaubt aber nur exklusiv genau einen Modus pro Bot):
         #   Price: stop_loss_pct/take_profit_pct (relativ zu Lower/Upper)
         #   %ROI : stop_loss_roi_pct/take_profit_roi_pct
@@ -142,7 +142,7 @@ class GridBot:
         # Grid Trailing (nur Up-Variante, Binance-Standard)
         enable_trailing_up:     bool  = False,
         trailing_up_stop:       Optional[float] = None,
-        # Wenn aktiv: preis-basierte SL/TP-Schwellen wandern bei jedem
+        # Wenn aktiv: preis-basierte TP/SL-Schwellen wandern bei jedem
         # Trailing-Up-Shift um genau einen Grid-Step nach oben mit.
         # ROI-basierte Schwellen sind preis-unabhaengig und bleiben.
         trail_stop_levels:      bool  = False,
@@ -166,7 +166,7 @@ class GridBot:
         self.reserve_pct        = reserve_pct
         self.stop_loss_pct       = stop_loss_pct
         self.take_profit_pct     = take_profit_pct
-        # ROI-basierte und P/L-basierte SL/TP-Schwellen (ODER-Verknuepfung
+        # ROI-basierte und P/L-basierte TP/SL-Schwellen (ODER-Verknuepfung
         # mit der preis-basierten — siehe _check_stop_loss/_check_take_profit)
         self.stop_loss_roi_pct   = stop_loss_roi_pct
         self.take_profit_roi_pct = take_profit_roi_pct
@@ -252,7 +252,7 @@ class GridBot:
         #   "active"              - normaler Betrieb
         #   "paused"              - Preis ausserhalb Range (rein UI-Hinweis,
         #                            kein Verhaltens-Effekt)
-        #   "stopped"             - SL/TP geriggert oder explizit gestoppt
+        #   "stopped"             - TP/SL geriggert oder explizit gestoppt
         # Getrennt vom bot_store.status (Lebenszyklus-Eigenschaft).
         self.grid_trigger_price: Optional[float] = grid_trigger_price
         # Initial-Buy aktivieren (Default = Binance-Standard).
@@ -608,7 +608,7 @@ class GridBot:
 
             # ── Range-Status (rein UI-Hinweis, kein Verhaltens-Effekt) ──────
             # "paused" wenn Preis ausserhalb der aktuellen Range, "active"
-            # sobald wieder drin. SL/TP-Stops setzen ihren eigenen Status.
+            # sobald wieder drin. TP/SL-Stops setzen ihren eigenen Status.
             if current_price > self.upper_price or current_price < self.lower_price:
                 if self.bot_status == "active":
                     self.bot_status = "paused"
@@ -947,7 +947,7 @@ class GridBot:
         Aktion : Grid um einen grid_step nach oben (Lower und Upper synchron).
         Limit  : trailing_up_stop deckelt die maximale Upper-Grenze.
 
-        Optional (trail_stop_levels=True): preis-basierte SL/TP-Schwellen
+        Optional (trail_stop_levels=True): preis-basierte TP/SL-Schwellen
         wandern um denselben grid_step mit nach oben.
 
         Down-Trailing existiert nicht — Spot-Grid-Bots wandern nur aufwaerts
@@ -966,7 +966,7 @@ class GridBot:
         self._shift_grid(new_lower, new_upper, current_price)
         self.trailing_count += 1
 
-        # Optional: preis-basierte SL/TP-Schwellen mitwandern
+        # Optional: preis-basierte TP/SL-Schwellen mitwandern
         if self.trail_stop_levels:
             if self.stop_loss_price is not None:
                 self.stop_loss_price += grid_step

@@ -619,7 +619,7 @@ def _render_chart_main(params: dict, mode: str = "paper") -> None:
         # Chart-Einstellungen (Bot-Start gibts in der Setup-Vorschau nicht)
         settings = render_chart_settings(key_prefix="setup")
 
-        # SL/TP live aus aktuellen Slider-Werten (identische Formel wie GridBot)
+        # TP/SL live aus aktuellen Slider-Werten (identische Formel wie GridBot)
         sl_pct_v = params.get("stop_loss_pct")
         tp_pct_v = params.get("take_profit_pct")
         sl_price_v = (
@@ -664,7 +664,7 @@ def _render_chart_main(params: dict, mode: str = "paper") -> None:
             chart_anchor_price        = (float(df["close"].iloc[0])
                                           if mode == "backtest"
                                           else float(df["close"].iloc[-1])),
-            # SL/TP-Trigger gibt's im Setup-Stadium noch nicht
+            # TP/SL-Trigger gibt's im Setup-Stadium noch nicht
             sl_trigger                = None,
             tp_trigger                = None,
             show_sltp_trigger_markers = settings.get("show_sltp_trigger_markers", True),
@@ -997,7 +997,7 @@ def _section_trailing(mode: str, recenter_active: bool,
     Die UI bietet zwei Eingabe-Modi (Prozent oder Absolut) ueber ein
     Dropdown — Modus-Wahl ist UI-only, nicht persistiert.
 
-    Optional: trail_stop_levels laesst preis-basierte SL/TP-Schwellen
+    Optional: trail_stop_levels laesst preis-basierte TP/SL-Schwellen
     bei jedem Trailing-Shift um einen Grid-Step mitwandern.
     """
     enabled = st.checkbox(
@@ -1061,11 +1061,11 @@ def _section_trailing(mode: str, recenter_active: bool,
                 unsafe_allow_html=True,
             )
 
-        # Optionaler Toggle: SL/TP-Schwellen mitwandern
+        # Optionaler Toggle: TP/SL-Schwellen mitwandern
         trail_levels = st.checkbox(
             "Stopp-Grenzen mitwandern",
             key=f"{mode}_new_trail_stop_levels",
-            help=("Preis-basierte SL/TP-Schwellen wandern bei jedem "
+            help=("Preis-basierte TP/SL-Schwellen wandern bei jedem "
                   "Trailing-Shift um einen Grid-Step nach oben mit. "
                   "ROI-basierte Schwellen sind preis-unabhängig und "
                   "bleiben unverändert."),

@@ -81,24 +81,24 @@ def render_chart_settings(key_prefix: str) -> dict:
                 "Grid-Linien", value=_DEFAULTS["show_grid_lines"],
                 key=f"chs_{key_prefix}_grid_lines",
             )
-            settings["show_order_markers"] = st.checkbox(
-                "Order-Marker", value=_DEFAULTS["show_order_markers"],
-                key=f"chs_{key_prefix}_order_markers",
+            settings["show_grid_labels"] = st.checkbox(
+                "Grid-Labels",
+                value=_DEFAULTS["show_grid_labels"],
+                key=f"chs_{key_prefix}_grid_labels",
             )
             settings["show_range_fill"] = st.checkbox(
-                "Normale Grenzen-Fläche",
+                "Grid Range Fläche",
                 value=_DEFAULTS["show_range_fill"],
                 key=f"chs_{key_prefix}_range_fill",
             )
         with c2:
-            settings["show_grid_labels"] = st.checkbox(
-                "Grid-Labels (Preise)",
-                value=_DEFAULTS["show_grid_labels"],
-                key=f"chs_{key_prefix}_grid_labels",
-            )
             settings["show_bot_start"] = st.checkbox(
-                "Bot-Start", value=_DEFAULTS["show_bot_start"],
+                "Bot-Start-Marker", value=_DEFAULTS["show_bot_start"],
                 key=f"chs_{key_prefix}_bot_start",
+            )
+            settings["show_order_markers"] = st.checkbox(
+                "Order-Marker", value=_DEFAULTS["show_order_markers"],
+                key=f"chs_{key_prefix}_order_markers",
             )
 
         # ── Chart-Anzeige ──────────────────────────────────────────────────
@@ -120,41 +120,41 @@ def render_chart_settings(key_prefix: str) -> dict:
         _sub_header("Mechanismen-Visualisierung")
         c1, c2 = st.columns(2)
         with c1:
-            settings["show_trailing_steps"] = st.checkbox(
-                "Grid Trailing-Grenzen",
-                value=_DEFAULTS["show_trailing_steps"],
-                key=f"chs_{key_prefix}_trailing_steps",
-            )
-            settings["show_trailing_stops"] = st.checkbox(
-                "Grid Trailing-Stop-Linie",
-                value=_DEFAULTS["show_trailing_stops"],
-                key=f"chs_{key_prefix}_trailing_stops",
-            )
             settings["show_recentering_steps"] = st.checkbox(
-                "Recentering-Grenzen",
+                "Recentering Grenzen",
                 value=_DEFAULTS["show_recentering_steps"],
                 key=f"chs_{key_prefix}_recenter_steps",
             )
-            settings["show_sltp_lines"] = st.checkbox(
-                "SL/TP-Linien",
-                value=_DEFAULTS["show_sltp_lines"],
-                key=f"chs_{key_prefix}_sltp_lines",
-            )
-        with c2:
-            settings["show_trailing_fill"] = st.checkbox(
-                "Grid Trailing-Fläche",
-                value=_DEFAULTS["show_trailing_fill"],
-                key=f"chs_{key_prefix}_trailing_fill",
-            )
             settings["show_recentering_fill"] = st.checkbox(
-                "Recentering-Fläche",
+                "Recentering Fläche",
                 value=_DEFAULTS["show_recentering_fill"],
                 key=f"chs_{key_prefix}_recenter_fill",
             )
+            settings["show_sltp_lines"] = st.checkbox(
+                "TP/SL-Linien",
+                value=_DEFAULTS["show_sltp_lines"],
+                key=f"chs_{key_prefix}_sltp_lines",
+            )
             settings["show_sltp_trigger_markers"] = st.checkbox(
-                "SL/TP-Trigger-Marker",
+                "TP/SL-Trigger-Marker",
                 value=_DEFAULTS["show_sltp_trigger_markers"],
                 key=f"chs_{key_prefix}_sltp_triggers",
+            )
+        with c2:
+            settings["show_trailing_steps"] = st.checkbox(
+                "Grid Trailing Grenzen",
+                value=_DEFAULTS["show_trailing_steps"],
+                key=f"chs_{key_prefix}_trailing_steps",
+            )
+            settings["show_trailing_fill"] = st.checkbox(
+                "Grid Trailing Fläche",
+                value=_DEFAULTS["show_trailing_fill"],
+                key=f"chs_{key_prefix}_trailing_fill",
+            )
+            settings["show_trailing_stops"] = st.checkbox(
+                "Grid Trailing Stop-Linie",
+                value=_DEFAULTS["show_trailing_stops"],
+                key=f"chs_{key_prefix}_trailing_stops",
             )
 
     # Backward-Compat: die alten Einzel-Keys werden aus show_sltp_lines

@@ -40,7 +40,7 @@ def plot_grid_chart_v2(
     show_recentering_fill:  bool  = True,
     # M.1 — Anker fuer Y-Achsen-Zentrierung (None = Auto-Scale)
     chart_anchor_price:        Optional[float] = None,
-    # M.2 — SL/TP-Trigger-Marker
+    # M.2 — TP/SL-Trigger-Marker
     sl_trigger:                Optional[dict]  = None,  # {time, price}
     tp_trigger:                Optional[dict]  = None,
     show_sltp_trigger_markers: bool            = True,
@@ -227,7 +227,7 @@ def plot_grid_chart_v2(
     trail_lower_json    = json.dumps(trail_lower_data)
     trail_upper_json    = json.dumps(trail_upper_data)
 
-    # SL/TP-Preise nur senden, wenn Toggle aktiv UND Preis gesetzt.
+    # TP/SL-Preise nur senden, wenn Toggle aktiv UND Preis gesetzt.
     sl_val = (
         round(float(stop_loss_price), 4)
         if (show_stop_loss and stop_loss_price is not None and stop_loss_price > 0)
@@ -267,7 +267,7 @@ def plot_grid_chart_v2(
         round(float(chart_anchor_price), 4) if chart_anchor_price else None
     )
 
-    # M.2 — SL/TP-Trigger-Marker als {time, price}
+    # M.2 — TP/SL-Trigger-Marker als {time, price}
     def _serialize_trigger(trig):
         if not trig or not show_sltp_trigger_markers:
             return None
@@ -535,7 +535,7 @@ def plot_grid_chart_v2(
     }});
   }}
 
-  // Bot-Start + SL/TP-Trigger-Marker auf der candleSeries.
+  // Bot-Start + TP/SL-Trigger-Marker auf der candleSeries.
   // setMarkers() ersetzt die komplette Marker-Liste, deshalb wird hier
   // ein gemeinsames Array gebaut und einmal gesetzt.
   const seriesMarkers = [];
