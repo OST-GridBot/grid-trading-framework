@@ -44,6 +44,10 @@ from components.ui_helpers import COINS
 
 _DAYS_BY_INTERVAL = {"1m": 1, "5m": 1, "15m": 2, "1h": 7, "4h": 14, "1d": 30}
 
+# T.1: Vorlauf-Kontext vor dem Von-Datum bei BT (in Tagen je Intervall).
+# Gleiche Map-Logik wie _DAYS_BY_INTERVAL fuer Konsistenz mit tab_chart.
+_BT_CONTEXT_DAYS = {"1m": 1, "5m": 1, "15m": 2, "1h": 7, "4h": 14, "1d": 30}
+
 
 def _label(text: str) -> str:
     return (f"<div style='font-size:1.1rem; font-weight:600; color:#94A3B8; "
@@ -632,17 +636,27 @@ def _render_chart_main(params: dict, mode: str = "paper") -> None:
     upper    = float(params.get("upper_price", 0) or 0)
     num      = int(params.get("num_grids", 10) or 10)
     gm       = params.get("grid_mode", "arithmetic")
+    # T.1: BT-Vorschau zeigt Sim-Range PLUS historischen Vorlauf vor Von-Datum.
+    setup_bot_start_ts = None  # bei BT aus sd abgeleitet, sonst None
     try:
         period = params.get("period") or {}
         if (mode == "backtest" and period.get("start_date")
                 and period.get("end_date")):
-            from datetime import date as _date
+            from datetime import date as _date, timedelta as _td
             sd = _date.fromisoformat(period["start_date"])
             ed = _date.fromisoformat(period["end_date"])
+            vorlauf = _BT_CONTEXT_DAYS.get(interval, 7)
+            load_start = sd - _td(days=vorlauf)
             df, _ = get_price_data(
                 coin, days=period.get("days", 30),
-                interval=interval, start_date=sd, end_date=ed,
+                interval=interval, start_date=load_start, end_date=ed,
             )
+            # Sim-Start-Marker (analog tab_chart) — Zurich-lokal -> Unix-UTC.
+            try:
+                from src.utils.timezone import zurich_to_unix
+                setup_bot_start_ts = zurich_to_unix(pd.to_datetime(sd))
+            except Exception:
+                setup_bot_start_ts = None
         else:
             days = _DAYS_BY_INTERVAL.get(interval, 7)
             df, _ = get_price_data(coin, days=days, interval=interval)
@@ -683,7 +697,9 @@ def _render_chart_main(params: dict, mode: str = "paper") -> None:
             show_grid_lines     = settings["show_grid_lines"],
             show_grid_labels    = settings["show_grid_labels"],
             show_order_markers  = settings["show_order_markers"],
-            bot_start_timestamp = None,  # Setup-Vorschau hat keinen Bot-Start
+            # T.1: BT zeigt Sim-Start-Marker am Von-Datum, PT/LT bleibt None
+            # (Bot existiert noch nicht). Sichtbarkeit via show_bot_start-Toggle.
+            bot_start_timestamp = setup_bot_start_ts if settings.get("show_bot_start") else None,
             magnet_crosshair    = settings["magnet_crosshair"],
             stop_loss_price     = sl_price_v,
             take_profit_price   = tp_price_v,

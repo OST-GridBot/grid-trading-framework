@@ -33,6 +33,14 @@ _DAYS_BY_INTERVAL = {
     "1m": 1, "5m": 1, "15m": 2, "1h": 7, "4h": 14, "1d": 30,
 }
 
+# T.1: Vorlauf-Kontext vor dem Von-Datum bei BT (in Tagen je Intervall).
+# Ziel: User sieht historischen Verlauf VOR Sim-Start, damit der Marker
+# am Von-Datum einen Kontext hat. Selbe Map-Logik wie _DAYS_BY_INTERVAL,
+# um Konsistenz zu wahren.
+_BT_CONTEXT_DAYS = {
+    "1m": 1, "5m": 1, "15m": 2, "1h": 7, "4h": 14, "1d": 30,
+}
+
 
 def render_tab_chart(
     view:           dict,
@@ -57,17 +65,34 @@ def render_tab_chart(
     cfg      = view.get("config", {})
 
     # ── DataFrame beschaffen ────────────────────────────────────────────────
+    # T.1: Bei BT mit period.start_date+end_date laden wir den HISTORISCHEN
+    # Sim-Zeitraum (sd-vorlauf .. ed) statt der letzten X Tage ab heute.
+    # Vorlauf je Intervall (siehe _BT_CONTEXT_DAYS) gibt visuellen Kontext
+    # VOR dem Bot-Start-Marker. Bei PT/LT bleibt die heutige Logik.
     if df is None:
-        days = _DAYS_BY_INTERVAL.get(interval, 7)
-        # BT: verwende den vollstaendigen Sim-Zeitraum
-        period = view.get("period")
-        if period and period.get("days"):
-            try:
-                days = max(days, int(period["days"]))
-            except Exception:
-                pass
+        period = view.get("period") or {}
         try:
-            df, _ = get_price_data(coin, days=days, interval=interval)
+            if (view.get("mode") == "backtest"
+                    and period.get("start_date")
+                    and period.get("end_date")):
+                from datetime import date as _date, timedelta as _td
+                sd = _date.fromisoformat(period["start_date"])
+                ed = _date.fromisoformat(period["end_date"])
+                vorlauf = _BT_CONTEXT_DAYS.get(interval, 7)
+                load_start = sd - _td(days=vorlauf)
+                df, _ = get_price_data(
+                    coin, days=int(period.get("days", 30)),
+                    interval=interval,
+                    start_date=load_start, end_date=ed,
+                )
+            else:
+                days = _DAYS_BY_INTERVAL.get(interval, 7)
+                if period and period.get("days"):
+                    try:
+                        days = max(days, int(period["days"]))
+                    except Exception:
+                        pass
+                df, _ = get_price_data(coin, days=days, interval=interval)
         except Exception as e:
             st.warning(f"Chart-Fehler: {e}")
             return
