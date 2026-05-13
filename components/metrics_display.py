@@ -185,12 +185,14 @@ def _fmt_or_dash(value, fmt: str = "{}") -> str:
 
 def _render_section_table(title: str, rows: list) -> None:
     """
-    Rendert eine kompakte Section mit Sub-Header + Tabelle.
+    Rendert eine kompakte Section mit Sub-Header + 2-spaltiger Tabelle.
 
     Args:
         title: Section-Header (z.B. "Performance")
-        rows : Liste von Tupeln (label, value_str, secondary_str_or_None)
-               Wenn value_str None -> "–". Sekundärwert optional.
+        rows : Liste von Tupeln (label, value_str, secondary_str_or_None).
+               Falls value_str None -> "–". Sekundaerwert (sofern vorhanden)
+               wird in derselben Wert-Spalte in Klammern + grau angehaengt.
+               Beispiel-Output: "10% (100 USDT)"
     """
     html = (
         f"<div style='font-size:0.85rem; font-weight:600; color:#94A3B8; "
@@ -202,21 +204,20 @@ def _render_section_table(title: str, rows: list) -> None:
     )
     for label, value, secondary in rows:
         val_str = value if value is not None else "–"
-        sec_html = (
-            f"<td style='text-align:right; padding:3px 8px; color:#64748B; "
-            f"border-bottom:1px solid rgba(255,255,255,0.04); width:30%;'>"
-            f"{secondary}</td>"
-            if secondary is not None
-            else "<td style='border-bottom:1px solid rgba(255,255,255,0.04); width:30%;'></td>"
-        )
+        if secondary is not None:
+            value_cell = (
+                f"<span style='color:#E2E8F0; font-weight:500;'>{val_str}</span> "
+                f"<span style='color:#64748B;'>({secondary})</span>"
+            )
+        else:
+            value_cell = f"<span style='color:#E2E8F0; font-weight:500;'>{val_str}</span>"
         html += (
             "<tr>"
             f"<td style='padding:3px 8px; color:#94A3B8; "
-            f"border-bottom:1px solid rgba(255,255,255,0.04); width:40%;'>{label}</td>"
-            f"<td style='text-align:right; padding:3px 8px; color:#E2E8F0; "
-            f"font-weight:500; border-bottom:1px solid rgba(255,255,255,0.04); "
-            f"width:30%;'>{val_str}</td>"
-            f"{sec_html}"
+            f"border-bottom:1px solid rgba(255,255,255,0.04); width:55%;'>{label}</td>"
+            f"<td style='text-align:right; padding:3px 8px; "
+            f"border-bottom:1px solid rgba(255,255,255,0.04); width:45%;'>"
+            f"{value_cell}</td>"
             "</tr>"
         )
     html += "</table>"
@@ -265,24 +266,6 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
     avg_p_usdt   = metrics.get("avg_profit_per_trade")
     avg_p_pct    = metrics.get("avg_profit_per_trade_pct")
 
-    _render_section_table("Performance", [
-        ("Total Gross P/L",     _fmt_or_dash(gross_pct,  "{:+.2f}%"),
-                                _fmt_or_dash(gross_usdt, "{:+,.2f} USDT")),
-        ("Total Net P/L",       _fmt_or_dash(roi,        "{:+.2f}%"),
-                                _fmt_or_dash(pl_usdt,    "{:+,.2f} USDT")),
-        ("Buy & Hold",          _fmt_or_dash(bh_pct,     "{:+.2f}%"),
-                                _fmt_or_dash(bh_usdt,    "{:+,.2f} USDT")),
-        ("Outperformance",      _fmt_or_dash(outperf,    "{:+.2f}%"),
-                                "vs. Buy & Hold" if outperf is not None else None),
-        ("Grid Profit Total",   _fmt_or_dash(g_total_u,  "{:+,.2f} USDT"),
-                                _fmt_or_dash(g_total_p,  "{:+.2f}%")),
-        ("Floating Profit",     _fmt_or_dash(upnl_u,     "{:+,.2f} USDT"),
-                                _fmt_or_dash(upnl_p,     "{:+.2f}%")),
-        ("CAGR",                _fmt_or_dash(cagr,       "{:+.2f}%"), None),
-        ("Avg Profit / Trade",  _fmt_or_dash(avg_p_usdt, "{:+,.2f} USDT"),
-                                _fmt_or_dash(avg_p_pct,  "{:+.2f}%")),
-    ])
-
     calmar       = metrics.get("calmar_ratio")
     sharpe       = metrics.get("sharpe_ratio")
     max_dd_pct   = metrics.get("max_drawdown_pct")
@@ -293,17 +276,38 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
     slip_usdt    = metrics.get("slippage_usdt")
     slip_pct     = metrics.get("slippage_avg_pct")
 
-    _render_section_table("Risk", [
-        ("Calmar Ratio",   _fmt_or_dash(calmar,      "{:.2f}"),     "good ≥ 1.0"),
-        ("Sharpe Ratio",   _fmt_or_dash(sharpe,      "{:.2f}"),     "good ≥ 1.0"),
-        ("Max Drawdown",   _fmt_or_dash(max_dd_pct,  "{:.2f}%"),
-                           _fmt_or_dash(max_dd_usdt, "{:,.2f} USDT")),
-        ("Profit Factor",  _fmt_or_dash(pf,          "{:.2f}"),     "good ≥ 1.5"),
-        ("Trading Fees",   _fmt_or_dash(fees,        "{:,.2f} USDT"), None),
-        ("Fee Impact",     _fmt_or_dash(fee_imp,     "{:.1f}%"),    None),
-        ("Total Slippage", _fmt_or_dash(slip_usdt,   "{:,.4f} USDT"),
-                           _fmt_or_dash(slip_pct,    "{:.4f}%")),
-    ])
+    # Zwei Spalten: Performance | Risk
+    col_perf, col_risk = st.columns(2)
+    with col_perf:
+        _render_section_table("Performance", [
+            ("Total Gross P/L",     _fmt_or_dash(gross_pct,  "{:+.2f}%"),
+                                    _fmt_or_dash(gross_usdt, "{:+,.2f} USDT")),
+            ("Total Net P/L",       _fmt_or_dash(roi,        "{:+.2f}%"),
+                                    _fmt_or_dash(pl_usdt,    "{:+,.2f} USDT")),
+            ("Buy & Hold",          _fmt_or_dash(bh_pct,     "{:+.2f}%"),
+                                    _fmt_or_dash(bh_usdt,    "{:+,.2f} USDT")),
+            ("Outperformance",      _fmt_or_dash(outperf,    "{:+.2f}%"),
+                                    "vs. Buy & Hold" if outperf is not None else None),
+            ("Grid Profit Total",   _fmt_or_dash(g_total_u,  "{:+,.2f} USDT"),
+                                    _fmt_or_dash(g_total_p,  "{:+.2f}%")),
+            ("Floating Profit",     _fmt_or_dash(upnl_u,     "{:+,.2f} USDT"),
+                                    _fmt_or_dash(upnl_p,     "{:+.2f}%")),
+            ("CAGR",                _fmt_or_dash(cagr,       "{:+.2f}%"), None),
+            ("Avg Profit / Trade",  _fmt_or_dash(avg_p_usdt, "{:+,.2f} USDT"),
+                                    _fmt_or_dash(avg_p_pct,  "{:+.2f}%")),
+        ])
+    with col_risk:
+        _render_section_table("Risk", [
+            ("Calmar Ratio",   _fmt_or_dash(calmar,      "{:.2f}"),     "good ≥ 1.0"),
+            ("Sharpe Ratio",   _fmt_or_dash(sharpe,      "{:.2f}"),     "good ≥ 1.0"),
+            ("Max Drawdown",   _fmt_or_dash(max_dd_pct,  "{:.2f}%"),
+                               _fmt_or_dash(max_dd_usdt, "{:,.2f} USDT")),
+            ("Profit Factor",  _fmt_or_dash(pf,          "{:.2f}"),     "good ≥ 1.5"),
+            ("Trading Fees",   _fmt_or_dash(fees,        "{:,.2f} USDT"), None),
+            ("Fee Impact",     _fmt_or_dash(fee_imp,     "{:.1f}%"),    None),
+            ("Total Slippage", _fmt_or_dash(slip_usdt,   "{:,.4f} USDT"),
+                               _fmt_or_dash(slip_pct,    "{:.4f}%")),
+        ])
 
     # ──────────────────────────────────────────────────────────────────────
     # BOT DETAILS
@@ -341,15 +345,6 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
     )
     trigger_sec = "Sofortiger Start" if not grid_trigger else None
 
-    _render_section_table("Mechanismen", [
-        ("Bot-Status",          bot_status if bot_status else "–", None),
-        ("Grid Trigger",        trigger_label, trigger_sec),
-        _mech_row("Recentering Events", rc_on, rc_count, None),
-        _mech_row("Trailing Events",    tr_on, tr_count, None),
-        _mech_row("Stop-Loss",          sl_on, None,     sl_hit),
-        _mech_row("Take-Profit",        tp_on, None,     tp_hit),
-    ])
-
     num_t        = metrics.get("num_trades")
     grid_eff     = metrics.get("grid_efficiency")
     active_lv    = metrics.get("active_levels", {"active": 0, "total": 0})
@@ -372,16 +367,28 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
     ib_fee_v   = None if not ib_fee   else ib_fee
     ib_value_v = None if not ib_value else ib_value
 
-    _render_section_table("Kapital & Aktivität", [
-        ("Initial Capital",      _fmt_or_dash(initial,  "{:,.2f} USDT"), None),
-        ("Current Capital",      _fmt_or_dash(final,    "{:,.2f} USDT"), None),
-        ("Number of Trades",     _fmt_or_dash(num_t,    "{}"),           bs_str),
-        ("Grid Efficiency",      _fmt_or_dash(grid_eff, "{:.1f}%"),      ratio),
-        ("Invest / Grid",        _fmt_or_dash(cap_per_grid, "{:,.2f} USDT"), None),
-        ("Initial-Buy Coins",    _fmt_or_dash(ib_coin_v,  "{:,.6f}"),    None),
-        ("Initial-Buy Wert",     _fmt_or_dash(ib_value_v, "{:,.2f} USDT"), None),
-        ("Initial-Buy Fee",      _fmt_or_dash(ib_fee_v,   "{:,.4f} USDT"), None),
-    ])
+    # Zwei Spalten: Mechanismen | Kapital & Aktivitaet
+    col_mech, col_cap = st.columns(2)
+    with col_mech:
+        _render_section_table("Mechanismen", [
+            ("Bot-Status",          bot_status if bot_status else "–", None),
+            ("Grid Trigger",        trigger_label, trigger_sec),
+            _mech_row("Recentering Events", rc_on, rc_count, None),
+            _mech_row("Trailing Events",    tr_on, tr_count, None),
+            _mech_row("Stop-Loss",          sl_on, None,     sl_hit),
+            _mech_row("Take-Profit",        tp_on, None,     tp_hit),
+        ])
+    with col_cap:
+        _render_section_table("Kapital & Aktivität", [
+            ("Initial Capital",      _fmt_or_dash(initial,  "{:,.2f} USDT"), None),
+            ("Current Capital",      _fmt_or_dash(final,    "{:,.2f} USDT"), None),
+            ("Number of Trades",     _fmt_or_dash(num_t,    "{}"),           bs_str),
+            ("Grid Efficiency",      _fmt_or_dash(grid_eff, "{:.1f}%"),      ratio),
+            ("Invest / Grid",        _fmt_or_dash(cap_per_grid, "{:,.2f} USDT"), None),
+            ("Initial-Buy Coins",    _fmt_or_dash(ib_coin_v,  "{:,.6f}"),    None),
+            ("Initial-Buy Wert",     _fmt_or_dash(ib_value_v, "{:,.2f} USDT"), None),
+            ("Initial-Buy Fee",      _fmt_or_dash(ib_fee_v,   "{:,.4f} USDT"), None),
+        ])
 
     # ──────────────────────────────────────────────────────────────────────
     # MARKET DATA & INDICATORS
@@ -395,38 +402,41 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
     range_u   = extr.get("range_usdt")
     range_p   = extr.get("range_pct")
 
-    _render_section_table("Market Data", [
-        ("Current Price",  _fmt_or_dash(cur_price, "{:,.2f} USDT"), None),
-        ("Max Price",      _fmt_or_dash(max_p,     "{:,.2f} USDT"), None),
-        ("Min Price",      _fmt_or_dash(min_p,     "{:,.2f} USDT"), None),
-        ("Max-Min Range",  _fmt_or_dash(range_u,   "{:,.2f} USDT"),
-                           _fmt_or_dash(range_p,   "{:.2f}%")),
-    ])
-
     rs     = metrics.get("return_stats", {}) or {}
     avg_r  = rs.get("avg_pct")
     std_r  = rs.get("std_pct")
     vola_m = metrics.get("vola_monthly_pct")
     vola_y = metrics.get("vola_yearly_pct")
 
-    _render_section_table("Returns & Volatilität", [
-        ("Avg Return / Candle",  _fmt_or_dash(avg_r,  "{:+.2f}%"), None),
-        ("Vola Return / Candle", _fmt_or_dash(std_r,  "{:.2f}%"),  None),
-        ("Monthly Vola",         _fmt_or_dash(vola_m, "{:.2f}%"),  None),
-        ("Yearly Vola",          _fmt_or_dash(vola_y, "{:.2f}%"),  None),
-    ])
-
     atr_u = metrics.get("atr_usdt")
     atr_p = metrics.get("atr_pct")
     adx14 = metrics.get("adx14")
     adx30 = metrics.get("adx30")
 
-    _render_section_table("Indikatoren", [
-        ("Avg ATR (USDT)", _fmt_or_dash(atr_u, "{:,.2f} USDT"), None),
-        ("Avg ATR (%)",    _fmt_or_dash(atr_p, "{:.2f}%"),      None),
-        ("ADX 14",         _fmt_or_dash(adx14, "{:.1f}"),       None),
-        ("ADX 30",         _fmt_or_dash(adx30, "{:.1f}"),       None),
-    ])
+    # Drei Spalten: Market Data | Returns & Volatilitaet | Indikatoren
+    col_md, col_rv, col_ind = st.columns(3)
+    with col_md:
+        _render_section_table("Market Data", [
+            ("Current Price",  _fmt_or_dash(cur_price, "{:,.2f} USDT"), None),
+            ("Max Price",      _fmt_or_dash(max_p,     "{:,.2f} USDT"), None),
+            ("Min Price",      _fmt_or_dash(min_p,     "{:,.2f} USDT"), None),
+            ("Max-Min Range",  _fmt_or_dash(range_u,   "{:,.2f} USDT"),
+                               _fmt_or_dash(range_p,   "{:.2f}%")),
+        ])
+    with col_rv:
+        _render_section_table("Returns & Volatilität", [
+            ("Avg Return / Candle",  _fmt_or_dash(avg_r,  "{:+.2f}%"), None),
+            ("Vola Return / Candle", _fmt_or_dash(std_r,  "{:.2f}%"),  None),
+            ("Monthly Vola",         _fmt_or_dash(vola_m, "{:.2f}%"),  None),
+            ("Yearly Vola",          _fmt_or_dash(vola_y, "{:.2f}%"),  None),
+        ])
+    with col_ind:
+        _render_section_table("Indikatoren", [
+            ("Avg ATR (USDT)", _fmt_or_dash(atr_u, "{:,.2f} USDT"), None),
+            ("Avg ATR (%)",    _fmt_or_dash(atr_p, "{:.2f}%"),      None),
+            ("ADX 14",         _fmt_or_dash(adx14, "{:.1f}"),       None),
+            ("ADX 30",         _fmt_or_dash(adx30, "{:.1f}"),       None),
+        ])
 
 
 # ---------------------------------------------------------------------------
