@@ -509,8 +509,14 @@ def _section_grid_count_and_mode(
     interval:      str,
     lower_price:   float,
     upper_price:   float,
+    period:        Optional[dict] = None,
 ) -> dict:
-    """Anzahl Grids + Gewinn/Grid-Info + ATR-Vorschlaege + Grid-Modus."""
+    """Anzahl Grids + Gewinn/Grid-Info + ATR-Vorschlaege + Grid-Modus.
+
+    ATR-Referenz mode-abhaengig (V.1):
+      - BT  : 14 Kerzen VOR dem Von-Datum (kein Look-Ahead)
+      - PT/LT: letzte 14 Kerzen vom aktuellen Zeitpunkt
+    """
     st.markdown(_divider(), unsafe_allow_html=True)
     st.markdown(_label("Anzahl Grids"), unsafe_allow_html=True)
     num_grids = int(st.number_input(
@@ -549,10 +555,25 @@ def _section_grid_count_and_mode(
     except Exception:
         pass
 
-    # ATR-Vorschlaege
+    # ATR-Vorschlaege (V.1: mode-abhaengiger Referenz-Zeitraum).
+    # BT  -> 14 letzte Kerzen VOR dem Von-Datum (kein Look-Ahead);
+    #         dafuer wird ein 30-Tage-Fenster vor sd geladen, damit ewm(span=14)
+    #         genug Historie hat.
+    # PT/LT -> letzte 14 Kerzen vom aktuellen Zeitpunkt (unveraendert).
     try:
-        days = _DAYS_BY_INTERVAL.get(interval, 7)
-        df, _ = get_price_data(coin, days=days, interval=interval)
+        if mode == "backtest" and period and period.get("start_date"):
+            from datetime import date as _date, timedelta as _td
+            sd = _date.fromisoformat(period["start_date"])
+            ed = sd - _td(days=1)
+            window_days = 30
+            atr_start = ed - _td(days=window_days)
+            df, _ = get_price_data(
+                coin, days=window_days, interval=interval,
+                start_date=atr_start, end_date=ed,
+            )
+        else:
+            days = _DAYS_BY_INTERVAL.get(interval, 7)
+            df, _ = get_price_data(coin, days=days, interval=interval)
         if df is not None and not df.empty:
             atr_info = suggest_atr_grid_counts(df, upper_price - lower_price)
             with st.expander("Volatilitätsbasierte Vorschläge"):
@@ -1206,6 +1227,7 @@ def render_bot_setup_form(
         params.update(_section_grid_count_and_mode(
             mode, params["coin"], params["interval"],
             params["lower_price"], params["upper_price"],
+            period=params.get("period"),
         ))
 
         # ── Sektion: Dynamische Mechanismen ──────────────────────────────────
