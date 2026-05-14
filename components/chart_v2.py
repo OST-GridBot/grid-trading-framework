@@ -44,6 +44,9 @@ def plot_grid_chart_v2(
     sl_trigger:                Optional[dict]  = None,  # {time, price}
     tp_trigger:                Optional[dict]  = None,
     show_sltp_trigger_markers: bool            = True,
+    # D — graue Vorschau-Linien oberhalb der current Upper-Range
+    grid_lines_outside:        Optional[list]  = None,
+    show_grid_outside_range:   bool            = True,
 ) -> None:
 
     def _to_unix(ts_val):
@@ -126,6 +129,9 @@ def plot_grid_chart_v2(
     bot_start_ts = int(bot_start_timestamp) if bot_start_visible else None
 
     price_lines = [round(float(gl), 4) for gl in grid_lines] if show_grid_lines else []
+    # D: graue Vorschau-Linien oberhalb der aktiven Range
+    outside_lines = ([round(float(gl), 4) for gl in (grid_lines_outside or [])]
+                      if (show_grid_outside_range and show_grid_lines) else [])
     has_volume  = show_volume and bool(volume_data)
 
     # Trailing-Stufen aufbereiten: zwei Linien-Daten-Listen (lower + upper).
@@ -219,6 +225,7 @@ def plot_grid_chart_v2(
     volume_json         = json.dumps(volume_data)
     markers_json        = json.dumps(markers)
     price_lines_json    = json.dumps(price_lines)
+    outside_lines_json  = json.dumps(outside_lines)
     upper_json          = json.dumps(round(float(upper_price), 4) if upper_price else None)
     lower_json          = json.dumps(round(float(lower_price), 4) if lower_price else None)
     coin_js             = json.dumps(coin)
@@ -419,6 +426,7 @@ def plot_grid_chart_v2(
   const volData        = {volume_json};
   const allMarkers     = {markers_json};
   const priceLines     = {price_lines_json};
+  const outsideLines   = {outside_lines_json};
   const upperPrice     = {upper_json};
   const lowerPrice     = {lower_json};
   const coinName       = {coin_js};
@@ -581,6 +589,13 @@ def plot_grid_chart_v2(
     lineStyle:LightweightCharts.LineStyle.Dotted,
     axisLabelVisible: showGridLabels,
     title: showGridLabels ? ('L' + (idx + 1)) : '',
+  }}));
+  // D: graue Vorschau-Linien oberhalb der current Upper-Range
+  outsideLines.forEach((p) => candleSeries.createPriceLine({{
+    price:p, color:'rgba(100,116,139,0.35)', lineWidth:1,
+    lineStyle:LightweightCharts.LineStyle.Dashed,
+    axisLabelVisible: showGridLabels,
+    title: '',
   }}));
   if (upperPrice) candleSeries.createPriceLine({{
     price:upperPrice, color:'rgba(59,130,246,0.9)', lineWidth:2,

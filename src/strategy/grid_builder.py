@@ -101,6 +101,68 @@ def calculate_grid_lines(
     return sorted(lines)
 
 
+def extrapolate_grid_above(
+    grid_lines: list,
+    grid_mode:  str,
+    max_price:  float,
+) -> list:
+    """
+    Extrapoliert Grid-Linien oberhalb der hoechsten aktiven Linie bis
+    max_price. Genutzt fuer die Vorschau-Darstellung im Chart, wenn
+    Trailing-Up oder Recentering aktiv ist (Auftrag D).
+
+    Step-Berechnung mode-abhaengig:
+        arithmetic / asymmetric_*: linearer letzter Step
+            (grid_lines[-1] - grid_lines[-2])
+        geometric: gleicher Ratio
+            (grid_lines[-1] / grid_lines[-2])
+
+    Args:
+        grid_lines : sortierte Liste aktiver Linien (mind. 2 Elemente)
+        grid_mode  : "arithmetic" / "geometric" / "asymmetric_bottom" /
+                     "asymmetric_top"
+        max_price  : Obergrenze fuer die Extrapolation (z.B.
+                     trailing_up_stop oder upper * 1.20)
+
+    Returns:
+        Liste extrapolierter Preise > grid_lines[-1] und <= max_price.
+        Leer wenn Input unzureichend oder max_price <= grid_lines[-1].
+    """
+    if not grid_lines or len(grid_lines) < 2:
+        return []
+    last = float(grid_lines[-1])
+    if max_price <= last:
+        return []
+
+    out: list = []
+    if grid_mode == "geometric":
+        prev = float(grid_lines[-2])
+        if prev <= 0:
+            return []
+        ratio = last / prev
+        if ratio <= 1.0:
+            return []
+        cur = last * ratio
+        # Hard limit gegen unendliche Schleifen
+        for _ in range(500):
+            if cur > max_price:
+                break
+            out.append(cur)
+            cur = cur * ratio
+    else:
+        # arithmetic + asymmetric_*: linearer letzter Step
+        step = last - float(grid_lines[-2])
+        if step <= 0:
+            return []
+        cur = last + step
+        for _ in range(500):
+            if cur > max_price:
+                break
+            out.append(cur)
+            cur += step
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Validierung
 # ---------------------------------------------------------------------------

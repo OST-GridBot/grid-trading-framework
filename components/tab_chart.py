@@ -164,6 +164,24 @@ def render_tab_chart(
     upper = float(grid_lines[-1]) if grid_lines else float(cfg.get("upper_price", 0))
     lower = float(grid_lines[0])  if grid_lines else float(cfg.get("lower_price", 0))
 
+    # ── D: Vorschau-Linien oberhalb Upper bei Trailing/Recentering ──────────
+    # Trailing-Pfad gewinnt wenn beide aktiv waeren (defensive).
+    grid_lines_outside = []
+    try:
+        from src.strategy.grid_builder import extrapolate_grid_above
+        gm = cfg.get("grid_mode", "arithmetic")
+        max_price_outside = None
+        if cfg.get("enable_trailing_up") and cfg.get("trailing_up_stop"):
+            max_price_outside = float(cfg["trailing_up_stop"])
+        elif cfg.get("enable_recentering_up") and upper > 0:
+            max_price_outside = upper * 1.20
+        if max_price_outside and grid_lines:
+            grid_lines_outside = extrapolate_grid_above(
+                grid_lines, gm, max_price_outside
+            )
+    except Exception:
+        grid_lines_outside = []
+
     # ── TP/SL-Preise bestimmen ──────────────────────────────────────────────
     # PT/LT: aus persistiertem State (bot.stop_loss_price / take_profit_price).
     # BT  : aus Config neu berechnen (identische Formel wie GridBot.__init__).
@@ -280,4 +298,6 @@ def render_tab_chart(
         sl_trigger                = sl_trigger_obj,
         tp_trigger                = tp_trigger_obj,
         show_sltp_trigger_markers = settings.get("show_sltp_trigger_markers", True),
+        grid_lines_outside        = grid_lines_outside,
+        show_grid_outside_range   = settings.get("show_grid_outside_range", True),
     )

@@ -41,6 +41,7 @@ _DEFAULTS = {
     "show_recentering_fill":   True,
     "show_sltp_lines":             True,  # SL + TP zusammengefuehrt (M.3)
     "show_sltp_trigger_markers":   True,  # NEU (M.2)
+    "show_grid_outside_range": True,   # D: graue Vorschau-Linien oberhalb
 }
 
 
@@ -155,6 +156,11 @@ def render_chart_settings(key_prefix: str) -> dict:
                 "Grid Trailing Stop-Linie",
                 value=_DEFAULTS["show_trailing_stops"],
                 key=f"chs_{key_prefix}_trailing_stops",
+            )
+            settings["show_grid_outside_range"] = st.checkbox(
+                "Grid-Linien außerhalb Range",
+                value=_DEFAULTS["show_grid_outside_range"],
+                key=f"chs_{key_prefix}_grid_outside",
             )
 
     # Backward-Compat: die alten Einzel-Keys werden aus show_sltp_lines

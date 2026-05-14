@@ -716,6 +716,20 @@ def _render_chart_main(params: dict, mode: str = "paper") -> None:
         except Exception:
             gl = []
 
+        # D: Vorschau-Linien oberhalb Upper bei aktivem Trailing/Recentering
+        gl_outside = []
+        try:
+            from src.strategy.grid_builder import extrapolate_grid_above
+            max_outside = None
+            if params.get("enable_trailing_up") and params.get("trailing_up_stop"):
+                max_outside = float(params["trailing_up_stop"])
+            elif params.get("enable_recentering_up") and upper > 0:
+                max_outside = upper * 1.20
+            if max_outside and gl:
+                gl_outside = extrapolate_grid_above(gl, gm, max_outside)
+        except Exception:
+            gl_outside = []
+
         # Chart-Einstellungen (Bot-Start gibts in der Setup-Vorschau nicht)
         settings = render_chart_settings(key_prefix="setup")
 
@@ -770,6 +784,8 @@ def _render_chart_main(params: dict, mode: str = "paper") -> None:
             sl_trigger                = None,
             tp_trigger                = None,
             show_sltp_trigger_markers = settings.get("show_sltp_trigger_markers", True),
+            grid_lines_outside        = gl_outside,
+            show_grid_outside_range   = settings.get("show_grid_outside_range", True),
         )
     except Exception as e:
         st.caption(f"Chart nicht verfügbar: {e}")
