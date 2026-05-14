@@ -530,7 +530,8 @@ class GridBot:
                 self.stop_loss_trigger_timestamp = self._current_timestamp
                 self.stop_loss_trigger_price    = float(current_price)
                 # Force-Sell aller Positionen zum aktuellen Marktpreis
-                self._force_sell_all_inventory(current_price, timestamp)
+                self._force_sell_all_inventory(current_price, timestamp,
+                                                trigger="stop_loss")
                 if self.stop_bot_on_trigger:
                     self.bot_status = "stopped"
                     return
@@ -544,7 +545,8 @@ class GridBot:
                 self.take_profit_triggered = True
                 self.take_profit_trigger_timestamp = self._current_timestamp
                 self.take_profit_trigger_price    = float(current_price)
-                self._force_sell_all_inventory(current_price, timestamp)
+                self._force_sell_all_inventory(current_price, timestamp,
+                                                trigger="take_profit")
                 if self.stop_bot_on_trigger:
                     self.bot_status = "stopped"
                     return
@@ -726,7 +728,8 @@ class GridBot:
     # Force-Sell bei TP/SL-Trigger
     # -----------------------------------------------------------------------
 
-    def _force_sell_all_inventory(self, current_price: float, timestamp) -> None:
+    def _force_sell_all_inventory(self, current_price: float, timestamp,
+                                   trigger: Optional[str] = None) -> None:
         """
         Verkauft das gesamte Coin-Inventar zum aktuellen Marktpreis.
         Wird bei TP/SL-Trigger aufgerufen — semantisch korrekt fuer
@@ -738,6 +741,8 @@ class GridBot:
         - position["coin"] und coin_inventory werden geleert.
         - Eintraege bekommen das Marker-Feld "force_sell": True, damit
           UI/Tests sie von normalen Grid-Sells unterscheiden koennen.
+        - Wenn trigger gesetzt ("stop_loss" / "take_profit"), wird das
+          Feld "force_sell_trigger" im trade_log mitgeschrieben (G.2).
         """
         while self.coin_inventory:
             amount, buy_price, _ts = self.coin_inventory.pop(0)
@@ -750,7 +755,7 @@ class GridBot:
             profit       = profit_gross - fee
             self.position["coin"] -= amount
             self.position["usdt"] += (amount * current_price) - fee
-            self.trade_log.append({
+            entry = {
                 "timestamp":    timestamp,
                 "type":         "SELL",
                 "cprice":       float(current_price),
@@ -760,7 +765,10 @@ class GridBot:
                 "profit":       float(profit),
                 "profit_gross": float(profit_gross),
                 "force_sell":   True,
-            })
+            }
+            if trigger:
+                entry["force_sell_trigger"] = trigger
+            self.trade_log.append(entry)
         # Safety: Position-Coin auf 0 setzen (Float-Rauschen vermeiden)
         self.position["coin"] = 0.0
 

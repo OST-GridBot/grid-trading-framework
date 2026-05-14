@@ -825,6 +825,41 @@ def _render_tab_market_indicators(metrics: dict) -> None:
 # Trade-Log Tabelle
 # ---------------------------------------------------------------------------
 
+def _classify_trade_type(t: dict) -> str:
+    """Mappt einen trade_log-Eintrag auf eine Label fuer die Typ-Spalte.
+
+    G.2-Klassifikation:
+      - Initial-Buy : BUY mit initial=True
+      - Stop-Loss   : SELL mit force_sell + force_sell_trigger='stop_loss'
+      - Take-Profit : SELL mit force_sell + force_sell_trigger='take_profit'
+      - buy / sell  : normale Grid-Trades
+    """
+    raw = str(t.get("type", "")).upper()
+    if raw == "BUY" and t.get("initial"):
+        return "Initial-Buy"
+    if raw == "SELL" and t.get("force_sell"):
+        trig = t.get("force_sell_trigger")
+        if trig == "stop_loss":
+            return "Stop-Loss"
+        if trig == "take_profit":
+            return "Take-Profit"
+    if raw == "BUY":
+        return "buy"
+    if raw == "SELL":
+        return "sell"
+    return raw.lower()
+
+
+# G.2: Farben pro Trade-Typ (Hex). Kein Default → leerer style.
+_TYPE_COLORS = {
+    "buy":         "#34D399",  # gruen hell
+    "sell":        "#F87171",  # rot hell
+    "Initial-Buy": "#60A5FA",  # blau
+    "Take-Profit": "#10B981",  # gruen dunkel
+    "Stop-Loss":   "#DC2626",  # rot dunkel
+}
+
+
 def render_trade_log(trade_log: list, max_rows: int = 100000) -> None:
     """
     Formatierter Trade-Log als Tabelle.
@@ -837,12 +872,20 @@ def render_trade_log(trade_log: list, max_rows: int = 100000) -> None:
         st.info("Noch keine Trades.")
         return
 
+    # G.1: Warnung wenn Tabelle abgeschnitten wird
+    total = len(trade_log)
+    if total > max_rows:
+        st.warning(
+            f"Trade-Log hat {total:,} Eintraege, gezeigt werden nur die "
+            f"letzten {max_rows:,}."
+        )
+
     from src.utils.timezone import utc_to_zurich
 
     rows = []
     for t in trade_log[-max_rows:]:
-        trade_type = t.get("type", "")
-        is_sell    = "SELL" in trade_type.upper()
+        type_label = _classify_trade_type(t)
+        is_sell    = type_label in ("sell", "Stop-Loss", "Take-Profit")
         profit     = t.get("profit", 0) or 0
         try:
             ts_str = utc_to_zurich(t.get("timestamp", "")).strftime("%Y-%m-%d %H:%M")
@@ -850,7 +893,7 @@ def render_trade_log(trade_log: list, max_rows: int = 100000) -> None:
             ts_str = str(t.get("timestamp", ""))[:16]
         rows.append({
             "Zeit":    ts_str,
-            "Typ":     trade_type,
+            "Typ":     type_label,
             "Preis":   f"{t.get('price', 0):,.2f}",
             "Menge":   f"{t.get('amount', 0):.6f}",
             "Gebuehr": f"{t.get('fee', 0):.4f}",
@@ -860,9 +903,8 @@ def render_trade_log(trade_log: list, max_rows: int = 100000) -> None:
     df = pd.DataFrame(rows[::-1])  # Neueste zuerst
 
     def color_type(val):
-        if "SELL" in str(val).upper(): return "color: #F87171"
-        if "BUY"  in str(val).upper(): return "color: #34D399"
-        return ""
+        c = _TYPE_COLORS.get(str(val))
+        return f"color: {c}" if c else ""
 
     def color_profit(val):
         try:
