@@ -556,8 +556,9 @@ def _section_grid_count_and_mode(
     #         genug Historie hat.
     # PT/LT -> letzte 14 Kerzen vom aktuellen Zeitpunkt (unveraendert).
     try:
+        from datetime import date as _date, timedelta as _td
+        # Referenz-Datum + DataFrame fuer ATR (mode-abhaengig)
         if mode == "backtest" and period and period.get("start_date"):
-            from datetime import date as _date, timedelta as _td
             sd = _date.fromisoformat(period["start_date"])
             ed = sd - _td(days=1)
             window_days = 30
@@ -566,39 +567,58 @@ def _section_grid_count_and_mode(
                 coin, days=window_days, interval=interval,
                 start_date=atr_start, end_date=ed,
             )
+            ref_date = sd
+            ref_label = "Referenzdatum"
         else:
             days = _DAYS_BY_INTERVAL.get(interval, 7)
             df, _ = get_price_data(coin, days=days, interval=interval)
+            ref_date = _date.today()
+            ref_label = "Aktuelles Datum"
         if df is not None and not df.empty:
             # Vier Multiplikatoren mit Einordnungs-Captions. Passiv —
             # User trägt num_grids manuell oben ins Number-Input ein.
             _mults = [0.2, 0.5, 1.0, 1.5]
             _captions = {
-                0.2: "eng (Scalping)",
-                0.5: "mittel",
+                0.2: "eng — Scalping",
+                0.5: "mittel — Range-Trading",
                 1.0: "Standard",
-                1.5: "weit (Swing)",
+                1.5: "weit — Swing-Trading",
             }
+            _monate = {1: "Jan", 2: "Feb", 3: "Mär", 4: "Apr",
+                        5: "Mai", 6: "Jun", 7: "Jul", 8: "Aug",
+                        9: "Sep", 10: "Okt", 11: "Nov", 12: "Dez"}
+            ref_date_str = (f"{ref_date.day}. {_monate[ref_date.month]} "
+                             f"{ref_date.year}")
             atr_info = suggest_atr_grid_counts(
                 df, upper_price - lower_price, multipliers=_mults,
             )
             with st.expander("Volatilitätsbasierte Vorschläge"):
                 _atr = atr_info["atr_usdt"]
-                rows = [
-                    f"<div style='font-size:0.75rem; color:#94A3B8;'>"
-                    f"ATR (14 Kerzen, Wilder) = "
-                    f"<b style='color:#E2E8F0;'>{_atr:,.2f} USDT</b></div>"
-                ]
+                # Header: Referenz-Datum + ATR-Wert
+                st.markdown(
+                    f"<div style='font-size:0.72rem; color:#64748B;'>"
+                    f"{ref_label}: {ref_date_str}</div>"
+                    f"<div style='font-size:0.75rem; color:#94A3B8; "
+                    f"margin-bottom:8px;'>"
+                    f"ATR (14 Kerzen) = "
+                    f"<b style='color:#E2E8F0;'>{_atr:,.2f} USDT</b></div>",
+                    unsafe_allow_html=True,
+                )
+                # Vier Karten, vertikal gestapelt
                 for m in _mults:
                     n = atr_info["suggestions"][m]
-                    rows.append(
-                        f"<div style='font-size:0.75rem; color:#94A3B8; "
-                        f"margin-top:2px;'>"
-                        f"× {m} → <b style='color:#E2E8F0;'>{n} Grids</b> "
-                        f"<span style='color:#64748B;'>· {_captions[m]}</span>"
-                        f"</div>"
+                    st.markdown(
+                        f"<div style='background:#1E293B; "
+                        f"border-radius:5px; padding:7px 10px; "
+                        f"margin-bottom:6px;'>"
+                        f"<div style='font-size:0.85rem; color:#E2E8F0; "
+                        f"font-weight:600;'>"
+                        f"× {m} → {n} Grids</div>"
+                        f"<div style='font-size:0.72rem; color:#64748B; "
+                        f"margin-top:2px;'>{_captions[m]}</div>"
+                        f"</div>",
+                        unsafe_allow_html=True,
                     )
-                st.markdown("".join(rows), unsafe_allow_html=True)
     except Exception:
         pass
 
