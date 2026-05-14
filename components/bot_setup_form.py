@@ -505,6 +505,7 @@ def _section_grid_count_and_mode(
     lower_price:   float,
     upper_price:   float,
     period:        Optional[dict] = None,
+    current_price: Optional[float] = None,
 ) -> dict:
     """Anzahl Grids + Gewinn/Grid-Info + ATR-Vorschlaege + Grid-Modus.
 
@@ -594,16 +595,35 @@ def _section_grid_count_and_mode(
             )
             with st.expander("Volatilitätsbasierte Vorschläge"):
                 _atr = atr_info["atr_usdt"]
-                # Header: Referenz-Datum + ATR-Wert
-                st.markdown(
+                # Header: Referenz-Datum + Intervall + Preisgrenzen + ATR.
+                # Datum, Intervall, Range sind alle Inputs der num_grids-
+                # Berechnung; User soll sie auf einen Blick sehen.
+                header_lines = [
                     f"<div style='font-size:0.72rem; color:#64748B;'>"
-                    f"{ref_label}: {ref_date_str}</div>"
+                    f"{ref_label}: {ref_date_str}</div>",
+                    f"<div style='font-size:0.72rem; color:#64748B;'>"
+                    f"Intervall: {interval}</div>",
+                ]
+                # Preisgrenzen-Zeile nur wenn ref_price + lower/upper sinnvoll
+                if (current_price and current_price > 0
+                        and lower_price > 0 and upper_price > 0):
+                    pct_up   = round((upper_price - current_price)
+                                      / current_price * 100, 1)
+                    pct_down = round((current_price - lower_price)
+                                      / current_price * 100, 1)
+                    header_lines.append(
+                        f"<div style='font-size:0.72rem; color:#64748B;'>"
+                        f"Aktuelle Preisgrenzen: +{pct_up:g}% / "
+                        f"-{pct_down:g}% um Referenzpreis: "
+                        f"{current_price:,.0f} USDT</div>"
+                    )
+                header_lines.append(
                     f"<div style='font-size:0.75rem; color:#94A3B8; "
-                    f"margin-bottom:8px;'>"
+                    f"margin-top:6px; margin-bottom:8px;'>"
                     f"ATR (14 Kerzen) = "
-                    f"<b style='color:#E2E8F0;'>{_atr:,.2f} USDT</b></div>",
-                    unsafe_allow_html=True,
+                    f"<b style='color:#E2E8F0;'>{_atr:,.2f} USDT</b></div>"
                 )
+                st.markdown("".join(header_lines), unsafe_allow_html=True)
                 # Vier Karten, vertikal gestapelt
                 for m in _mults:
                     n = atr_info["suggestions"][m]
@@ -1242,6 +1262,7 @@ def render_bot_setup_form(
             mode, params["coin"], params["interval"],
             params["lower_price"], params["upper_price"],
             period=params.get("period"),
+            current_price=current_price,
         ))
 
         # ── Sektion: Dynamische Mechanismen ──────────────────────────────────
