@@ -164,54 +164,54 @@ def _sub_row(html: str) -> None:
 # ---------------------------------------------------------------------------
 
 def render_tab_configuration(view: dict) -> None:
-    """Rendert den Configuration-Tab fuer eine BotView."""
+    """Rendert den Configuration-Tab fuer eine BotView.
+
+    Layout: zwei Spalten.
+      Links : Grid-Parameter + Kapital & Start (untereinander)
+      Rechts: Initialisierung + Dynamische Mechanismen (untereinander)
+    """
     cfg    = view.get("config", {})
     state  = view.get("state") or {}
     period = view.get("period")     # BT-spezifisch, sonst None
     mode   = view.get("mode", "")
 
-    # ── Bot (Header oben) ───────────────────────────────────────────────────
-    col_a, col_b = st.columns(2)
-    with col_a:
+    col_left, col_right = st.columns(2)
+
+    # ─── LINKE SPALTE ───────────────────────────────────────────────────────
+    with col_left:
+        # ── Grid-Parameter ──────────────────────────────────────────────────
+        _section_header("Grid-Parameter")
+        _row("Anzahl Grids", str(cfg.get("num_grids", "–")))
+        _row("Untere Grenze", f"${cfg.get('lower_price', 0):,.2f}")
+        _row("Obere Grenze", f"${cfg.get('upper_price', 0):,.2f}")
+        _row("Grid-Modus", str(cfg.get("grid_mode", "–")))
+
+        # ── Kapital & Start ─────────────────────────────────────────────────
+        _section_header("Kapital & Start")
+        _row("Startkapital", f"${cfg.get('total_investment', 0):,.2f}")
+        _row("Gebührenrate", f"{cfg.get('fee_rate', 0) * 100:.3f}%")
+        _row("Kapitalreserve", f"{cfg.get('reserve_pct', 0) * 100:.0f}%")
+        _row("Initial-Buy", _label_initial_buy(cfg))
+        _row("Grid Trigger", _label_grid_trigger(cfg))
+
+    # ─── RECHTE SPALTE ──────────────────────────────────────────────────────
+    with col_right:
+        # ── Initialisierung ─────────────────────────────────────────────────
+        _section_header("Initialisierung")
         _row("Coin", f"{view.get('coin', '–')}/USDT")
         _row("Intervall", view.get("interval", "–"))
-    with col_b:
         if period:
             start = period.get("start_date", "–")
             end   = period.get("end_date", "–")
             days  = period.get("days", 0)
             _row("Zeitraum", f"{start} – {end} ({days}d)")
 
-    # ── Grid-Parameter ──────────────────────────────────────────────────────
-    _section_header("Grid-Parameter")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        _row("Anzahl Grids", str(cfg.get("num_grids", "–")))
-        _row("Untere Grenze", f"${cfg.get('lower_price', 0):,.2f}")
-    with col_b:
-        _row("Obere Grenze", f"${cfg.get('upper_price', 0):,.2f}")
-        _row("Grid-Modus", str(cfg.get("grid_mode", "–")))
-
-    # ── Kapital & Start ─────────────────────────────────────────────────────
-    _section_header("Kapital & Start")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        _row("Startkapital", f"${cfg.get('total_investment', 0):,.2f}")
-        _row("Gebührenrate", f"{cfg.get('fee_rate', 0) * 100:.3f}%")
-        _row("Kapitalreserve", f"{cfg.get('reserve_pct', 0) * 100:.0f}%")
-    with col_b:
-        _row("Initial-Buy", _label_initial_buy(cfg))
-        _row("Grid Trigger", _label_grid_trigger(cfg))
-
-    # ── Dynamische Mechanismen ──────────────────────────────────────────────
-    _section_header("Dynamische Mechanismen")
-    col_a, col_b = st.columns(2)
-    with col_a:
+        # ── Dynamische Mechanismen ──────────────────────────────────────────
+        _section_header("Dynamische Mechanismen")
         _row("DD-Drosselung", _label_dd_throttle(cfg))
-        _row("Recentering", _label_recentering(cfg))
-        _row("Trailing", _label_trailing(cfg))
-    with col_b:
-        _row("Stop-Loss", _label_stop_loss(cfg))
+        _row("Recentering",   _label_recentering(cfg))
+        _row("Trailing",      _label_trailing(cfg))
+        _row("Stop-Loss",     _label_stop_loss(cfg))
         # F.3: Mitwandern-Anzeige nur bei PT/LT (BT laeuft deterministisch
         # durch — End-State-Werte sind kein "aktueller" Stand).
         if (mode != "backtest"
@@ -220,7 +220,7 @@ def render_tab_configuration(view: dict) -> None:
             sl_cur = state.get("stop_loss_price")
             if sl_cur:
                 _sub_row(f"mitgewandert: ${float(sl_cur):,.2f}")
-        _row("Take-Profit", _label_take_profit(cfg))
+        _row("Take-Profit",   _label_take_profit(cfg))
         if (mode != "backtest"
                 and cfg.get("trail_stop_levels")
                 and cfg.get("enable_trailing_up")):
