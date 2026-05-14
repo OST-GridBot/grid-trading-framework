@@ -181,9 +181,17 @@ class GridBot:
         self.enable_recentering_down = enable_recentering_down
         self.recenter_threshold = recenter_threshold
         self.enable_dd_throttle  = enable_dd_throttle
-        self.dd_threshold_1      = dd_threshold_1
-        self.dd_threshold_2      = dd_threshold_2
+        # Schwellen sortieren: vertauschte User-Eingaben (t1 > t2) wuerden
+        # sonst dazu fuehren, dass die strengere Schwelle nie greift.
+        self.dd_threshold_1, self.dd_threshold_2 = sorted(
+            [dd_threshold_1, dd_threshold_2]
+        )
         self.dd_throttle_factor  = 1.0  # aktueller Drosselfaktor
+        # Peak-Portfolio fuer Peak-to-Trough-Drosselung (steigt monoton).
+        # Start = total_investment; ein frisch geladener Bot ohne
+        # historischen Peak muss diesen Wert verwenden, sonst waere der
+        # erste portfolio_value < total_investment faelschlich der "Peak".
+        self._peak_portfolio    = total_investment
         self.enable_trailing_up      = enable_trailing_up
         self.trailing_up_stop        = trailing_up_stop
         self.trail_stop_levels       = trail_stop_levels
@@ -508,7 +516,11 @@ class GridBot:
             )
             self.daily_values[date_str] = portfolio_value
 
-            # Drawdown-Drosselung aktualisieren
+            # Peak monoton hochziehen (Basis fuer Peak-to-Trough-Drosselung)
+            if portfolio_value > self._peak_portfolio:
+                self._peak_portfolio = portfolio_value
+
+            # Drosselung aktualisieren
             if self.enable_dd_throttle:
                 self._update_dd_throttle(portfolio_value)
 
@@ -966,16 +978,22 @@ class GridBot:
 
     def _update_dd_throttle(self, portfolio_value: float) -> None:
         """
-        Aktualisiert den Drawdown-Drosselfaktor basierend auf aktuellem Verlust.
-        
+        Aktualisiert den Drosselfaktor basierend auf dem Drawdown vom Peak.
+
+        dd_pct = (peak − portfolio_value) / peak
+
         Schwelle 1 (default -10%): Ordergrösse auf 50%
         Schwelle 2 (default -20%): Ordergrösse auf 25%
         Kein Drawdown:             Ordergrösse 100%
         """
-        loss_pct = (self.total_investment - portfolio_value) / self.total_investment
-        if loss_pct >= self.dd_threshold_2:
+        # Guard gegen Null/negative Werte (theoretisch unkritisch durch UI,
+        # aber defensive Programmierung)
+        if self._peak_portfolio <= 0 or self.total_investment <= 0:
+            return
+        dd_pct = (self._peak_portfolio - portfolio_value) / self._peak_portfolio
+        if dd_pct >= self.dd_threshold_2:
             self.dd_throttle_factor = 0.25
-        elif loss_pct >= self.dd_threshold_1:
+        elif dd_pct >= self.dd_threshold_1:
             self.dd_throttle_factor = 0.50
         else:
             self.dd_throttle_factor = 1.0
@@ -1005,6 +1023,7 @@ class GridBot:
             "stop_loss_pl_usdt":   self.stop_loss_pl_usdt,
             "take_profit_pl_usdt": self.take_profit_pl_usdt,
             "dd_throttle_factor":  self.dd_throttle_factor,
+            "_peak_portfolio":     self._peak_portfolio,
             "enable_trailing_up":  self.enable_trailing_up,
             "trailing_up_stop":    self.trailing_up_stop,
             "trail_stop_levels":   self.trail_stop_levels,
@@ -1071,6 +1090,11 @@ class GridBot:
             self.take_profit_pl_usdt = state.get("take_profit_pl_usdt",
                                                   self.take_profit_pl_usdt)
             self.dd_throttle_factor   = state.get("dd_throttle_factor", 1.0)
+            # Frisch geladener Bot ohne historischen Peak -> total_investment
+            # als logischer Start (verhindert dass ein erster pv<total
+            # faelschlich als Peak gespeichert wird).
+            self._peak_portfolio      = state.get("_peak_portfolio",
+                                                   self.total_investment)
             self.enable_trailing_up   = state.get("enable_trailing_up", False)
             self.trailing_up_stop     = state.get("trailing_up_stop", None)
             # Alte Felder enable_trailing_down/trailing_down_stop werden

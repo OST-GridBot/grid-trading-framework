@@ -1068,6 +1068,10 @@ def _section_dd_throttle(mode: str) -> dict:
     enabled = st.checkbox("Drawdown-Drosselung", key=f"{mode}_new_dd")
     t1, t2 = 0.10, 0.20
     if enabled:
+        st.markdown(
+            _caption("Drawdown vom Peak des Portfolio-Werts"),
+            unsafe_allow_html=True,
+        )
         st.markdown(_caption("Schwelle 1 (%)  → 50% Ordergröße"), unsafe_allow_html=True)
         t1 = st.slider("", 5.0, 30.0, 10.0, 1.0,
                         key=f"{mode}_new_dd_t1", label_visibility="collapsed") / 100
