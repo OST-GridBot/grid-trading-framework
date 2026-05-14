@@ -6,8 +6,7 @@ Render-Komponente fuer den Grid-Levels-Tab in der Bot-Detail-Ansicht.
 Zeigt eine Tabelle mit allen Grid-Linien des Bots:
     - Level-Nummerierung (1 = unterstes Grid, N+1 = oberstes)
     - Preis der Linie
-    - Side (Buy/Sell/Blocked) - nur bei laufenden PT/LT-Bots mit state.grids
-    - Order-Volumen pro Linie (USDT) - bei Variable Orders gewichtet
+    - Order-Volumen pro Linie (USDT)
     - Anzahl Trades auf dieser Linie
     - Realisierter Profit auf dieser Linie (USDT) - Summe profit_gross
       aller SELL-Trades auf dem Preis
@@ -31,8 +30,7 @@ def _compute_grid_levels(view: dict) -> list:
     Liefert eine Liste mit einem Dict pro Grid-Linie. Felder:
         level       (int)    aufsteigend, 1 = unterstes Grid
         price       (float)
-        side        (str)    "Buy" / "Sell" / "—" (bei state) oder "—" (BT)
-        order_usdt  (float)  Order-Volumen pro Linie nach Variable-Orders-Gewichtung
+        order_usdt  (float)  Order-Volumen pro Linie (USDT)
         num_trades  (int)    Anzahl Trades auf dieser Linie (BUY+SELL)
         profit_usdt (float)  Summe profit_gross aller SELL-Trades auf dieser Linie
     """
@@ -103,27 +101,13 @@ def _compute_grid_levels(view: dict) -> list:
                 pg = t.get("profit", 0) or 0
             profit_by_price[key] = profit_by_price.get(key, 0.0) + (pg or 0)
 
-    # ── 4. Side aus state (PT/LT) - bei BT leer ─────────────────────────────
-    side_by_price = {}
-    if state_grids:
-        side_label_map = {"buy": "Buy", "sell": "Sell", "blocked": "—"}
-        for k, g in state_grids.items():
-            try:
-                key  = f"{float(k):.6g}"
-                side = (g or {}).get("side", "")
-                side_by_price[key] = side_label_map.get(side, side or "—")
-            except Exception:
-                pass
-
-    # ── 5. Zeilen zusammenstellen ───────────────────────────────────────────
+    # ── 4. Zeilen zusammenstellen ───────────────────────────────────────────
     rows = []
     for i, price in enumerate(prices):
-        key  = f"{price:.6g}"
-        side = side_by_price.get(key, "—")
+        key = f"{price:.6g}"
         rows.append({
             "level":       i + 1,
             "price":       float(price),
-            "side":        side,
             "order_usdt":  base_amount * weights[i],
             "num_trades":  trades_by_price.get(key, 0),
             "profit_usdt": profit_by_price.get(key, 0.0),
@@ -149,7 +133,6 @@ def render_tab_grid_levels(view: dict) -> None:
         {
             "Level":           r["level"],
             "Preis":           r["price"],
-            "Side":            r["side"],
             "Order-Volumen":   r["order_usdt"],
             "Anzahl Trades":   r["num_trades"],
             "Profit":          r["profit_usdt"],
