@@ -1156,10 +1156,9 @@ def _section_trailing(mode: str, recenter_active: bool,
             horizontal=True, key=mode_key,
         )
 
-        # J.3: Captions + Live-Anzeige des Up-Stops VOR dem Eingabefeld.
-        # Live-Wert aus session_state (statt vom Slider-Return), damit die
-        # Info-Zeile oberhalb des Inputs gerendert werden kann
-        # (Sidebar-Konvention: Texte ueber Eingabefeld, nie darunter).
+        # J.3: Modus-Caption AUSSERHALB der Box; Upper-Grenze +
+        # Trailing-Up-Stop-Live + Eingabefeld INNERHALB einer Box mit
+        # Rahmen (st.container(border=True)). Live-Wert aus session_state.
         if chosen_mode == "% von Upper":
             _pct_state = float(
                 st.session_state.get(f"{mode}_new_tr_up_pct", 10.0)
@@ -1176,41 +1175,42 @@ def _section_trailing(mode: str, recenter_active: bool,
             up_stop_preview = _abs_state if _abs_state > 0 else None
             st.markdown(_caption("Absoluter Stop-Preis (USDT)"),
                         unsafe_allow_html=True)
-        # Upper-Grenze (immer sichtbar wenn gesetzt)
-        if upper and upper > 0:
-            st.markdown(
-                _caption(
-                    f"Upper-Grenze ist bei <b style='color:#E2E8F0;'>"
-                    f"{upper:,.2f} USDT</b> gesetzt"
-                ),
-                unsafe_allow_html=True,
-            )
-        # Live-Anzeige des absoluten Stop-Preises
-        if up_stop_preview is not None and upper > 0:
-            st.markdown(
-                _caption(
-                    f"Trailing-Up-Stop bei <b style='color:#E2E8F0;'>"
-                    f"{up_stop_preview:,.2f} USDT</b>"
-                ),
-                unsafe_allow_html=True,
-            )
 
-        # Eingabefeld (NACH den Captions)
-        if chosen_mode == "% von Upper":
-            pct = st.slider("", 1.0, 50.0,
-                             float(st.session_state.get(f"{mode}_new_tr_up_pct", 10.0)),
-                             1.0, key=f"{mode}_new_tr_up_pct",
-                             label_visibility="collapsed") / 100
+        with st.container(border=True):
+            # Upper-Grenze (immer sichtbar wenn gesetzt)
             if upper and upper > 0:
-                up_stop = float(upper) * (1 + pct)
-        else:
-            up_stop = st.number_input(
-                "", min_value=0.0,
-                value=float(st.session_state.get(f"{mode}_new_tr_up_abs", _default_abs)),
-                step=1.0, key=f"{mode}_new_tr_up_abs",
-                label_visibility="collapsed",
-            )
-            up_stop = float(up_stop) if up_stop and up_stop > 0 else None
+                st.markdown(
+                    _caption(
+                        f"Upper-Grenze ist bei <b style='color:#E2E8F0;'>"
+                        f"{upper:,.2f} USDT</b> gesetzt"
+                    ),
+                    unsafe_allow_html=True,
+                )
+            # Live-Anzeige des absoluten Stop-Preises
+            if up_stop_preview is not None and upper > 0:
+                st.markdown(
+                    _caption(
+                        f"Trailing-Up-Stop bei <b style='color:#E2E8F0;'>"
+                        f"{up_stop_preview:,.2f} USDT</b>"
+                    ),
+                    unsafe_allow_html=True,
+                )
+            # Eingabefeld in der Box
+            if chosen_mode == "% von Upper":
+                pct = st.slider("", 1.0, 50.0,
+                                 float(st.session_state.get(f"{mode}_new_tr_up_pct", 10.0)),
+                                 1.0, key=f"{mode}_new_tr_up_pct",
+                                 label_visibility="collapsed") / 100
+                if upper and upper > 0:
+                    up_stop = float(upper) * (1 + pct)
+            else:
+                up_stop = st.number_input(
+                    "", min_value=0.0,
+                    value=float(st.session_state.get(f"{mode}_new_tr_up_abs", _default_abs)),
+                    step=1.0, key=f"{mode}_new_tr_up_abs",
+                    label_visibility="collapsed",
+                )
+                up_stop = float(up_stop) if up_stop and up_stop > 0 else None
 
         # Optionaler Toggle: TP/SL-Schwellen mitwandern
         trail_levels = st.checkbox(
