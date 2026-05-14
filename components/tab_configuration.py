@@ -83,15 +83,6 @@ def _label_recentering(cfg: dict) -> str:
     return "Inaktiv"
 
 
-def _label_atr(cfg: dict) -> str:
-    """ATR-Anpassung-Status mit statisch/dynamisch-Modus."""
-    if not cfg.get("enable_atr_adjust"):
-        return "Inaktiv"
-    mult = cfg.get("atr_multiplier", 1.0)
-    mode = "dynamisch" if cfg.get("enable_atr_dynamic") else "statisch"
-    return f"Aktiv (×{mult}, {mode})"
-
-
 def _label_trailing(cfg: dict) -> str:
     """Grid-Trailing-Status (nur Up-Variante, Binance-Standard)."""
     if not cfg.get("enable_trailing_up", False):
@@ -134,7 +125,6 @@ def render_tab_configuration(view: dict) -> None:
         st.markdown(f"- **Grid-Modus:** {cfg.get('grid_mode', '–')}")
         st.markdown(f"- **Stop-Loss:** {_label_stop_loss(cfg)}")
         st.markdown(f"- **Take-Profit:** {_label_take_profit(cfg)}")
-        st.markdown(f"- **ATR-Anpassung:** {_label_atr(cfg)}")
 
     # ── Spalte B: Grid-Parameter + Mechanismen ──────────────────────────────
     with col_b:

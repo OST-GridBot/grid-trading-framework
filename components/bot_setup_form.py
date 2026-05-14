@@ -95,10 +95,6 @@ def _default_params(mode: str) -> dict:
         "enable_dd_throttle":     False,
         "dd_threshold_1":         0.10,
         "dd_threshold_2":         0.20,
-        "enable_atr_adjust":      False,
-        "atr_multiplier":         1.0,
-        "enable_atr_dynamic":     False,
-        "atr_dynamic_threshold":  0.15,
         "enable_recentering_up":   False,
         "enable_recentering_down": False,
         "recenter_threshold":      0.05,
@@ -574,19 +570,35 @@ def _section_grid_count_and_mode(
             days = _DAYS_BY_INTERVAL.get(interval, 7)
             df, _ = get_price_data(coin, days=days, interval=interval)
         if df is not None and not df.empty:
-            atr_info = suggest_atr_grid_counts(df, upper_price - lower_price)
+            # Vier Multiplikatoren mit Einordnungs-Captions. Passiv —
+            # User trägt num_grids manuell oben ins Number-Input ein.
+            _mults = [0.2, 0.5, 1.0, 1.5]
+            _captions = {
+                0.2: "eng (Scalping)",
+                0.5: "mittel",
+                1.0: "Standard",
+                1.5: "weit (Swing)",
+            }
+            atr_info = suggest_atr_grid_counts(
+                df, upper_price - lower_price, multipliers=_mults,
+            )
             with st.expander("Volatilitätsbasierte Vorschläge"):
-                _atr  = atr_info["atr_usdt"]
-                _s05  = atr_info["suggestions"][0.5]
-                _s10  = atr_info["suggestions"][1.0]
-                _s15  = atr_info["suggestions"][1.5]
-                st.markdown(
+                _atr = atr_info["atr_usdt"]
+                rows = [
                     f"<div style='font-size:0.75rem; color:#94A3B8;'>"
-                    f"ATR (14 Kerzen) = <b style='color:#E2E8F0;'>{_atr:,.2f} USDT</b><br>"
-                    f"× 0.5 → {_s05} Grids · × 1.0 → {_s10} Grids · × 1.5 → {_s15} Grids"
-                    f"</div>",
-                    unsafe_allow_html=True
-                )
+                    f"ATR (14 Kerzen, Wilder) = "
+                    f"<b style='color:#E2E8F0;'>{_atr:,.2f} USDT</b></div>"
+                ]
+                for m in _mults:
+                    n = atr_info["suggestions"][m]
+                    rows.append(
+                        f"<div style='font-size:0.75rem; color:#94A3B8; "
+                        f"margin-top:2px;'>"
+                        f"× {m} → <b style='color:#E2E8F0;'>{n} Grids</b> "
+                        f"<span style='color:#64748B;'>· {_captions[m]}</span>"
+                        f"</div>"
+                    )
+                st.markdown("".join(rows), unsafe_allow_html=True)
     except Exception:
         pass
 
@@ -1025,21 +1037,6 @@ def _section_dd_throttle(mode: str) -> dict:
     return {"enable_dd_throttle": enabled, "dd_threshold_1": t1, "dd_threshold_2": t2}
 
 
-def _section_atr_adjust(mode: str) -> dict:
-    enabled = st.checkbox("Volatilitätsbasierte Anpassung", key=f"{mode}_new_atr")
-    mult, dyn, dyn_thr = 1.0, False, 0.15
-    if enabled:
-        mult = st.slider("ATR-Multiplikator", 0.5, 5.0, 1.0, 0.1,
-                          key=f"{mode}_new_atr_mult")
-        dyn  = st.checkbox("Dynamische Neuberechnung",
-                            key=f"{mode}_new_atr_dyn")
-        if dyn:
-            dyn_thr = st.slider("Schwelle (%)", 5.0, 50.0, 15.0, 1.0,
-                                 key=f"{mode}_new_atr_dyn_thr") / 100
-    return {"enable_atr_adjust": enabled, "atr_multiplier": mult,
-            "enable_atr_dynamic": dyn, "atr_dynamic_threshold": dyn_thr}
-
-
 def _section_recentering(mode: str, trailing_active: bool) -> dict:
     enabled = st.checkbox(
         "Recentering",
@@ -1235,7 +1232,6 @@ def render_bot_setup_form(
         st.markdown(_divider(), unsafe_allow_html=True)
         st.markdown(_label("Dynamische Mechanismen"), unsafe_allow_html=True)
         params.update(_section_dd_throttle(mode))
-        params.update(_section_atr_adjust(mode))
         # Gruppen-Trenner: Risiko-/Volatilitaets-Mechs vs. Range-Mechs
         st.markdown(_divider(), unsafe_allow_html=True)
         # Recentering / Trailing - gegenseitige Verriegelung via session_state

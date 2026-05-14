@@ -130,8 +130,10 @@ def get_atr_stats(df: pd.DataFrame) -> tuple:
         (df["low"]  - df["close"].shift()).abs(),
     ], axis=1).max(axis=1)
 
-    # Standard 14-Perioden ATR (Wilder EWM) statt einfachem Durchschnitt
-    atr_usdt      = float(tr.ewm(span=14, adjust=False).mean().iloc[-1])
+    # Wilder-Originalglaettung (1978): alpha = 1/n. Industrie-Standard.
+    # span=14 entspraeche alpha = 2/15 (ca. doppelt so reaktiv); hier
+    # bewusst alpha=1/14 fuer wissenschaftliche Vergleichbarkeit.
+    atr_usdt      = float(tr.ewm(alpha=1/14, adjust=False).mean().iloc[-1])
     current_close = float(df["close"].iloc[-1])
     atr_pct       = (atr_usdt / current_close) * 100 if current_close > 0 else 0.0
 
