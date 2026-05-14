@@ -821,16 +821,38 @@ def _sl_tp_price_pair(side: str, mode: str, ref_price: float,
 
     col_l, col_r = st.columns(2)
     with col_l:
+        # K.2: min_value=0 verhindert negative USDT-Preise
         abs_v = st.number_input(
             "Preis (USDT)", step=1.0, key=abs_key,
+            min_value=0.0,
             disabled=(sub_mode != "Manuell (USDT)"),
         )
     with col_r:
         # U.3d: ±-Buttons in 1%-Schritten (step=1.0 statt 0.1)
+        # K.1: min_value=0 verhindert negative Prozente (waeren innerhalb
+        # der Range -> ungueltig als TP/SL-Trigger).
         pct_v = st.number_input(
             "% von Grenze", step=1.0, key=pct_key,
+            min_value=0.0,
             disabled=(sub_mode != "% von Grenze"),
         )
+
+    # K.2: Manuell-Modus gegen Range-Grenze validieren. TP muss > upper,
+    # SL muss < lower sein. Gleichheit ist auch ungueltig (Trigger an
+    # der Grenze macht keinen Sinn).
+    if sub_mode == "Manuell (USDT)" and abs_v and abs_v > 0:
+        if side == "tp" and abs_v <= ref_price:
+            st.error(
+                f"Take-Profit-Preis muss > {ref_price:,.2f} USDT "
+                f"(Upper-Grenze) sein."
+            )
+            return None
+        if side == "sl" and abs_v >= ref_price:
+            st.error(
+                f"Stop-Loss-Preis muss < {ref_price:,.2f} USDT "
+                f"(Lower-Grenze) sein."
+            )
+            return None
 
     # Backend-Wert immer aus dem AKTIVEN Feld berechnen.
     if sub_mode == "Manuell (USDT)":
