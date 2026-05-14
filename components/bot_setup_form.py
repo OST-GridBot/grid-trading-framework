@@ -648,7 +648,7 @@ def _section_grid_count_and_mode(
     _gm_options  = ["Arithmetisch", "Geometrisch", "Bottom heavy", "Top heavy"]
     _gm_captions = [
         "Gleichmässige Preis-Abstände",
-        "Abstände proportional zum Preis (gleiche %-Sprünge)",
+        "Gleiche prozentuale Abstände",
         "Dichter in der unteren Range-Hälfte",
         "Dichter in der oberen Range-Hälfte",
     ]
@@ -1023,7 +1023,6 @@ def _section_grid_trigger_inline(mode: str,
     if trigger_key not in st.session_state:
         st.session_state[trigger_key] = default_trigger
 
-    # ±-Buttons springen zur naechsten/vorherigen Grid-Linie (S.6).
     # Grid-Linien on-the-fly aus den session_state-Werten der Range-Inputs.
     _lower  = float(st.session_state.get(f"{mode}_new_lower",  0.0) or 0.0)
     _upper  = float(st.session_state.get(f"{mode}_new_upper",  0.0) or 0.0)
@@ -1038,28 +1037,45 @@ def _section_grid_trigger_inline(mode: str,
     except Exception:
         _grid_lines = []
 
-    col_minus, col_input, col_plus = st.columns([1, 6, 1])
-    cur = float(st.session_state[trigger_key])
-    with col_minus:
-        if st.button("−", key=f"{trigger_key}_minus",
-                      use_container_width=True):
-            below = [g for g in _grid_lines if g < cur - 1e-8]
-            if below:
-                st.session_state[trigger_key] = float(below[-1])
-                st.rerun()
-    with col_plus:
-        if st.button("+", key=f"{trigger_key}_plus",
-                      use_container_width=True):
-            above = [g for g in _grid_lines if g > cur + 1e-8]
+    # J.1: Snap-Logik integriert in die nativen Streamlit-Stepper.
+    # Wenn der Wert sich um genau step (=1.0) veraendert hat, war es ein
+    # Klick auf den Stepper-Knopf -> springe auf naechste/vorherige Grid-
+    # Linie. Manuelle Tastatur-Eingaben (groessere Diffs) bleiben.
+    prev_key = f"{trigger_key}_prev"
+    if prev_key not in st.session_state:
+        st.session_state[prev_key] = float(st.session_state[trigger_key])
+    _STEP = 1.0
+    _TOL  = 1e-6
+
+    def _snap_to_grid_line():
+        prev = float(st.session_state[prev_key])
+        new  = float(st.session_state[trigger_key])
+        diff = new - prev
+        if not _grid_lines:
+            st.session_state[prev_key] = new
+            return
+        if abs(diff - _STEP) < _TOL:
+            above = [g for g in _grid_lines if g > prev + 1e-8]
             if above:
                 st.session_state[trigger_key] = float(above[0])
-                st.rerun()
-    with col_input:
-        trigger_price = st.number_input(
-            "Trigger-Preis (USDT)",
-            min_value=0.0, step=1.0,
-            key=trigger_key, label_visibility="collapsed",
-        )
+            else:
+                # Keine Linie ueber prev -> +1 rueckgaengig machen
+                st.session_state[trigger_key] = prev
+        elif abs(diff + _STEP) < _TOL:
+            below = [g for g in _grid_lines if g < prev - 1e-8]
+            if below:
+                st.session_state[trigger_key] = float(below[-1])
+            else:
+                st.session_state[trigger_key] = prev
+        # Sonst (manuelle Eingabe / groesserer Sprung): Wert uebernehmen.
+        st.session_state[prev_key] = float(st.session_state[trigger_key])
+
+    trigger_price = st.number_input(
+        "Trigger-Preis (USDT)",
+        min_value=0.0, step=_STEP,
+        key=trigger_key, label_visibility="collapsed",
+        on_change=_snap_to_grid_line,
+    )
 
     return float(trigger_price) if trigger_price > 0 else None
 
@@ -1139,28 +1155,28 @@ def _section_trailing(mode: str, recenter_active: bool,
             "Trailing-Up-Stop", options=["% von Upper", "Absolut"],
             horizontal=True, key=mode_key,
         )
+
+        # J.3: Captions + Live-Anzeige des Up-Stops VOR dem Eingabefeld.
+        # Live-Wert aus session_state (statt vom Slider-Return), damit die
+        # Info-Zeile oberhalb des Inputs gerendert werden kann
+        # (Sidebar-Konvention: Texte ueber Eingabefeld, nie darunter).
         if chosen_mode == "% von Upper":
+            _pct_state = float(
+                st.session_state.get(f"{mode}_new_tr_up_pct", 10.0)
+            ) / 100
+            up_stop_preview = (float(upper) * (1 + _pct_state)
+                                if upper and upper > 0 else None)
             st.markdown(_caption("Prozent über Upper-Grenze"),
                         unsafe_allow_html=True)
-            pct = st.slider("", 1.0, 50.0,
-                             float(st.session_state.get(f"{mode}_new_tr_up_pct", 10.0)),
-                             1.0, key=f"{mode}_new_tr_up_pct",
-                             label_visibility="collapsed") / 100
-            if upper and upper > 0:
-                up_stop = float(upper) * (1 + pct)
         else:
+            _default_abs = float(upper) * 1.10 if upper > 0 else 0.0
+            _abs_state = float(
+                st.session_state.get(f"{mode}_new_tr_up_abs", _default_abs)
+            )
+            up_stop_preview = _abs_state if _abs_state > 0 else None
             st.markdown(_caption("Absoluter Stop-Preis (USDT)"),
                         unsafe_allow_html=True)
-            default_abs = float(upper) * 1.10 if upper > 0 else 0.0
-            up_stop = st.number_input(
-                "", min_value=0.0,
-                value=float(st.session_state.get(f"{mode}_new_tr_up_abs", default_abs)),
-                step=1.0, key=f"{mode}_new_tr_up_abs",
-                label_visibility="collapsed",
-            )
-            up_stop = float(up_stop) if up_stop and up_stop > 0 else None
-
-        # Referenz-Anzeige (Upper-Grenze) - in beiden Modi sichtbar.
+        # Upper-Grenze (immer sichtbar wenn gesetzt)
         if upper and upper > 0:
             st.markdown(
                 _caption(
@@ -1169,16 +1185,32 @@ def _section_trailing(mode: str, recenter_active: bool,
                 ),
                 unsafe_allow_html=True,
             )
-
-        # Live-Anzeige des absoluten Stop-Preises (immer, unabhaengig vom Modus)
-        if up_stop is not None and upper > 0:
+        # Live-Anzeige des absoluten Stop-Preises
+        if up_stop_preview is not None and upper > 0:
             st.markdown(
                 _caption(
                     f"Trailing-Up-Stop bei <b style='color:#E2E8F0;'>"
-                    f"{up_stop:,.2f} USDT</b>"
+                    f"{up_stop_preview:,.2f} USDT</b>"
                 ),
                 unsafe_allow_html=True,
             )
+
+        # Eingabefeld (NACH den Captions)
+        if chosen_mode == "% von Upper":
+            pct = st.slider("", 1.0, 50.0,
+                             float(st.session_state.get(f"{mode}_new_tr_up_pct", 10.0)),
+                             1.0, key=f"{mode}_new_tr_up_pct",
+                             label_visibility="collapsed") / 100
+            if upper and upper > 0:
+                up_stop = float(upper) * (1 + pct)
+        else:
+            up_stop = st.number_input(
+                "", min_value=0.0,
+                value=float(st.session_state.get(f"{mode}_new_tr_up_abs", _default_abs)),
+                step=1.0, key=f"{mode}_new_tr_up_abs",
+                label_visibility="collapsed",
+            )
+            up_stop = float(up_stop) if up_stop and up_stop > 0 else None
 
         # Optionaler Toggle: TP/SL-Schwellen mitwandern
         trail_levels = st.checkbox(
