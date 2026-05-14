@@ -130,10 +130,6 @@ class GridBot:
         enable_dd_throttle:  bool  = False,
         dd_threshold_1:      float = 0.10,   # -10% → 50% Ordergrösse
         dd_threshold_2:      float = 0.20,   # -20% → 25% Ordergrösse
-        # Variable Ordergrössen
-        enable_variable_orders: bool  = False,
-        weight_bottom:          float = 2.0,
-        weight_top:             float = 0.5,
         # Volatilitaetsbasierte Anpassung
         enable_atr_adjust:      bool  = False,
         atr_multiplier:         float = 1.0,
@@ -194,9 +190,6 @@ class GridBot:
         self.dd_threshold_1      = dd_threshold_1
         self.dd_threshold_2      = dd_threshold_2
         self.dd_throttle_factor  = 1.0  # aktueller Drosselfaktor
-        self.enable_variable_orders = enable_variable_orders
-        self.weight_bottom           = weight_bottom
-        self.weight_top              = weight_top
         self.enable_atr_adjust       = enable_atr_adjust
         self.atr_multiplier          = atr_multiplier
         self.enable_atr_dynamic      = enable_atr_dynamic
@@ -299,28 +292,12 @@ class GridBot:
     def _build_grids(self, current_price: float) -> None:
         """
         Zentrale Methode zum Aufbau der Grid-States.
-        Beruecksichtigt grid_mode (asymmetrisch) und variable_order_size.
+        Jede Grid-Linie erhaelt die gleiche base_amount_usdt-Allokation.
         Wird von _initialize_grids, _shift_grid und _recenter_grid verwendet.
         """
-        n = len(self.grid_lines)
-
-        # Variable Ordergrössen: Gewichte berechnen
-        if self.enable_variable_orders and n > 1:
-            weights = [
-                self.weight_bottom + (self.weight_top - self.weight_bottom) * (i / (n - 1))
-                for i in range(n)
-            ]
-        else:
-            weights = [1.0] * n
-
-        # Normalisieren
-        weight_sum = sum(weights) or n
-        weights = [w / weight_sum * n for w in weights]
-
         self.grids = {}
-        for idx, price in enumerate(self.grid_lines):
-            amount_usdt = self.base_amount_usdt * weights[idx]
-            coin_amount = amount_usdt / (price * (1 + self.fee_rate))
+        for price in self.grid_lines:
+            coin_amount = self.base_amount_usdt / (price * (1 + self.fee_rate))
             if price > current_price:
                 side = "sell"
             elif price < current_price:
@@ -1108,9 +1085,6 @@ class GridBot:
             "trailing_count":      self.trailing_count,
             "trailing_events":     self.trailing_events,
             "recentering_events":  self.recentering_events,
-            "enable_variable_orders": self.enable_variable_orders,
-            "weight_bottom":          self.weight_bottom,
-            "weight_top":             self.weight_top,
             # Bot-Status + Grid Trigger
             "bot_status":             self.bot_status,
             "grid_trigger_price":     self.grid_trigger_price,
@@ -1183,9 +1157,6 @@ class GridBot:
             self.trailing_count       = state.get("trailing_count", 0)
             self.trailing_events      = state.get("trailing_events", [])
             self.recentering_events   = state.get("recentering_events", [])
-            self.enable_variable_orders = state.get("enable_variable_orders", False)
-            self.weight_bottom           = state.get("weight_bottom", 2.0)
-            self.weight_top              = state.get("weight_top", 0.5)
             # Bot-Status + Grid Trigger (Backward-Compat: alte Bots = "active")
             self.bot_status         = state.get("bot_status", "active")
             self.grid_trigger_price = state.get("grid_trigger_price",
@@ -1284,9 +1255,6 @@ def simulate_grid_bot(
     enable_dd_throttle:  bool  = False,
     dd_threshold_1:      float = 0.10,
     dd_threshold_2:      float = 0.20,
-    enable_variable_orders: bool  = False,
-    weight_bottom:          float = 2.0,
-    weight_top:             float = 0.5,
     enable_atr_adjust:      bool  = False,
     atr_multiplier:         float = 1.0,
     enable_atr_dynamic:     bool  = False,
@@ -1360,9 +1328,6 @@ def simulate_grid_bot(
             enable_dd_throttle  = enable_dd_throttle,
             dd_threshold_1      = dd_threshold_1,
             dd_threshold_2      = dd_threshold_2,
-            enable_variable_orders = enable_variable_orders,
-            weight_bottom          = weight_bottom,
-            weight_top             = weight_top,
             enable_atr_adjust      = enable_atr_adjust,
             atr_multiplier         = atr_multiplier,
             enable_atr_dynamic     = enable_atr_dynamic,

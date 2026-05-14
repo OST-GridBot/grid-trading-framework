@@ -75,18 +75,9 @@ def _compute_grid_levels(view: dict) -> list:
     effective    = total_invest * (1 - reserve_pct)
     base_amount  = (effective / num_grids) if num_grids > 0 else 0.0
 
-    if cfg.get("enable_variable_orders") and n_lines > 1:
-        wb = float(cfg.get("weight_bottom", 1.0))
-        wt = float(cfg.get("weight_top",    1.0))
-        weights = [
-            wb + (wt - wb) * (i / (n_lines - 1))
-            for i in range(n_lines)
-        ]
-        # Normalisieren auf n_lines (entspricht GridBot._build_grids)
-        weight_sum = sum(weights) or n_lines
-        weights = [w / weight_sum * n_lines for w in weights]
-    else:
-        weights = [1.0] * n_lines
+    # Alle Grid-Linien erhalten die gleiche Allokation (entspricht
+    # GridBot._build_grids).
+    weights = [1.0] * n_lines
 
     # ── 3. Trade-Statistik pro Linie ────────────────────────────────────────
     # Preis-Schluessel mit 6 signifikanten Stellen, konsistent mit metrics.py

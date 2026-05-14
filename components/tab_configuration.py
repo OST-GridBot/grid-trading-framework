@@ -64,15 +64,6 @@ def _label_dd_throttle(cfg: dict) -> str:
     return f"Aktiv (Schwelle 1: {t1:.0f}% / Schwelle 2: {t2:.0f}%)"
 
 
-def _label_variable_orders(cfg: dict) -> str:
-    """Variable-Ordergroessen-Status."""
-    if not cfg.get("enable_variable_orders"):
-        return "Inaktiv"
-    wb = cfg.get("weight_bottom", 1)
-    wt = cfg.get("weight_top", 1)
-    return f"Aktiv (unten {wb}× / oben {wt}×)"
-
-
 def _label_recentering(cfg: dict) -> str:
     """
     Recentering-Status. Behandelt Up/Down-Split + Backward-Compat fuer
@@ -143,7 +134,6 @@ def render_tab_configuration(view: dict) -> None:
         st.markdown(f"- **Grid-Modus:** {cfg.get('grid_mode', '–')}")
         st.markdown(f"- **Stop-Loss:** {_label_stop_loss(cfg)}")
         st.markdown(f"- **Take-Profit:** {_label_take_profit(cfg)}")
-        st.markdown(f"- **Variable Orders:** {_label_variable_orders(cfg)}")
         st.markdown(f"- **ATR-Anpassung:** {_label_atr(cfg)}")
 
     # ── Spalte B: Grid-Parameter + Mechanismen ──────────────────────────────

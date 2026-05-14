@@ -95,9 +95,6 @@ def _default_params(mode: str) -> dict:
         "enable_dd_throttle":     False,
         "dd_threshold_1":         0.10,
         "dd_threshold_2":         0.20,
-        "enable_variable_orders": False,
-        "weight_bottom":          2.0,
-        "weight_top":             0.5,
         "enable_atr_adjust":      False,
         "atr_multiplier":         1.0,
         "enable_atr_dynamic":     False,
@@ -424,8 +421,6 @@ def _section_smart_setup(
         _box_html += f"<br><b style='color:#E2E8F0;'>Stop-Loss:</b> Aktiv ({int(_sl*100)}%)"
     if getattr(_res, "enable_dd_throttle", False):
         _box_html += f"<br><b style='color:#E2E8F0;'>DD-Drosselung:</b> Aktiv"
-    if getattr(_res, "enable_variable_orders", False):
-        _box_html += f"<br><b style='color:#E2E8F0;'>Variable Orders:</b> Aktiv"
     _box_html += "</div>"
     st.markdown(_box_html, unsafe_allow_html=True)
 
@@ -1030,20 +1025,6 @@ def _section_dd_throttle(mode: str) -> dict:
     return {"enable_dd_throttle": enabled, "dd_threshold_1": t1, "dd_threshold_2": t2}
 
 
-def _section_variable_orders(mode: str) -> dict:
-    enabled = st.checkbox("Variable Ordergrößen", key=f"{mode}_new_vo")
-    wb, wt = 2.0, 0.5
-    if enabled:
-        c1, c2 = st.columns(2)
-        with c1:
-            wb = st.number_input("unten ×", 1.0, 5.0, 2.0, 0.1,
-                                  key=f"{mode}_new_vo_b")
-        with c2:
-            wt = st.number_input("oben ×", 0.1, 2.0, 0.5, 0.1,
-                                  key=f"{mode}_new_vo_t")
-    return {"enable_variable_orders": enabled, "weight_bottom": wb, "weight_top": wt}
-
-
 def _section_atr_adjust(mode: str) -> dict:
     enabled = st.checkbox("Volatilitätsbasierte Anpassung", key=f"{mode}_new_atr")
     mult, dyn, dyn_thr = 1.0, False, 0.15
@@ -1254,7 +1235,6 @@ def render_bot_setup_form(
         st.markdown(_divider(), unsafe_allow_html=True)
         st.markdown(_label("Dynamische Mechanismen"), unsafe_allow_html=True)
         params.update(_section_dd_throttle(mode))
-        params.update(_section_variable_orders(mode))
         params.update(_section_atr_adjust(mode))
         # Gruppen-Trenner: Risiko-/Volatilitaets-Mechs vs. Range-Mechs
         st.markdown(_divider(), unsafe_allow_html=True)

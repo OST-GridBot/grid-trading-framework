@@ -87,9 +87,6 @@ class BotRunner:
             enable_dd_throttle  = cfg.get("enable_dd_throttle", False),
             dd_threshold_1      = cfg.get("dd_threshold_1", 0.10),
             dd_threshold_2      = cfg.get("dd_threshold_2", 0.20),
-            enable_variable_orders = cfg.get("enable_variable_orders", False),
-            weight_bottom          = cfg.get("weight_bottom", 2.0),
-            weight_top             = cfg.get("weight_top", 0.5),
             enable_atr_adjust      = cfg.get("enable_atr_adjust", False),
             atr_multiplier         = cfg.get("atr_multiplier", 1.0),
             enable_atr_dynamic     = cfg.get("enable_atr_dynamic", False),
@@ -186,10 +183,7 @@ class BotRunner:
         except Exception:
             num_days = max(1.0, len(daily_values))
 
-        has_dynamic_capital = (
-            cfg.get("enable_variable_orders", False) or
-            cfg.get("enable_dd_throttle", False)
-        )
+        has_dynamic_capital = cfg.get("enable_dd_throttle", False)
 
         metrics = {}
         try:

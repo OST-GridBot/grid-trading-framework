@@ -62,9 +62,6 @@ def run_backtest(
     enable_dd_throttle:  bool   = False,
     dd_threshold_1:      float  = 0.10,
     dd_threshold_2:      float  = 0.20,
-    enable_variable_orders: bool  = False,
-    weight_bottom:          float = 2.0,
-    weight_top:             float = 0.5,
     enable_atr_adjust:      bool  = False,
     atr_multiplier:         float = 1.0,
     enable_atr_dynamic:     bool  = False,
@@ -143,9 +140,6 @@ def run_backtest(
         enable_dd_throttle  = enable_dd_throttle,
         dd_threshold_1      = dd_threshold_1,
         dd_threshold_2      = dd_threshold_2,
-        enable_variable_orders = enable_variable_orders,
-        weight_bottom          = weight_bottom,
-        weight_top             = weight_top,
         enable_atr_adjust      = enable_atr_adjust,
         atr_multiplier         = atr_multiplier,
         enable_atr_dynamic     = enable_atr_dynamic,
@@ -163,7 +157,7 @@ def run_backtest(
 
     # --- Kennzahlen (Standard-Schema aus src/analysis/metrics.py) ---
     num_days_real = get_num_days(df, interval)
-    has_dynamic_capital = enable_variable_orders or enable_dd_throttle
+    has_dynamic_capital = enable_dd_throttle
     metrics = calculate_all_metrics(
         trade_log           = sim["trade_log"],
         daily_values        = sim["daily_values"],
