@@ -31,7 +31,10 @@ from config.settings           import MAX_BACKTESTS
 from src.trading.bot_store     import store as bot_store
 from src.backtesting.engine    import run_backtest
 
-from components.bot_view          import bot_view_from_bot_state, bot_view_from_backtest_result
+from components.bot_view          import (
+    bot_view_from_bot_state, bot_view_from_backtest_result,
+    enrich_metrics_for_display,
+)
 from components.portfolio_view    import render_portfolio_view
 from components.bot_list          import render_bot_list
 from components.bot_detail        import render_bot_detail
@@ -233,17 +236,8 @@ def _render_pending_backtest() -> None:
     view = bot_view_from_backtest_result(
         result, dict(params), name=name, period=period
     )
-    metrics = dict(view.get("metrics", {}))
-    # Indikatoren-Merge (analog bot_detail.render_bot_detail)
-    for k, v in (view.get("indicators") or {}).items():
-        metrics.setdefault(k, v)
-    # Initial-Buy + Bot-Status + Grid Trigger fuer "All"-Tab
-    cfg = view.get("config") or {}
-    metrics.setdefault("initial_buy_coin_amount", view.get("initial_buy_coin_amount", 0.0))
-    metrics.setdefault("initial_buy_fee",         view.get("initial_buy_fee", 0.0))
-    metrics.setdefault("initial_buy_value_usdt",  view.get("initial_buy_value_usdt", 0.0))
-    metrics.setdefault("bot_status",              view.get("bot_status", "active"))
-    metrics.setdefault("grid_trigger_price",      cfg.get("grid_trigger_price"))
+    # Anzeige-relevante Felder zentral via enrich_metrics_for_display mergen.
+    metrics = enrich_metrics_for_display(view)
     render_metrics_tabs(metrics, trade_log=view.get("trade_log", []))
 
     st.divider()

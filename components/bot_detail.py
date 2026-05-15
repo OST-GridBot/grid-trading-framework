@@ -24,6 +24,7 @@ from typing import Callable, Optional
 
 import streamlit as st
 
+from components.bot_view           import enrich_metrics_for_display
 from components.metrics_display    import render_metrics_tabs
 from components.tab_chart          import render_tab_chart
 from components.tab_trades         import render_tab_trades
@@ -278,41 +279,8 @@ def render_bot_detail(view: dict, on_back: Callable[[], None]) -> None:
     st.divider()
 
     # ── Standard-Metriken-Tabs (Performance / Bot Details / Market Data) ────
-    # Schicht 2 hat das Standard-Schema bereits in view["metrics"] abgelegt.
-    # Fallbacks fuer Felder, die nicht aus calculate_all_metrics kommen:
-    metrics = dict(view.get("metrics", {}))
-    cfg     = view.get("config", {})
-    metrics.setdefault("initial_investment", cfg.get("total_investment", 0))
-    if "fees_paid" not in metrics:
-        metrics["fees_paid"] = sum(t.get("fee", 0) for t in view.get("trade_log", []))
-    # Indikatoren (BT-spezifisch in view["indicators"]) ins metrics-Dict mergen,
-    # damit Tab "Market Data & Indicators" auch bei BT-Bots Werte zeigt.
-    # setdefault statt update -> PT/LT-Werte in metrics bleiben unberuehrt.
-    for k, v in (view.get("indicators") or {}).items():
-        metrics.setdefault(k, v)
-    # Initial-Buy-Aggregate + Bot-Status + Grid Trigger ins metrics mergen,
-    # damit der "All"-Tab diese Felder anzeigen kann (gleiches Pattern).
-    metrics.setdefault("initial_buy_coin_amount", view.get("initial_buy_coin_amount", 0.0))
-    metrics.setdefault("initial_buy_fee",         view.get("initial_buy_fee", 0.0))
-    metrics.setdefault("initial_buy_value_usdt",  view.get("initial_buy_value_usdt", 0.0))
-    metrics.setdefault("bot_status",              view.get("bot_status", "active"))
-    metrics.setdefault("grid_trigger_price",      cfg.get("grid_trigger_price"))
-    # Coin-Inventar (PT/LT aus state.position, BT bleibt 0.0).
-    _state = view.get("state") or {}
-    _pos   = _state.get("position") or {}
-    _coin_amt = float(_pos.get("coin", 0) or 0)
-    metrics.setdefault("coin_holdings", _coin_amt)
-    metrics.setdefault("coin_holdings_value_usdt",
-                        _coin_amt * float(metrics.get("current_price", 0) or 0))
-    metrics.setdefault("coin_symbol", view.get("coin", ""))
-    # SL/TP-Bedingungs-Felder aus cfg ins metrics mergen, damit der
-    # All-Tab + Bot-Details-Tab die Bedingung als Label anzeigen koennen.
-    for _k in ("stop_loss_pct", "take_profit_pct",
-               "stop_loss_roi_pct", "take_profit_roi_pct",
-               "stop_loss_pl_usdt", "take_profit_pl_usdt"):
-        metrics.setdefault(_k, cfg.get(_k))
-    # Reserve fuer Bug 6 (Initial-Capital-delta)
-    metrics.setdefault("reserve_pct", cfg.get("reserve_pct", 0.0))
+    # Anzeige-relevante Felder zentral via enrich_metrics_for_display mergen.
+    metrics = enrich_metrics_for_display(view)
     render_metrics_tabs(metrics, trade_log=view.get("trade_log", []))
 
     st.divider()
