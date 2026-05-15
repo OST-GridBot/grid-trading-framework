@@ -311,6 +311,8 @@ def render_bot_detail(view: dict, on_back: Callable[[], None]) -> None:
                "stop_loss_roi_pct", "take_profit_roi_pct",
                "stop_loss_pl_usdt", "take_profit_pl_usdt"):
         metrics.setdefault(_k, cfg.get(_k))
+    # Reserve fuer Bug 6 (Initial-Capital-delta)
+    metrics.setdefault("reserve_pct", cfg.get("reserve_pct", 0.0))
     render_metrics_tabs(metrics, trade_log=view.get("trade_log", []))
 
     st.divider()

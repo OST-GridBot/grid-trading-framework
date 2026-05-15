@@ -92,12 +92,14 @@ _METRIC_KEYS = frozenset({
     "profit_factor", "max_drawdown_pct", "max_drawdown_usdt",
     "current_drawdown_pct", "fee_impact_pct", "benchmark_roi_pct",
     "benchmark_roi_usdt", "outperformance_pct", "avg_profit_per_trade",
-    "avg_profit_per_trade_pct", "num_trades", "fees_paid",
+    "avg_profit_per_trade_pct", "num_trades",
+    "num_initial_buys", "num_normal_buys", "num_sells",
+    "fees_paid",
     "initial_investment", "final_value", "grid_efficiency",
     "unrealized_pnl", "slippage_usdt", "slippage_avg_pct",
     "mechanism_active", "gross_pl_usdt", "gross_pl_pct",
     "grid_profit_total_usdt", "grid_profit_total_pct",
-    "capital_per_grid", "active_levels_ratio", "runtime",
+    "capital_per_grid", "active_levels", "runtime",
     "recentering_count", "trailing_count",
     "stop_loss_triggered", "take_profit_triggered",
     "stop_loss_trigger_timestamp", "stop_loss_trigger_price",
@@ -156,7 +158,10 @@ def bot_view_from_backtest_result(
         "trade_log":       list(result.get("trade_log", [])),
         "trailing_events": list(result.get("trailing_events", [])),
         "recentering_events": list(result.get("recentering_events", [])),
-        "state":           None,
+        # Bug 7: BT-Pfad legt final_position als state.position ab, damit
+        # UI (Coin-Inventar-Anzeige) auch bei BT-Bots Werte lesen kann.
+        "state":           ({"position": dict(result.get("final_position"))}
+                             if result.get("final_position") else None),
         "regime":          _serialize_regime(result.get("regime")),
         "indicators":      indicators,
         "period":          dict(period),

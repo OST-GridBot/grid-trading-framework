@@ -403,9 +403,12 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
     grid_eff     = metrics.get("grid_efficiency")
     active_lv    = metrics.get("active_levels", {"active": 0, "total": 0})
     cap_per_grid = metrics.get("capital_per_grid")
-    buys  = sum(1 for t in trade_log if "BUY"  in str(t.get("type", "")).upper())
-    sells = sum(1 for t in trade_log if "SELL" in str(t.get("type", "")).upper())
-    bs_str = f"B:{buys} / S:{sells}" if trade_log else None
+    # Bug 3: Aufschlüsselung Initial-Buys / normale Buys / Sells.
+    ib_count = metrics.get("num_initial_buys", 0) or 0
+    nb_count = metrics.get("num_normal_buys",  0) or 0
+    s_count  = metrics.get("num_sells",        0) or 0
+    bs_str   = (f"IB:{ib_count} / B:{nb_count} / S:{s_count}"
+                if trade_log else None)
     ratio = (
         f"{active_lv['active']}/{active_lv['total']}"
         if isinstance(active_lv, dict) and active_lv.get("total")
@@ -464,9 +467,13 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
             ("",            _sltp_detail(tp_summary) if tp_on else "",
                             None),
         ])
+    # Bug 6: Initial Capital - effective nach Reserve als Nebenwert
+    _res_pct = float(metrics.get("reserve_pct", 0) or 0)
+    _ic_sec  = (f"≈ {initial * (1 - _res_pct):,.2f} USDT nach Reserve"
+                if _res_pct > 0 and initial else None)
     with col_cap:
         _render_section_table("Kapital & Aktivität", [
-            ("Initial Capital",      _fmt_or_dash(initial,  "{:,.2f} USDT"), None),
+            ("Initial Capital",      _fmt_or_dash(initial,  "{:,.2f} USDT"), _ic_sec),
             ("Current Capital",      _fmt_or_dash(final,    "{:,.2f} USDT"), None),
             ("Coin-Inventar",        coin_inv_main, coin_inv_sec),
             ("Number of Trades",     _fmt_or_dash(num_t,    "{}"),           bs_str),
@@ -764,16 +771,26 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
     grid_eff  = metrics.get("grid_efficiency")
     active_lv = metrics.get("active_levels", {"active": 0, "total": 0})
 
+    # Bug 6: Reserve-delta fuer Initial Capital
+    _res_pct = float(metrics.get("reserve_pct", 0) or 0)
+    _ic_delta = (f"≈ {initial * (1 - _res_pct):,.2f} USDT nach Reserve"
+                  if _res_pct > 0 and initial else None)
+    # Bug 3: Aufschluesselung IB / B / S
+    ib_count = metrics.get("num_initial_buys", 0) or 0
+    nb_count = metrics.get("num_normal_buys",  0) or 0
+    s_count  = metrics.get("num_sells",        0) or 0
+    trades_delta = (f"IB:{ib_count} / B:{nb_count} / S:{s_count}"
+                     if trade_log else None)
+
     cols = st.columns(4)
     with cols[0]:
-        _metric_card("Initial Capital", f"{initial:,.2f} USDT", color="#E2E8F0")
+        _metric_card("Initial Capital", f"{initial:,.2f} USDT",
+                      delta=_ic_delta, color="#E2E8F0")
     with cols[1]:
         _metric_card("Current Capital", f"{final:,.2f} USDT", color=_color_roi(roi))
     with cols[2]:
-        buys  = sum(1 for t in trade_log if "BUY"  in str(t.get("type", "")).upper())
-        sells = sum(1 for t in trade_log if "SELL" in str(t.get("type", "")).upper())
-        bs    = f"B:{buys} / S:{sells}" if trade_log else None
-        _metric_card("Number of Trades", str(num_t), delta=bs, color="#E2E8F0")
+        _metric_card("Number of Trades", str(num_t),
+                      delta=trades_delta, color="#E2E8F0")
     with cols[3]:
         ratio = (
             f"{active_lv['active']}/{active_lv['total']}"
@@ -998,17 +1015,27 @@ def render_trade_log(trade_log: list, max_rows: int = 100000) -> None:
         type_label = _classify_trade_type(t)
         is_sell    = type_label in ("sell", "Stop-Loss", "Take-Profit")
         profit     = t.get("profit", 0) or 0
+        amount     = float(t.get("amount", 0) or 0)
+        price      = float(t.get("price", 0) or 0)
+        fee        = float(t.get("fee", 0) or 0)
+        # Bug 2: Kosten (Buy) = Preis × Menge + Fee (Cash-Abfluss, negatives
+        # Vorzeichen). Einnahmen (Sell) = Preis × Menge − Fee (Cash-Zufluss,
+        # positives Vorzeichen). Initial-Buys -> Buy-Logik, Force-Sell ->
+        # Sell-Logik.
+        cash_flow  = (price * amount - fee) if is_sell else -(price * amount + fee)
+        cash_label = f"{cash_flow:+,.2f}" if cash_flow else "–"
         try:
             ts_str = utc_to_zurich(t.get("timestamp", "")).strftime("%Y-%m-%d %H:%M")
         except Exception:
             ts_str = str(t.get("timestamp", ""))[:16]
         rows.append({
-            "Zeit":    ts_str,
-            "Typ":     type_label,
-            "Preis":   f"{t.get('price', 0):,.2f}",
-            "Menge":   f"{t.get('amount', 0):.6f}",
-            "Gebuehr": f"{t.get('fee', 0):.4f}",
-            "Profit":  f"{profit:+.4f}" if is_sell else "–",
+            "Zeit":              ts_str,
+            "Typ":               type_label,
+            "Preis":             f"{price:,.2f}",
+            "Menge":             f"{amount:.6f}",
+            "Gebuehr":           f"{fee:.4f}",
+            "Kosten/Einnahmen": cash_label,
+            "Profit":            f"{profit:+.4f}" if is_sell else "–",
         })
 
     df = pd.DataFrame(rows[::-1])  # Neueste zuerst
@@ -1028,4 +1055,5 @@ def render_trade_log(trade_log: list, max_rows: int = 100000) -> None:
 
     styled = df.style.applymap(color_type, subset=["Typ"])
     styled = styled.applymap(color_profit, subset=["Profit"])
+    styled = styled.applymap(color_profit, subset=["Kosten/Einnahmen"])
     st.dataframe(styled, use_container_width=True, hide_index=True)

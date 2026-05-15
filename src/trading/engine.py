@@ -198,6 +198,7 @@ class BotRunner:
                 start_time          = self._bot["created_at"],
                 fee_rate            = cfg.get("fee_rate", 0.001),
                 has_dynamic_capital = has_dynamic_capital,
+                reserve_pct         = cfg.get("reserve_pct", 0.0),
             )
         except Exception as e:
             print(f"BotRunner: Metrik-Fehler: {e}")

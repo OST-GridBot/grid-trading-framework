@@ -229,6 +229,7 @@ def calculate_all_metrics(
     start_time                         = None,
     fee_rate:         float           = 0.001,
     has_dynamic_capital: bool          = False,
+    reserve_pct:      float           = 0.0,
 ) -> dict:
     """
     Berechnet alle Kennzahlen auf einmal.
@@ -284,11 +285,19 @@ def calculate_all_metrics(
         "benchmark_roi_usdt":     bh_usdt,
         "outperformance_pct":     round(roi - bh_roi, 4) if bh_roi is not None else None,
         "avg_profit_per_trade":   avg_p,
-        # Initial-Buys (Binance-Standard-Setup) sind keine Grid-Trades,
-        # sondern Setup-Operations. Aus num_trades ausfiltern.
-        "num_trades":             sum(
+        # num_trades zaehlt jetzt ALLE Trades inkl. Initial-Buys (Bug 3).
+        # Aufschlüsselung in separaten Feldern.
+        "num_trades":             len(trade_log),
+        "num_initial_buys":       sum(
             1 for t in trade_log
-            if not (t.get("type") == "BUY" and t.get("initial"))
+            if t.get("type") == "BUY" and t.get("initial")
+        ),
+        "num_normal_buys":        sum(
+            1 for t in trade_log
+            if t.get("type") == "BUY" and not t.get("initial")
+        ),
+        "num_sells":              sum(
+            1 for t in trade_log if t.get("type") == "SELL"
         ),
         "fees_paid":              round(float(fees_paid), 4),
         "initial_investment":     float(initial_value),
@@ -303,7 +312,7 @@ def calculate_all_metrics(
         result["grid_efficiency"]  = calculate_grid_efficiency(trade_log, num_grids)
         result["active_levels"]    = calculate_active_levels_ratio(trade_log, num_grids)
         cap_per_grid               = calculate_capital_per_grid(
-            initial_value, num_grids, has_dynamic_capital
+            initial_value, num_grids, has_dynamic_capital, reserve_pct
         )
         result["capital_per_grid"] = cap_per_grid
         result["avg_profit_per_trade_pct"] = calculate_avg_profit_per_trade_pct(
@@ -392,16 +401,20 @@ def calculate_capital_per_grid(
     total_investment:    float,
     num_grids:           int,
     has_dynamic_capital: bool,
+    reserve_pct:         float = 0.0,
 ) -> Optional[float]:
     """
-    Investierter Betrag pro Grid-Linie.
+    Investierter Betrag pro Grid-Intervall (entspricht GridBot.base_amount_usdt).
+    Beruecksichtigt die Kapitalreserve:
+        base_amount = total_investment × (1 − reserve_pct) / num_grids
 
-    None wenn dynamisches Kapital aktiv (variable Ordergroessen oder
-    Drawdown-Drosselung) — dann ist der Wert nicht konstant.
+    None wenn dynamisches Kapital aktiv (Drawdown-Drosselung) — dann ist
+    der Wert nicht konstant.
     """
     if has_dynamic_capital or num_grids <= 0:
         return None
-    return round(total_investment / num_grids, 4)
+    effective = float(total_investment) * (1.0 - float(reserve_pct or 0.0))
+    return round(effective / num_grids, 4)
 
 
 def calculate_active_levels_ratio(

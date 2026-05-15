@@ -162,6 +162,7 @@ def run_backtest(
         current_price       = sim["final_price"],
         open_buys           = sim.get("final_open_buys", []),
         has_dynamic_capital = has_dynamic_capital,
+        reserve_pct         = reserve_pct,
     )
 
     # --- Indikatoren (fuer Tabs "Marktdaten" + "Indikatoren") ---
@@ -200,6 +201,9 @@ def run_backtest(
         "stop_loss_trigger_price":       sim.get("stop_loss_trigger_price"),
         "take_profit_trigger_timestamp": sim.get("take_profit_trigger_timestamp"),
         "take_profit_trigger_price":     sim.get("take_profit_trigger_price"),
+        # Final position (Bug 7: damit UI Coin-Inventar bei BT lesen kann)
+        "final_position":          sim.get("final_position",
+                                            {"usdt": 0.0, "coin": 0.0}),
         # Initial-Buy-Aggregate + Bot-Status + Grid Trigger (Binance-Standard)
         "initial_buy_coin_amount": sim.get("initial_buy_coin_amount", 0.0),
         "initial_buy_fee":         sim.get("initial_buy_fee", 0.0),
