@@ -366,12 +366,13 @@ class GridBot:
 
             # price > initial_price (und nicht Pufferzone): Sell-Linie.
             if not self.enable_initial_buy:
-                # Kein Initial-Buy: Sell-Linie ohne Inventar, trade_amount=0.
-                # Beim spaeteren Buy unten wird Inventar aufgebaut; der
-                # Sell-Match-Algorithmus in _execute_trade nutzt fuer Sells
-                # die Menge aus coin_inventory, nicht aus grid.trade_amount.
-                g.side         = "sell"
-                g.trade_amount = 0.0
+                # Kein Initial-Buy: Sell-Linie ohne Inventar. trade_amount
+                # bleibt auf dem in _build_grids berechneten Wert (=
+                # base_amount/(price*(1+fee))) — wird relevant wenn die
+                # Linie spaeter durch Preis-Fall zur Buy-Linie wird
+                # (via _update_grid_sides). Sell-Match-Algo nutzt sowieso
+                # die Menge aus coin_inventory, nicht grid.trade_amount.
+                g.side = "sell"
                 continue
 
             # Binance-Standard: Initial-Buy zum Marktpreis ausfuehren
@@ -687,6 +688,11 @@ class GridBot:
                 matched_buy_price = None
                 # Drawdown-Drosselung: Ordergrösse reduzieren
                 throttled_amount = grid.trade_amount * self.dd_throttle_factor
+                # Defensive Guard: trade_amount=0 erzeugt Empty-Inventar-
+                # Eintraege und verhindert spaetere Sells. Kann passieren
+                # bei extremer DD-Drosselung oder fehlerhaften Configs.
+                if throttled_amount <= 0:
+                    return
                 required_usdt = throttled_amount * grid.price * (1 + self.fee_rate)
                 if self.position["usdt"] < required_usdt:
                     return  # Nicht genuegend USDT
