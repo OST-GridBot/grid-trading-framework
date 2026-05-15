@@ -104,7 +104,7 @@ _METRIC_KEYS = frozenset({
     "stop_loss_triggered", "take_profit_triggered",
     "stop_loss_trigger_timestamp", "stop_loss_trigger_price",
     "take_profit_trigger_timestamp", "take_profit_trigger_price",
-    "current_price",
+    "current_price", "dd_throttle_factor",
 })
 
 _INDICATOR_KEYS = (
@@ -231,6 +231,13 @@ def enrich_metrics_for_display(view: dict) -> dict:
 
     # Reserve (Bug 6): Initial-Capital-delta in Karten + All-Tab.
     metrics.setdefault("reserve_pct", cfg.get("reserve_pct", 0.0))
+
+    # Notiz 6.2: DD-Drosselfaktor aus state mergen + Recentering/Trailing-
+    # Detail-Werte fuer Kombi-Karte.
+    metrics.setdefault("dd_throttle_factor",
+                        state.get("dd_throttle_factor", 1.0))
+    metrics.setdefault("recenter_threshold", cfg.get("recenter_threshold"))
+    metrics.setdefault("trailing_up_stop",   cfg.get("trailing_up_stop"))
 
     return metrics
 

@@ -449,6 +449,27 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
     coin_inv_main = (f"{coin_amt:.6f} {coin_sym}" if coin_amt > 0 else "–")
     coin_inv_sec  = (f"≈ {coin_val:,.2f} USDT" if coin_amt > 0 else None)
 
+    # Notiz 6.2: DD-Drossel als zwei Zeilen (Status + aktueller Faktor)
+    dd_on_all = active.get("dd_throttle", False) or bool(
+        metrics.get("enable_dd_throttle", False)
+    )
+    dd_factor_all = float(metrics.get("dd_throttle_factor", 1.0) or 1.0)
+    if not dd_on_all:
+        dd_status = "Inaktiv"
+        dd_detail = None
+    else:
+        dd_status = "Aktiv"
+        if dd_factor_all >= 0.999:
+            dd_detail = "aktueller Faktor: 100% (keine Drosselung)"
+        elif dd_factor_all >= 0.40:
+            dd_detail = (f"aktueller Faktor: "
+                         f"{int(round(dd_factor_all*100))}% "
+                         f"(Schwelle 1 aktiv)")
+        else:
+            dd_detail = (f"aktueller Faktor: "
+                         f"{int(round(dd_factor_all*100))}% "
+                         f"(Schwelle 2 aktiv)")
+
     # Zwei Spalten: Mechanismen | Kapital & Aktivitaet
     col_mech, col_cap = st.columns(2)
     with col_mech:
@@ -457,6 +478,9 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
             ("Grid Trigger",        trigger_label, trigger_sec),
             _mech_row("Recentering Events", rc_on, rc_count, None),
             _mech_row("Trailing Events",    tr_on, tr_count, None),
+            # DD-Drosselung: Status + aktueller Faktor (Notiz 6.2)
+            ("DD-Drosselung", dd_status, None),
+            ("",              dd_detail if dd_on_all else "", None),
             # SL: Status + Bedingung als zwei Zeilen
             ("Stop-Loss",   _sltp_status(sl_on, sl_hit),
                             sl_cond if sl_on else None),
@@ -719,28 +743,37 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
     sl_hit   = metrics.get("stop_loss_triggered",   False)
     tp_hit   = metrics.get("take_profit_triggered", False)
 
+    # Notiz 6.2: Reihe 1 neu strukturiert — Kombi-Karte
+    # Recentering/Trailing + bestehende SL/TP + neue DD-Drossel.
     cols = st.columns(4)
+
+    # ── Karte 1: Recentering / Trailing (exklusiv, UI-Verriegelung) ───
     with cols[0]:
-        if not rc_on:
-            _metric_card("Recentering Events", "–", delta="Inactive", color="#64748B")
-        elif rc_count == 0:
-            _metric_card("Recentering Events", "0", delta="Never triggered", color="#94A3B8")
-        else:
-            _metric_card("Recentering Events", str(rc_count), delta="Triggered", color="#94A3B8")
-    with cols[1]:
-        if not tr_on:
-            _metric_card("Trailing Events", "–", delta="Inactive", color="#64748B")
-        elif tr_count == 0:
-            _metric_card("Trailing Events", "0", delta="Never triggered", color="#94A3B8")
-        else:
-            _metric_card("Trailing Events", str(tr_count), delta="Triggered", color="#94A3B8")
+        if not rc_on and not tr_on:
+            _metric_card("Recentering / Trailing", "—",
+                          delta="Inaktiv", color="#64748B")
+        elif rc_on:
+            rc_thr = metrics.get("recenter_threshold")
+            d = (f"Schwelle: {float(rc_thr) * 100:.0f}%"
+                 if rc_thr is not None else None)
+            _metric_card("Recentering / Trailing", "Recentering",
+                          delta=d, color="#94A3B8")
+        else:  # tr_on
+            tr_stop = metrics.get("trailing_up_stop")
+            d = (f"Stop: ${float(tr_stop):,.2f}"
+                 if tr_stop else None)
+            _metric_card("Recentering / Trailing", "Trailing",
+                          delta=d, color="#94A3B8")
+
     # Auftrag H: delta-Text erweitert um Trigger-Bedingung bzw. bei
     # ausgeloestem Trigger verkauften Wert + Timestamp.
     sl_summary = _sltp_trigger_summary(metrics, trade_log, "sl")
     tp_summary = _sltp_trigger_summary(metrics, trade_log, "tp")
     sl_cond = _sltp_condition_label(metrics, "sl")
     tp_cond = _sltp_condition_label(metrics, "tp")
-    with cols[2]:
+
+    # ── Karte 2: Stop-Loss ────────────────────────────────────────────
+    with cols[1]:
         if not sl_on:
             _metric_card("Stop-Loss", "–", delta="Inactive", color="#64748B")
         elif sl_hit:
@@ -750,7 +783,9 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
         else:
             _metric_card("Stop-Loss", "Not triggered",
                           delta=sl_cond, color="#94A3B8")
-    with cols[3]:
+
+    # ── Karte 3: Take-Profit ──────────────────────────────────────────
+    with cols[2]:
         if not tp_on:
             _metric_card("Take-Profit", "–", delta="Inactive", color="#64748B")
         elif tp_hit:
@@ -760,6 +795,24 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
         else:
             _metric_card("Take-Profit", "Not triggered",
                           delta=tp_cond, color="#94A3B8")
+
+    # ── Karte 4: DD-Drossel (neu, Notiz 6.2) ──────────────────────────
+    dd_on     = active.get("dd_throttle", False) or bool(
+        metrics.get("enable_dd_throttle", False)
+    )
+    dd_factor = float(metrics.get("dd_throttle_factor", 1.0) or 1.0)
+    with cols[3]:
+        if not dd_on:
+            _metric_card("DD-Drossel", "–", delta="Inaktiv", color="#64748B")
+        elif dd_factor >= 0.999:
+            _metric_card("DD-Drossel", "100%",
+                          delta="Keine Drosselung", color="#94A3B8")
+        elif dd_factor >= 0.40:    # ~Schwelle 1 (0.5)
+            _metric_card("DD-Drossel", f"{int(round(dd_factor*100))}%",
+                          delta="Schwelle 1 aktiv", color="#FBBF24")
+        else:                       # Schwelle 2 (0.25)
+            _metric_card("DD-Drossel", f"{int(round(dd_factor*100))}%",
+                          delta="Schwelle 2 aktiv", color="#F87171")
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 

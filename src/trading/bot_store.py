@@ -269,7 +269,7 @@ class BotStore:
             "grid_profit_total_usdt", "grid_profit_total_pct",
             "capital_per_grid", "active_levels", "runtime",
             "num_initial_buys", "num_normal_buys", "num_sells",
-            "current_price",
+            "current_price", "dd_throttle_factor",
             "recentering_count", "trailing_count",
             "stop_loss_triggered", "take_profit_triggered",
             "stop_loss_trigger_timestamp", "stop_loss_trigger_price",
