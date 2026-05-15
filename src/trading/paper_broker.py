@@ -25,6 +25,7 @@ import uuid
 import numpy as np
 import pandas as pd
 from datetime import datetime
+from src.utils.timezone import naive_utc_now
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -126,7 +127,7 @@ class PaperBroker:
         Returns:
             Order mit Status filled oder rejected
         """
-        ts = timestamp or datetime.now().isoformat()
+        ts = timestamp or naive_utc_now().isoformat()
 
         # Validierung
         if amount_usdt < self.min_order_usdt:
@@ -195,7 +196,7 @@ class PaperBroker:
         Returns:
             Order mit Status filled oder rejected
         """
-        ts = timestamp or datetime.now().isoformat()
+        ts = timestamp or naive_utc_now().isoformat()
 
         # Slippage: Beim Verkauf etwas billiger
         slippage   = self._random_slippage()

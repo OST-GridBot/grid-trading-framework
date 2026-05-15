@@ -21,6 +21,7 @@ import hashlib
 import requests
 import pandas as pd
 from datetime import datetime
+from src.utils.timezone import naive_utc_now
 from typing import Optional
 
 from config.settings import DEFAULT_FEE_RATE
@@ -84,7 +85,7 @@ class LiveBroker:
             amount_usdt : Zu investierender Betrag in USDT
             timestamp   : Zeitstempel
         """
-        ts     = timestamp or datetime.now().isoformat()
+        ts     = timestamp or naive_utc_now().isoformat()
         symbol = f"{self.coin}USDT"
 
         params = {
@@ -135,7 +136,7 @@ class LiveBroker:
             amount_coin : Zu verkaufende Coin-Menge
             timestamp   : Zeitstempel
         """
-        ts     = timestamp or datetime.now().isoformat()
+        ts     = timestamp or naive_utc_now().isoformat()
         symbol = f"{self.coin}USDT"
 
         params = {

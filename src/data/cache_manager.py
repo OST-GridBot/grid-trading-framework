@@ -122,16 +122,20 @@ def get_price_data(
     """
     symbol = get_symbol(coin)
 
-    # 1. Datum berechnen
+    # 1. Datum berechnen — User-Datum (Zurich-lokal) -> naive UTC.
+    # Bugfix TZ: zuvor wurden User-Datums via datetime.combine() als
+    # naive datetime weitergegeben und in binance_api._to_utc_ms als
+    # UTC interpretiert -> Bot startete bei DST 2h zu spaet.
+    from src.utils.timezone import start_of_day_utc, end_of_day_utc, naive_utc_now
     if end_date is None:
-        end_dt = datetime.utcnow()
+        end_dt = naive_utc_now()
     else:
-        end_dt = datetime.combine(end_date, datetime.max.time())
+        end_dt = end_of_day_utc(end_date).replace(tzinfo=None)
 
     if start_date is None:
         start_dt = end_dt - timedelta(days=days)
     else:
-        start_dt = datetime.combine(start_date, datetime.min.time())
+        start_dt = start_of_day_utc(start_date).replace(tzinfo=None)
 
     days = max(1, (end_dt - start_dt).days)
 
@@ -157,7 +161,7 @@ def get_price_data(
         df_cached = _load_from_cache(filepath)
         if df_cached is not None:
             last_cached_ts = pd.to_datetime(df_cached["timestamp"].iloc[-1])
-            now_utc = datetime.utcnow()
+            now_utc = naive_utc_now()
             # Nur Append wenn letzte Kerze älter als 1 Intervall
             _interval_mins = {"1m":1,"5m":5,"15m":15,"1h":60,"4h":240,"1d":1440}.get(interval, 60)
             _age_mins = (now_utc - last_cached_ts.to_pydatetime()).total_seconds() / 60

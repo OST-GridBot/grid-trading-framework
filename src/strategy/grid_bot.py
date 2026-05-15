@@ -277,7 +277,11 @@ class GridBot:
         # eines Candle-Kontexts laeuft (PT/LT bei Bot-Erstellung). Wird im
         # BT-Pfad von simulate_grid_bot anschliessend auf first_ts gepatcht.
         if self._current_timestamp is None:
-            self._current_timestamp = pd.Timestamp.now()
+            # Bugfix TZ: pd.Timestamp.now() liefert naive lokale Zeit (Zurich)
+            # -> spaetere Anzeige via utc_to_zurich verschiebt um +2h. Konvention:
+            # alle internen State-Timestamps = naive UTC.
+            from src.utils.timezone import naive_utc_now
+            self._current_timestamp = pd.Timestamp(naive_utc_now())
         if self.bot_status == "active":
             self._perform_initial_setup(initial_price, total_investment)
 
