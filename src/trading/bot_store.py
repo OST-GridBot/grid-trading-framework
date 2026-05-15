@@ -267,7 +267,8 @@ class BotStore:
             "unrealized_pnl", "slippage_usdt", "slippage_avg_pct",
             "mechanism_active", "gross_pl_usdt", "gross_pl_pct",
             "grid_profit_total_usdt", "grid_profit_total_pct",
-            "capital_per_grid", "active_levels_ratio", "runtime",
+            "capital_per_grid", "active_levels", "runtime",
+            "num_initial_buys", "num_normal_buys", "num_sells",
             "recentering_count", "trailing_count",
             "stop_loss_triggered", "take_profit_triggered",
             "stop_loss_trigger_timestamp", "stop_loss_trigger_price",
@@ -307,7 +308,10 @@ class BotStore:
             "trade_log":       list(result.get("trade_log", [])),
             "trailing_events": list(result.get("trailing_events", [])),
             "recentering_events": list(result.get("recentering_events", [])),
-            "state":           None,
+            # Punkt 3: final_position als state.position ablegen, damit UI
+            # das Coin-Inventar bei gespeicherten BT-Bots lesen kann.
+            "state":           ({"position": dict(result.get("final_position"))}
+                                  if result.get("final_position") else None),
             "regime":          regime_dict,
             "indicators":      indicators,
         }

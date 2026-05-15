@@ -662,6 +662,7 @@ class GridBot:
 
                 actual_amt, buy_price, buy_time = self.coin_inventory[matched_idx]
                 actual_sell_amt = actual_amt
+                matched_buy_price = float(buy_price)
 
                 # Genuegend Coins vorhanden?
                 if self.position["coin"] < actual_sell_amt - 1e-10:
@@ -679,6 +680,7 @@ class GridBot:
                 grid.trade_amount = actual_sell_amt
 
             else:  # buy
+                matched_buy_price = None
                 # Drawdown-Drosselung: Ordergrösse reduzieren
                 throttled_amount = grid.trade_amount * self.dd_throttle_factor
                 required_usdt = throttled_amount * grid.price * (1 + self.fee_rate)
@@ -694,7 +696,7 @@ class GridBot:
                 grid.trade_amount = throttled_amount
 
             # Trade loggen
-            self.trade_log.append({
+            entry = {
                 "timestamp":    timestamp,
                 "type":         grid.side.upper(),
                 "cprice":       float(candle["close"]),
@@ -703,7 +705,11 @@ class GridBot:
                 "fee":          float(fee),
                 "profit":       float(profit),        # netto (nach Sell-Fee)
                 "profit_gross": float(profit_gross),  # brutto (Preisdifferenz × Menge)
-            })
+            }
+            # SELL: zugeordneter Buy-Preis fuer UI-Anzeige (Buy-Bezug-Spalte).
+            if matched_buy_price is not None:
+                entry["matched_buy_price"] = matched_buy_price
+            self.trade_log.append(entry)
 
             # Pufferzone (Initial-Setup-Konzept) wird durch den ersten realen
             # Trade aufgehoben — danach ist die Linie ein normales Grid-Level.
@@ -772,6 +778,8 @@ class GridBot:
         self.position["usdt"] += sell_value - fee
         self.coin_inventory.clear()
 
+        # Buy-Bezug: gewichteter Durchschnitt aller verkauften Inventar-Pakete.
+        avg_buy_price = (total_buy_value / total_amount) if total_amount > 0 else None
         entry = {
             "timestamp":    timestamp,
             "type":         "SELL",
@@ -783,6 +791,8 @@ class GridBot:
             "profit_gross": float(profit_gross),
             "force_sell":   True,
         }
+        if avg_buy_price is not None:
+            entry["matched_buy_price"] = float(avg_buy_price)
         if trigger:
             entry["force_sell_trigger"] = trigger
         self.trade_log.append(entry)

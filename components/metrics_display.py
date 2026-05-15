@@ -1028,14 +1028,18 @@ def render_trade_log(trade_log: list, max_rows: int = 100000) -> None:
             ts_str = utc_to_zurich(t.get("timestamp", "")).strftime("%Y-%m-%d %H:%M")
         except Exception:
             ts_str = str(t.get("timestamp", ""))[:16]
+        # Punkt 2: Buy-Bezug fuer Sells (matched_buy_price aus trade_log).
+        mbp = t.get("matched_buy_price")
+        buy_ref = f"@ {float(mbp):,.2f}" if (is_sell and mbp) else "–"
         rows.append({
-            "Zeit":              ts_str,
-            "Typ":               type_label,
-            "Preis":             f"{price:,.2f}",
-            "Menge":             f"{amount:.6f}",
-            "Gebuehr":           f"{fee:.4f}",
-            "Kosten/Einnahmen": cash_label,
-            "Profit":            f"{profit:+.4f}" if is_sell else "–",
+            "Zeit":                ts_str,
+            "Typ":                 type_label,
+            "Preis":               f"{price:,.2f}",
+            "Menge":               f"{amount:.6f}",
+            "Gebuehr":             f"{fee:.4f}",
+            "Einnahmen / Ausgaben": cash_label,
+            "Profit":              f"{profit:+.4f}" if is_sell else "–",
+            "Buy-Bezug":           buy_ref,
         })
 
     df = pd.DataFrame(rows[::-1])  # Neueste zuerst
@@ -1055,5 +1059,5 @@ def render_trade_log(trade_log: list, max_rows: int = 100000) -> None:
 
     styled = df.style.applymap(color_type, subset=["Typ"])
     styled = styled.applymap(color_profit, subset=["Profit"])
-    styled = styled.applymap(color_profit, subset=["Kosten/Einnahmen"])
+    styled = styled.applymap(color_profit, subset=["Einnahmen / Ausgaben"])
     st.dataframe(styled, use_container_width=True, hide_index=True)
