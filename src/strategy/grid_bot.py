@@ -465,8 +465,11 @@ class GridBot:
         Args:
             candle: pd.Series mit timestamp, open, high, low, close, volume
         """
-        if self.stop_loss_triggered or self.take_profit_triggered:
-            self.bot_status = "stopped"
+        # BUGFIX: vorher hat ein einmaliger SL/TP-Trigger den Bot in
+        # jeder folgenden Kerze gestoppt — unabhaengig von
+        # stop_bot_on_trigger. Jetzt nur stoppen wenn der Status
+        # explizit auf "stopped" gesetzt wurde.
+        if self.bot_status == "stopped":
             return
 
         try:
@@ -798,6 +801,12 @@ class GridBot:
         Returns:
             True wenn einer der aktiven Trigger ausgeloest hat.
         """
+        # Einmalige Trigger-Semantik: nach erstem Trigger wird SL nicht
+        # mehr feuern. Verhindert Force-Sell-Loop wenn der Bot mit
+        # stop_bot_on_trigger=False weiterlaeuft und Buy-Limits den
+        # Preis erneut unter die SL-Schwelle bringen.
+        if self.stop_loss_triggered:
+            return False
         # Preis-basiert
         if (self.stop_loss_price is not None
                 and current_price <= self.stop_loss_price):
@@ -836,6 +845,9 @@ class GridBot:
         Returns:
             True wenn einer der aktiven Trigger ausgeloest hat.
         """
+        # Einmalige Trigger-Semantik (analog _check_stop_loss).
+        if self.take_profit_triggered:
+            return False
         # Preis-basiert
         if (self.take_profit_price is not None
                 and current_price >= self.take_profit_price):
