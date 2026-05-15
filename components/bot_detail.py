@@ -297,6 +297,20 @@ def render_bot_detail(view: dict, on_back: Callable[[], None]) -> None:
     metrics.setdefault("initial_buy_value_usdt",  view.get("initial_buy_value_usdt", 0.0))
     metrics.setdefault("bot_status",              view.get("bot_status", "active"))
     metrics.setdefault("grid_trigger_price",      cfg.get("grid_trigger_price"))
+    # Coin-Inventar (PT/LT aus state.position, BT bleibt 0.0).
+    _state = view.get("state") or {}
+    _pos   = _state.get("position") or {}
+    _coin_amt = float(_pos.get("coin", 0) or 0)
+    metrics.setdefault("coin_holdings", _coin_amt)
+    metrics.setdefault("coin_holdings_value_usdt",
+                        _coin_amt * float(metrics.get("current_price", 0) or 0))
+    metrics.setdefault("coin_symbol", view.get("coin", ""))
+    # SL/TP-Bedingungs-Felder aus cfg ins metrics mergen, damit der
+    # All-Tab + Bot-Details-Tab die Bedingung als Label anzeigen koennen.
+    for _k in ("stop_loss_pct", "take_profit_pct",
+               "stop_loss_roi_pct", "take_profit_roi_pct",
+               "stop_loss_pl_usdt", "take_profit_pl_usdt"):
+        metrics.setdefault(_k, cfg.get(_k))
     render_metrics_tabs(metrics, trade_log=view.get("trade_log", []))
 
     st.divider()

@@ -173,6 +173,46 @@ def render_metrics_tabs(
 # Tab 0: All — kompakte Excel-aehnliche Uebersicht aller Metriken
 # ---------------------------------------------------------------------------
 
+def _sltp_condition_label(cfg: dict, side: str) -> str:
+    """Trigger-Bedingung als Kurzlabel ('Preis 20%' / 'ROI 30%' / ...)."""
+    prefix = "stop_loss_" if side == "sl" else "take_profit_"
+    pct = cfg.get(prefix + "pct")
+    if pct:
+        return f"Preis {pct * 100:.0f}%"
+    roi = cfg.get(prefix + "roi_pct")
+    if roi:
+        return f"ROI {roi * 100:.0f}%"
+    pl = cfg.get(prefix + "pl_usdt")
+    if pl:
+        return f"P/L ${pl:,.0f}"
+    return "–"
+
+
+def _sltp_trigger_summary(metrics: dict, trade_log: list, side: str) -> Optional[dict]:
+    """Bei ausgeloestem Trigger: dict mit verkauftem Wert (USDT) und
+    Timestamp; sonst None.
+    Konsolidierter Force-Sell: ein Trade pro Trigger -> amount × price."""
+    trig_key = "stop_loss" if side == "sl" else "take_profit"
+    triggered = metrics.get(f"{trig_key}_triggered")
+    if not triggered:
+        return None
+    # Aus trade_log den Force-Sell-Trade mit passendem Trigger holen.
+    fs = [t for t in (trade_log or [])
+          if t.get("force_sell") and t.get("force_sell_trigger") == trig_key]
+    if not fs:
+        return None
+    # Bei Konsolidierung gibts genau einen; bei alten Bots evtl. mehrere.
+    sold_usdt = sum(float(t.get("amount", 0)) * float(t.get("price", 0)) for t in fs)
+    # Timestamp aus erstem (= einzigem) Trade, oder aus metrics-Feld
+    ts = fs[0].get("timestamp")
+    try:
+        from src.utils.timezone import utc_to_zurich
+        ts_str = utc_to_zurich(ts).strftime("%d.%m.%Y %H:%M")
+    except Exception:
+        ts_str = str(ts)[:16]
+    return {"sold_usdt": sold_usdt, "timestamp": ts_str}
+
+
 def _fmt_or_dash(value, fmt: str = "{}") -> str:
     """Formatiert value mit fmt, oder '–' wenn None."""
     if value is None:
@@ -381,6 +421,31 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
     ib_fee_v   = None if not ib_fee   else ib_fee
     ib_value_v = None if not ib_value else ib_value
 
+    # Auftrag H: SL/TP zweizeilig — Status+Bedingung und Trigger-Details.
+    # SL/TP-Bedingungs-Felder werden in bot_detail.py ins metrics-Dict
+    # gemergt (stop_loss_pct, take_profit_roi_pct, ...).
+    sl_cond = _sltp_condition_label(metrics, "sl")
+    tp_cond = _sltp_condition_label(metrics, "tp")
+    sl_summary = _sltp_trigger_summary(metrics, trade_log, "sl")
+    tp_summary = _sltp_trigger_summary(metrics, trade_log, "tp")
+
+    def _sltp_status(enabled: bool, hit) -> str:
+        if not enabled:
+            return "Inaktiv"
+        return "Triggered" if hit else "Aktiv"
+
+    def _sltp_detail(summary) -> str:
+        if summary:
+            return f"Verkauft: ${summary['sold_usdt']:,.2f} — {summary['timestamp']}"
+        return "Noch nicht ausgelöst"
+
+    # Coin-Inventar fuer Kapital & Aktivitaet
+    coin_amt   = metrics.get("coin_holdings") or 0
+    coin_val   = metrics.get("coin_holdings_value_usdt") or 0
+    coin_sym   = metrics.get("coin_symbol") or ""
+    coin_inv_main = (f"{coin_amt:.6f} {coin_sym}" if coin_amt > 0 else "–")
+    coin_inv_sec  = (f"≈ {coin_val:,.2f} USDT" if coin_amt > 0 else None)
+
     # Zwei Spalten: Mechanismen | Kapital & Aktivitaet
     col_mech, col_cap = st.columns(2)
     with col_mech:
@@ -389,19 +454,27 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
             ("Grid Trigger",        trigger_label, trigger_sec),
             _mech_row("Recentering Events", rc_on, rc_count, None),
             _mech_row("Trailing Events",    tr_on, tr_count, None),
-            _mech_row("Stop-Loss",          sl_on, None,     sl_hit),
-            _mech_row("Take-Profit",        tp_on, None,     tp_hit),
+            # SL: Status + Bedingung als zwei Zeilen
+            ("Stop-Loss",   _sltp_status(sl_on, sl_hit),
+                            sl_cond if sl_on else None),
+            ("",            _sltp_detail(sl_summary) if sl_on else "",
+                            None),
+            ("Take-Profit", _sltp_status(tp_on, tp_hit),
+                            tp_cond if tp_on else None),
+            ("",            _sltp_detail(tp_summary) if tp_on else "",
+                            None),
         ])
     with col_cap:
         _render_section_table("Kapital & Aktivität", [
             ("Initial Capital",      _fmt_or_dash(initial,  "{:,.2f} USDT"), None),
             ("Current Capital",      _fmt_or_dash(final,    "{:,.2f} USDT"), None),
+            ("Coin-Inventar",        coin_inv_main, coin_inv_sec),
             ("Number of Trades",     _fmt_or_dash(num_t,    "{}"),           bs_str),
             ("Grid Efficiency",      _fmt_or_dash(grid_eff, "{:.1f}%"),      ratio),
             ("Invest / Grid",        _fmt_or_dash(cap_per_grid, "{:,.2f} USDT"), None),
             ("Initial-Buy Coins",    _fmt_or_dash(ib_coin_v,  "{:,.6f}"),    None),
-            ("Initial-Buy Wert",     _fmt_or_dash(ib_value_v, "{:,.2f} USDT"), None),
-            ("Initial-Buy Fee",      _fmt_or_dash(ib_fee_v,   "{:,.4f} USDT"), None),
+            ("Initial-Buy Wert",     _fmt_or_dash(ib_value_v, "{:,.2f} USDT"),
+                                      f"Fee {ib_fee_v:.4f} USDT" if ib_fee_v else None),
         ])
 
     # ──────────────────────────────────────────────────────────────────────
@@ -654,20 +727,32 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
             _metric_card("Trailing Events", "0", delta="Never triggered", color="#94A3B8")
         else:
             _metric_card("Trailing Events", str(tr_count), delta="Triggered", color="#94A3B8")
+    # Auftrag H: delta-Text erweitert um Trigger-Bedingung bzw. bei
+    # ausgeloestem Trigger verkauften Wert + Timestamp.
+    sl_summary = _sltp_trigger_summary(metrics, trade_log, "sl")
+    tp_summary = _sltp_trigger_summary(metrics, trade_log, "tp")
+    sl_cond = _sltp_condition_label(metrics, "sl")
+    tp_cond = _sltp_condition_label(metrics, "tp")
     with cols[2]:
         if not sl_on:
             _metric_card("Stop-Loss", "–", delta="Inactive", color="#64748B")
         elif sl_hit:
-            _metric_card("Stop-Loss", "Triggered", delta=None, color="#F87171")
+            d = (f"${sl_summary['sold_usdt']:,.0f} • {sl_summary['timestamp']}"
+                 if sl_summary else None)
+            _metric_card("Stop-Loss", "Triggered", delta=d, color="#F87171")
         else:
-            _metric_card("Stop-Loss", "Not triggered", delta=None, color="#94A3B8")
+            _metric_card("Stop-Loss", "Not triggered",
+                          delta=sl_cond, color="#94A3B8")
     with cols[3]:
         if not tp_on:
             _metric_card("Take-Profit", "–", delta="Inactive", color="#64748B")
         elif tp_hit:
-            _metric_card("Take-Profit", "Triggered", delta=None, color="#34D399")
+            d = (f"${tp_summary['sold_usdt']:,.0f} • {tp_summary['timestamp']}"
+                 if tp_summary else None)
+            _metric_card("Take-Profit", "Triggered", delta=d, color="#34D399")
         else:
-            _metric_card("Take-Profit", "Not triggered", delta=None, color="#94A3B8")
+            _metric_card("Take-Profit", "Not triggered",
+                          delta=tp_cond, color="#94A3B8")
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
@@ -703,19 +788,45 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
-    # ── Reihe 3: Konfiguration (Invest / Grid + leere Slots) ───────────
+    # ── Reihe 3: Coin-Inv / Invest-Grid / Initial-Buy Coins / Wert ─────
     cap_per_grid = metrics.get("capital_per_grid")
+    coin_amt     = metrics.get("coin_holdings", 0) or 0
+    coin_val     = metrics.get("coin_holdings_value_usdt", 0) or 0
+    coin_sym     = metrics.get("coin_symbol", "")
+    ib_coin      = metrics.get("initial_buy_coin_amount", 0) or 0
+    ib_value     = metrics.get("initial_buy_value_usdt", 0) or 0
+    ib_fee       = metrics.get("initial_buy_fee", 0) or 0
 
     cols = st.columns(4)
     with cols[0]:
+        if coin_amt > 0:
+            _metric_card(
+                "Coin-Inventar",
+                f"{coin_amt:.6f} {coin_sym}",
+                delta = f"≈ {coin_val:,.2f} USDT",
+                color = "#E2E8F0",
+            )
+        else:
+            _metric_card("Coin-Inventar", "–", delta=None, color="#64748B")
+    with cols[1]:
         _metric_card(
             "Invest / Grid",
             f"{cap_per_grid:,.2f} USDT" if cap_per_grid is not None else "–",
             color = "#E2E8F0",
         )
-    with cols[1]: _empty_cell()
-    with cols[2]: _empty_cell()
-    with cols[3]: _empty_cell()
+    with cols[2]:
+        if ib_coin > 0:
+            _metric_card("Initial-Buy Coins", f"{ib_coin:,.6f}", color="#E2E8F0")
+        else:
+            _metric_card("Initial-Buy Coins", "–", color="#64748B")
+    with cols[3]:
+        if ib_value > 0:
+            fee_delta = f"Fee {ib_fee:.4f} USDT" if ib_fee else None
+            _metric_card("Initial-Buy Wert",
+                          f"{ib_value:,.2f} USDT",
+                          delta=fee_delta, color="#E2E8F0")
+        else:
+            _metric_card("Initial-Buy Wert", "–", color="#64748B")
 
 
 # ---------------------------------------------------------------------------

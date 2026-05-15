@@ -734,46 +734,58 @@ class GridBot:
     def _force_sell_all_inventory(self, current_price: float, timestamp,
                                    trigger: Optional[str] = None) -> None:
         """
-        Verkauft das gesamte Coin-Inventar zum aktuellen Marktpreis.
-        Wird bei TP/SL-Trigger aufgerufen — semantisch korrekt fuer
-        klassisches "Stop-Loss" / "Take-Profit" im Spot-Trading.
+        Verkauft das gesamte Coin-Inventar zum aktuellen Marktpreis in
+        EINER konsolidierten Order. Wird bei TP/SL-Trigger aufgerufen —
+        semantisch korrekt fuer klassisches "Stop-Loss"/"Take-Profit"
+        im Spot-Trading.
 
-        - Pro Inventar-Position ein SELL-Eintrag im trade_log mit
-          profit_gross = (current_price - buy_price) × amount und
-          fee = amount × current_price × fee_rate.
+        Konsolidierung: ein einziger SELL-Trade pro Trigger mit Summen
+        ueber alle Inventory-Eintraege (Menge, Wert, Profit, Fee).
+        Vermeidet N kleinteilige Trades mit jeweils eigener
+        Gebuehren-Berechnung.
+
         - position["coin"] und coin_inventory werden geleert.
-        - Eintraege bekommen das Marker-Feld "force_sell": True, damit
-          UI/Tests sie von normalen Grid-Sells unterscheiden koennen.
-        - Wenn trigger gesetzt ("stop_loss" / "take_profit"), wird das
-          Feld "force_sell_trigger" im trade_log mitgeschrieben (G.2).
+        - Trade-Eintrag bekommt "force_sell": True; bei gesetztem
+          trigger zusaetzlich "force_sell_trigger" ("stop_loss" /
+          "take_profit").
         """
-        while self.coin_inventory:
-            amount, buy_price, _ts = self.coin_inventory.pop(0)
-            if self.position["coin"] < amount - 1e-10:
-                # Sicherheits-Schutz: sollte nicht passieren, aber falls
-                # Inventar und position["coin"] inkonsistent sind, ignorieren.
-                continue
-            profit_gross = (current_price - buy_price) * amount
-            fee          = amount * current_price * self.fee_rate
-            profit       = profit_gross - fee
-            self.position["coin"] -= amount
-            self.position["usdt"] += (amount * current_price) - fee
-            entry = {
-                "timestamp":    timestamp,
-                "type":         "SELL",
-                "cprice":       float(current_price),
-                "price":        float(current_price),
-                "amount":       float(amount),
-                "fee":          float(fee),
-                "profit":       float(profit),
-                "profit_gross": float(profit_gross),
-                "force_sell":   True,
-            }
-            if trigger:
-                entry["force_sell_trigger"] = trigger
-            self.trade_log.append(entry)
-        # Safety: Position-Coin auf 0 setzen (Float-Rauschen vermeiden)
-        self.position["coin"] = 0.0
+        if not self.coin_inventory:
+            return
+        # Aggregat ueber alle Inventory-Eintraege
+        total_amount = sum(amt for amt, _, _ in self.coin_inventory)
+        total_buy_value = sum(amt * bp for amt, bp, _ in self.coin_inventory)
+        # Safety: bei Inkonsistenz zwischen Inventar und position["coin"]
+        # das Minimum nehmen.
+        if self.position["coin"] < total_amount - 1e-10:
+            total_amount = max(0.0, self.position["coin"])
+        if total_amount <= 0:
+            self.coin_inventory.clear()
+            self.position["coin"] = 0.0
+            return
+
+        sell_value   = total_amount * current_price
+        fee          = sell_value * self.fee_rate
+        profit_gross = sell_value - total_buy_value
+        profit       = profit_gross - fee
+
+        self.position["coin"]  = 0.0
+        self.position["usdt"] += sell_value - fee
+        self.coin_inventory.clear()
+
+        entry = {
+            "timestamp":    timestamp,
+            "type":         "SELL",
+            "cprice":       float(current_price),
+            "price":        float(current_price),
+            "amount":       float(total_amount),
+            "fee":          float(fee),
+            "profit":       float(profit),
+            "profit_gross": float(profit_gross),
+            "force_sell":   True,
+        }
+        if trigger:
+            entry["force_sell_trigger"] = trigger
+        self.trade_log.append(entry)
 
     # -----------------------------------------------------------------------
     # Stop-Loss
