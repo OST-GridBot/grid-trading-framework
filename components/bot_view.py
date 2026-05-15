@@ -232,10 +232,13 @@ def enrich_metrics_for_display(view: dict) -> dict:
     # Reserve (Bug 6): Initial-Capital-delta in Karten + All-Tab.
     metrics.setdefault("reserve_pct", cfg.get("reserve_pct", 0.0))
 
-    # Notiz 6.2: DD-Drosselfaktor aus state mergen + Recentering/Trailing-
-    # Detail-Werte fuer Kombi-Karte.
+    # Notiz 6.2: DD-Drosselfaktor aus state mergen + DD-Aktivierungs-Flag
+    # aus cfg (sonst zeigt Karte 'Inaktiv' obwohl cfg.enable_dd_throttle=True).
+    # Plus Recentering/Trailing-Detail-Werte fuer Kombi-Karte.
     metrics.setdefault("dd_throttle_factor",
                         state.get("dd_throttle_factor", 1.0))
+    metrics.setdefault("enable_dd_throttle",
+                        cfg.get("enable_dd_throttle", False))
     metrics.setdefault("recenter_threshold", cfg.get("recenter_threshold"))
     metrics.setdefault("trailing_up_stop",   cfg.get("trailing_up_stop"))
 
