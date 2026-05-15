@@ -53,15 +53,20 @@ def _get_cache_filepath(
     """
     Gibt den Pfad zur Cache-Datei zurueck.
 
-    Mit Datum : BTCUSDT_1h_20240101_20240131.csv
-    Ohne Datum: BTCUSDT_1h_30d.csv
+    Mit Datum : BTCUSDT_1h_20240101_20240131_utc.csv
+    Ohne Datum: BTCUSDT_1h_30d_utc.csv
+
+    Suffix '_utc': Versions-Marker fuer den TZ-Fix. Cache-Inhalt wird
+    seit dem Fix mit korrektem Zurich->UTC-konvertiertem Datums-Bereich
+    befuellt (start_of_day_utc/end_of_day_utc). Alte Caches ohne Suffix
+    werden ignoriert.
     """
     if start_date and end_date:
         s = start_date.strftime("%Y%m%d") if hasattr(start_date, "strftime") else str(start_date).replace("-", "")
         e = end_date.strftime("%Y%m%d")   if hasattr(end_date,   "strftime") else str(end_date).replace("-", "")
-        filename = f"{symbol}_{interval}_{s}_{e}.csv"
+        filename = f"{symbol}_{interval}_{s}_{e}_utc.csv"
     else:
-        filename = f"{symbol}_{interval}_{days}d.csv"
+        filename = f"{symbol}_{interval}_{days}d_utc.csv"
     return _get_price_cache_dir() / filename
 
 
