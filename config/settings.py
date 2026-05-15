@@ -64,6 +64,9 @@ DEFAULT_RESERVE_PCT      = 0.03
 DEFAULT_GRID_RANGE_PCT   = 20.0
 MIN_NUM_GRIDS            = 2
 MAX_NUM_GRIDS            = 500
+# Binance Spot: NOTIONAL-Filter pro Order. Typisch 5 USDT fuer
+# USDT-Paare. Wird in validate_min_investment verwendet (Z.X2).
+DEFAULT_MIN_NOTIONAL     = 5.0
 
 GRID_MODES = {
     "Arithmetisch (gleichmaessige Abstaende)": "arithmetic",

@@ -1364,10 +1364,23 @@ def render_bot_setup_form(
 
         # Submit
         st.markdown(_divider(), unsafe_allow_html=True)
+        # Z.X2: Mindestkapital-Validierung. Bei zu niedrigem Investment
+        # st.error + Submit-Button disabled — verhindert Erstellung
+        # eines Bots, dessen Orders das Binance-NOTIONAL-Filter
+        # nicht erfuellen wuerden.
+        from src.strategy.grid_builder import validate_min_investment
+        _min_err = validate_min_investment(
+            total_investment = params.get("total_investment", 0),
+            num_grids        = params.get("num_grids", 0),
+            reserve_pct      = params.get("reserve_pct", 0.0),
+        )
+        if _min_err:
+            st.error(_min_err)
         submit_lbl = ("Backtest starten" if mode == "backtest"
                       else "Bot starten")
         if st.button(submit_lbl, key=f"{mode}_submit", type="primary",
-                      use_container_width=True):
+                      use_container_width=True,
+                      disabled=bool(_min_err)):
             submit_triggered = True
 
     # ── Aktuelles params-Dict ins session_state schreiben ───────────────────

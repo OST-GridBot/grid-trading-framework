@@ -29,6 +29,7 @@ from config.settings import (
     DEFAULT_NUM_GRIDS,
     DEFAULT_GRID_MODE,
     DEFAULT_FEE_RATE,
+    DEFAULT_MIN_NOTIONAL,
     MIN_NUM_GRIDS,
     MAX_NUM_GRIDS,
 )
@@ -191,6 +192,46 @@ def _validate_grid_params(
             f"Anzahl Grids muss zwischen {MIN_NUM_GRIDS} und {MAX_NUM_GRIDS} liegen "
             f"(war: {num_grids})"
         )
+
+
+def validate_min_investment(
+    total_investment: float,
+    num_grids:        int,
+    reserve_pct:      float = 0.0,
+    min_notional:     float = DEFAULT_MIN_NOTIONAL,
+) -> Optional[str]:
+    """
+    Z.X2: Prueft ob das Investment fuer die gewaehlte Konfiguration
+    ausreicht. Binance Spot erfordert pro Order >= min_notional USDT
+    (NOTIONAL-Filter). Fuer einen Grid-Bot heisst das:
+
+        base_amount = total × (1 − reserve_pct) / num_grids >= min_notional
+
+    Args:
+        total_investment : Geplantes Investment in USDT
+        num_grids        : Anzahl Grid-Intervalle
+        reserve_pct      : Kapitalreserve (0.0 – 1.0)
+        min_notional     : Mindestbetrag pro Order (Default 5 USDT,
+                           Binance-Standard fuer USDT-Paare)
+
+    Returns:
+        Fehler-String mit konkretem Mindestbetrag, oder None wenn OK.
+    """
+    if num_grids <= 0:
+        return None  # andere Validation faengt das ab
+    effective   = float(total_investment) * (1.0 - float(reserve_pct or 0.0))
+    base_amount = effective / num_grids
+    if base_amount >= min_notional:
+        return None
+    # Erforderliches Minimum berechnen
+    required = (min_notional * num_grids) / (1.0 - float(reserve_pct or 0.0))
+    return (
+        f"Investment zu niedrig: {total_investment:.2f} USDT bei "
+        f"{num_grids} Grids und {reserve_pct*100:.0f}% Reserve ergibt "
+        f"{base_amount:.2f} USDT pro Grid (Binance-Minimum: "
+        f"{min_notional:.0f} USDT). Mindestens "
+        f"{required:.2f} USDT erforderlich."
+    )
 
 
 def validate_grid_config(
