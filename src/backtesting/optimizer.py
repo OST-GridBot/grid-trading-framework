@@ -357,6 +357,112 @@ def smart_grid_setup(
 
 
 # ---------------------------------------------------------------------------
+# evaluate_all_combos: alle Kombinationen mit allen vier Scores
+# ---------------------------------------------------------------------------
+
+def evaluate_all_combos(
+    df:               pd.DataFrame,
+    total_investment: float = 10_000.0,
+    fee_rate:         float = DEFAULT_FEE_RATE,
+    interval:         str   = "1h",
+    range_basis:      str   = "median",
+) -> list:
+    """
+    Wie smart_grid_setup, aber liefert ALLE 288 ROI-Kombinationen mit
+    allen vier Scores (ROI, Sharpe, Calmar, CAGR) zurueck. Genutzt vom
+    Optimizer-Tab fuer die Vergleichs-Tabelle.
+
+    Suchraum identisch zu smart_grid_setup objective="maximize_roi":
+        Range (4) × Grids (6) × Mode (4) × Mech-Option (3) = 288.
+
+    Args:
+        df               : OHLCV-DataFrame (Sim-Zeitraum)
+        total_investment : Startkapital in USDT
+        fee_rate         : Gebuehrenrate
+        interval         : Kerzen-Intervall
+        range_basis      : "median" (BT) oder "current_price" (PT/LT)
+
+    Returns:
+        Liste von Dicts mit Konstellation + Scores:
+            range_pct, num_grids, grid_mode,
+            enable_recentering_up, enable_trailing_up, trailing_up_stop,
+            lower_price, upper_price,
+            roi_pct, sharpe, calmar, cagr_pct,
+            num_trades, max_dd_pct
+    """
+    if df is None or df.empty:
+        return []
+
+    if range_basis == "current_price":
+        anchor = float(df["close"].iloc[-1])
+    else:
+        anchor = float(df["close"].median())
+
+    range_pcts   = [0.05, 0.10, 0.15, 0.20]
+    grid_counts  = [5, 10, 15, 20, 25, 30]
+    modes        = ["arithmetic", "geometric",
+                    "asymmetric_bottom", "asymmetric_top"]
+    mech_options = [0, 1, 2]   # 0=keiner, 1=Recentering-Up, 2=Trailing-Up
+
+    num_days = get_num_days(df, interval)
+    out: list = []
+
+    for range_pct in range_pcts:
+        lower = anchor * (1 - range_pct)
+        upper = anchor * (1 + range_pct)
+        for num_grids in grid_counts:
+            for mode in modes:
+                for mech in mech_options:
+                    use_recenter = (mech == 1)
+                    use_trailing = (mech == 2)
+                    tr_up_stop   = upper * 1.20 if use_trailing else None
+
+                    sim = simulate_grid_bot(
+                        df=df, total_investment=total_investment,
+                        lower_price=lower, upper_price=upper,
+                        num_grids=num_grids, grid_mode=mode,
+                        fee_rate=fee_rate,
+                        enable_recentering_up=use_recenter,
+                        enable_recentering_down=False,
+                        recenter_threshold=0.05,
+                        enable_trailing_up=use_trailing,
+                        trailing_up_stop=tr_up_stop,
+                    )
+                    if sim.get("error"):
+                        continue
+
+                    daily_values = sim.get("daily_values", {})
+                    final_value  = sim.get("final_value", total_investment)
+                    roi          = sim.get("profit_pct", 0.0)
+                    sharpe       = calculate_sharpe_ratio(daily_values) or 0.0
+                    cagr         = calculate_cagr(
+                        total_investment, final_value, num_days
+                    ) or 0.0
+                    dd           = calculate_drawdown(daily_values)
+                    calmar       = calculate_calmar_ratio(
+                        cagr, dd.max_drawdown_pct
+                    ) or 0.0
+
+                    out.append({
+                        "range_pct":             range_pct,
+                        "num_grids":             num_grids,
+                        "grid_mode":             mode,
+                        "enable_recentering_up": use_recenter,
+                        "enable_trailing_up":    use_trailing,
+                        "trailing_up_stop":      tr_up_stop,
+                        "lower_price":           round(lower, 4),
+                        "upper_price":           round(upper, 4),
+                        "roi_pct":               round(float(roi), 4),
+                        "sharpe":                round(float(sharpe), 4),
+                        "calmar":                round(float(calmar), 4),
+                        "cagr_pct":              round(float(cagr), 4),
+                        "num_trades":            sim.get("num_trades", 0),
+                        "max_dd_pct":            round(float(dd.max_drawdown_pct), 4),
+                    })
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Hilfsfunktionen
 # ---------------------------------------------------------------------------
 
