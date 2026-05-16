@@ -163,6 +163,7 @@ def run_backtest(
         open_buys           = sim.get("final_open_buys", []),
         has_dynamic_capital = has_dynamic_capital,
         reserve_pct         = reserve_pct,
+        dd_history          = sim.get("dd_history", []),
     )
 
     # --- Indikatoren (fuer Tabs "Marktdaten" + "Indikatoren") ---

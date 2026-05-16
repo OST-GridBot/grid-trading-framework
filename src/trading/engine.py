@@ -199,6 +199,8 @@ class BotRunner:
                 fee_rate            = cfg.get("fee_rate", 0.001),
                 has_dynamic_capital = has_dynamic_capital,
                 reserve_pct         = cfg.get("reserve_pct", 0.0),
+                dd_history          = getattr(self._grid_bot,
+                                                "dd_history", []) or [],
             )
         except Exception as e:
             print(f"BotRunner: Metrik-Fehler: {e}")

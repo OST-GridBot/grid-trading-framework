@@ -53,12 +53,53 @@ class DrawdownResult:
     current_drawdown_pct: float
 
 
-def calculate_drawdown(daily_values: dict) -> DrawdownResult:
-    """Max Drawdown aus täglichen Portfolio-Werten."""
-    if not daily_values or len(daily_values) < 2:
+def calculate_drawdown(source) -> DrawdownResult:
+    """
+    Max Drawdown.
+
+    Akzeptiert zwei Quellformate:
+      - dd_history (list of dicts mit "dd_pct" und optional "pv"):
+        Granular pro Kerze. Identische Formel + Werte wie das Tracking in
+        GridBot.process_candle (peak monoton, dd_pct = (peak-pv)/peak).
+        -> Wird bevorzugt, weil intraday-DD-Spitzen erfasst sind und keine
+        Drift zwischen Performance-Tab und Drawdown-Tab moeglich ist.
+      - daily_values (dict {date_str: portfolio_value}):
+        Tages-Aggregation, Fallback fuer alte BTs ohne dd_history.
+
+    Bei leerer/None-Quelle: 0/0/0.
+    """
+    # --- dd_history-Pfad (granular) -----------------------------------------
+    if isinstance(source, list):
+        if not source:
+            return DrawdownResult(0.0, 0.0, 0.0)
+        # Eintrag mit maximalem dd_pct (Stelle des Max-Drawdowns)
+        max_idx = max(
+            range(len(source)),
+            key=lambda i: float(source[i].get("dd_pct", 0) or 0),
+        )
+        max_entry  = source[max_idx]
+        max_dd_frac = float(max_entry.get("dd_pct", 0) or 0)
+        pv          = float(max_entry.get("pv", 0) or 0)
+        # USDT-Verlust aus pv + dd_pct rekonstruieren:
+        #   peak = pv / (1 - dd_pct)  =>  loss = peak - pv = pv * dd_pct/(1-dd_pct)
+        # Fallback 0.0 wenn pv fehlt (alte dd_history-Eintraege vor pv-Tracking).
+        if 0.0 < max_dd_frac < 1.0 and pv > 0:
+            max_dd_usdt = pv * max_dd_frac / (1.0 - max_dd_frac)
+        else:
+            max_dd_usdt = 0.0
+        # Current DD = letzter Eintrag
+        cur_dd_frac = float(source[-1].get("dd_pct", 0) or 0)
+        return DrawdownResult(
+            max_drawdown_pct     = round(max_dd_frac * 100, 4),
+            max_drawdown_usdt    = round(max_dd_usdt,         2),
+            current_drawdown_pct = round(cur_dd_frac * 100, 4),
+        )
+
+    # --- daily_values-Pfad (Fallback) ---------------------------------------
+    if not source or len(source) < 2:
         return DrawdownResult(0.0, 0.0, 0.0)
     # Chronologisch sortieren (Bot-State aus JSON ist nicht garantiert geordnet)
-    values = pd.Series(daily_values).sort_index().tolist()
+    values = pd.Series(source).sort_index().tolist()
     peak = values[0]
     max_dd_pct = 0.0
     max_dd_usdt = 0.0
@@ -230,6 +271,7 @@ def calculate_all_metrics(
     fee_rate:         float           = 0.001,
     has_dynamic_capital: bool          = False,
     reserve_pct:      float           = 0.0,
+    dd_history:       Optional[list]  = None,
 ) -> dict:
     """
     Berechnet alle Kennzahlen auf einmal.
@@ -260,7 +302,9 @@ def calculate_all_metrics(
     """
     roi    = calculate_roi(initial_value, final_value)
     cagr   = calculate_cagr(initial_value, final_value, num_days)
-    dd     = calculate_drawdown(daily_values)
+    # DD: bevorzugt dd_history (intraday-granular), Fallback daily_values
+    # (Tages-Aggregation fuer alte Bots ohne dd_history-Tracking).
+    dd     = calculate_drawdown(dd_history if dd_history else daily_values)
     calmar = calculate_calmar_ratio(cagr, dd.max_drawdown_pct)
     sharpe = calculate_sharpe_ratio(daily_values)
     pf     = calculate_profit_factor(trade_log)

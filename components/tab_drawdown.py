@@ -195,12 +195,13 @@ def _render_overview_box(
     total_throttled:  int,
     total_trades:     int,
     total_saved:      float,
+    max_dd_pct:       float,
 ) -> None:
-    """A) Uebersichts-Box mit Aggregat-Kennzahlen oben im Tab."""
-    # Max DD ueber ganze History
-    max_dd = max((float(ev.get("dd_pct", 0) or 0) for ev in dd_history),
-                  default=0.0)
-    max_dd_pct = max_dd * 100
+    """A) Uebersichts-Box mit Aggregat-Kennzahlen oben im Tab.
+
+    max_dd_pct kommt aus metrics.max_drawdown_pct (zentrale Quelle),
+    damit Performance-Tab und DD-Tab garantiert identische Werte zeigen.
+    """
 
     # Phasen nach Stufe trennen
     s1 = [p for p in phases if p["factor"] >= 0.40]   # ~0.50
@@ -394,6 +395,7 @@ def render_tab_drawdown(view: dict) -> None:
     cfg        = view.get("config", {}) or {}
     dd_history = view.get("dd_history", []) or []
     trade_log  = view.get("trade_log",  []) or []
+    metrics    = view.get("metrics",    {}) or {}
     mode       = view.get("mode", "")
     status     = view.get("status", "")
 
@@ -432,8 +434,13 @@ def render_tab_drawdown(view: dict) -> None:
     total_saved = sum(p["saved_usdt"] for p in phases)
 
     # A) Uebersichts-Box
+    # Max-DD aus metrics (zentrale Quelle, identische Formel wie dd_history-
+    # Tracking in GridBot.process_candle -> garantiert dieselbe Zahl wie im
+    # Performance & Risk Tab).
+    max_dd_pct = float(metrics.get("max_drawdown_pct", 0) or 0)
     _render_overview_box(phases, dd_history, trade_log,
-                          total_throttled, total_trades, total_saved)
+                          total_throttled, total_trades, total_saved,
+                          max_dd_pct)
 
     # B) Chart
     _render_dd_chart(dd_history, thr1, thr2)

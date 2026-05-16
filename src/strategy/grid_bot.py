@@ -539,6 +539,9 @@ class GridBot:
 
             # DD-Verlauf tracken (immer, auch ohne aktivierte Drosselung).
             # dd_pct = peak-relativer Drawdown in [0, 1].
+            # pv = portfolio_value, damit calculate_drawdown den
+            # max_drawdown_usdt aus dd_history rekonstruieren kann
+            # (peak = pv / (1 - dd_pct)).
             if self._peak_portfolio > 0:
                 _dd_pct = max(0.0,
                               (self._peak_portfolio - portfolio_value)
@@ -549,6 +552,7 @@ class GridBot:
                 "timestamp": str(self._current_timestamp),
                 "dd_pct":    float(_dd_pct),
                 "factor":    float(self.dd_throttle_factor),
+                "pv":        float(portfolio_value),
             })
 
             # Stop-Loss pruefen (Preis- und/oder ROI-basiert, ODER-verknuepft)
