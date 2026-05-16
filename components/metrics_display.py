@@ -500,13 +500,18 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
             ("",            _sltp_detail(tp_summary) if tp_on else "",
                             None),
         ])
-    # Bug 6: Initial Capital - effective nach Reserve als Nebenwert
+    # P.4: Initial Capital einzeilig - Reserve integriert in Hauptwert
+    # (keine separate Sekundaer-Zeile mehr).
     _res_pct = float(metrics.get("reserve_pct", 0) or 0)
-    _ic_sec  = (f"≈ {initial * (1 - _res_pct):,.2f} USDT nach Reserve"
-                if _res_pct > 0 and initial else None)
+    if _res_pct > 0 and initial:
+        _ic_main = (f"{initial:,.2f} USDT  "
+                     f"(reserve {_res_pct*100:.0f}% / "
+                     f"{initial * (1 - _res_pct):,.2f} effective)")
+    else:
+        _ic_main = _fmt_or_dash(initial, "{:,.2f} USDT")
     with col_cap:
         _render_section_table("Kapital & Aktivität", [
-            ("Initial Capital",      _fmt_or_dash(initial,  "{:,.2f} USDT"), _ic_sec),
+            ("Initial Capital",      _ic_main, None),
             ("Current Capital",      _fmt_or_dash(final,    "{:,.2f} USDT"), None),
             ("Coin-Inventar",        coin_inv_main, coin_inv_sec),
             ("Number of Trades",     _fmt_or_dash(num_t,    "{}"),           bs_str),
@@ -845,10 +850,14 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
     grid_eff  = metrics.get("grid_efficiency")
     active_lv = metrics.get("active_levels", {"active": 0, "total": 0})
 
-    # Bug 6: Reserve-delta fuer Initial Capital
+    # P.4: Initial Capital einzeilig - Reserve integriert (Konsistenz Tab All)
     _res_pct = float(metrics.get("reserve_pct", 0) or 0)
-    _ic_delta = (f"≈ {initial * (1 - _res_pct):,.2f} USDT nach Reserve"
-                  if _res_pct > 0 and initial else None)
+    if _res_pct > 0 and initial:
+        _ic_main = (f"{initial:,.2f} USDT  "
+                     f"(reserve {_res_pct*100:.0f}% / "
+                     f"{initial * (1 - _res_pct):,.2f} effective)")
+    else:
+        _ic_main = f"{initial:,.2f} USDT" if initial is not None else "–"
     # Bug 3: Aufschluesselung IB / B / S
     ib_count = metrics.get("num_initial_buys", 0) or 0
     nb_count = metrics.get("num_normal_buys",  0) or 0
@@ -858,11 +867,8 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
 
     cols = st.columns(4)
     with cols[0]:
-        _metric_card(
-            "Initial Capital",
-            f"{initial:,.2f} USDT" if initial is not None else "–",
-            delta=_ic_delta, color="#E2E8F0",
-        )
+        # P.4: Initial Capital einzeilig (Reserve in Hauptwert integriert).
+        _metric_card("Initial Capital", _ic_main, color="#E2E8F0")
     with cols[1]:
         _metric_card(
             "Current Capital",
