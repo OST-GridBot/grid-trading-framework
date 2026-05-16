@@ -544,8 +544,8 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
             ("Current Price",  _fmt_or_dash(cur_price, "{:,.2f} USDT"), None),
             ("Max Price",      _fmt_or_dash(max_p,     "{:,.2f} USDT"), None),
             ("Min Price",      _fmt_or_dash(min_p,     "{:,.2f} USDT"), None),
-            ("Max-Min Range",  _fmt_or_dash(range_u,   "{:,.2f} USDT"),
-                               _fmt_or_dash(range_p,   "{:.2f}%")),
+            # P.1: USDT-Zahl entfernt - nur Prozent-Range anzeigen.
+            ("Max-Min Range",  _fmt_or_dash(range_p, "{:.2f}%"), None),
         ])
     with col_rv:
         _render_section_table("Returns & Volatilität", [
@@ -950,10 +950,10 @@ def _render_tab_market_indicators(metrics: dict) -> None:
     with cols[2]:
         _metric_card("Min Price", _fmt_price(min_p), color="#F87171")
     with cols[3]:
+        # P.1: USDT-Zahl entfernt - nur Prozent-Range anzeigen.
         _metric_card(
             "Max-Min Range",
-            _fmt_price(range_u),
-            delta = f"{range_p:.2f}%",
+            f"{range_p:.2f}%" if range_p is not None else "–",
             color = "#94A3B8",
         )
 
