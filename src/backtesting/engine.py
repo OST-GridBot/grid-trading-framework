@@ -194,6 +194,10 @@ def run_backtest(
         "trailing_count":      sim.get("trailing_count", 0),
         "trailing_events":     sim.get("trailing_events", []),
         "recentering_events":  sim.get("recentering_events", []),
+        # DD-Verlauf pro Kerze (Drawdown-Tab). MUSS hier mitkopiert werden,
+        # sonst geht das Feld zwischen simulate_grid_bot und bt_pending_result
+        # / save_backtest verloren.
+        "dd_history":          sim.get("dd_history", []),
         "stop_loss_triggered": sim["stop_loss_triggered"],
         "take_profit_triggered": sim.get("take_profit_triggered", False),
         # Trigger-Daten fuer Chart-Marker (M.2)

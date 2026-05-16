@@ -87,6 +87,13 @@ def _load_dataframe_for_view(view: dict):
 
 def render_tab_optimizer(view: dict) -> None:
     """Rendert den Optimizer-Tab fuer eine BotView."""
+    # Unsaved Live-View (BT-Pipeline vor Speicherung): view["id"] = "".
+    # Optimizer braucht eine persistente Bot-ID fuer Caching + Mode-Logik.
+    # -> Hinweis statt Tab-Inhalt.
+    if not view.get("id"):
+        st.info("Speichere den Backtest zuerst, um den Optimizer zu verwenden.")
+        return
+
     cfg              = view.get("config") or {}
     total_investment = float(cfg.get("total_investment", 10_000) or 10_000)
     fee_rate         = float(cfg.get("fee_rate", 0.001) or 0.001)

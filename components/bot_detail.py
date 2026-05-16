@@ -288,6 +288,22 @@ def render_bot_detail(view: dict, on_back: Callable[[], None]) -> None:
     st.divider()
 
     # ── Sub-Tabs ────────────────────────────────────────────────────────────
+    render_bot_sub_tabs(view)
+
+
+def render_bot_sub_tabs(view: dict) -> None:
+    """
+    Rendert die 6 Sub-Tabs (Chart / Trade-Log / Configuration / Grid Levels /
+    Drawdown / Optimizer) ohne Header und Action-Buttons.
+
+    Wird von zwei Pipelines verwendet:
+        - render_bot_detail (gespeicherte Bots, alle Modi)
+        - pages/page_backtesting.show_backtesting (Live-View nach BT-Lauf,
+          vor Speicherung)
+
+    Konsolidiert die Tab-Liste an einer Stelle, damit neue Tabs nicht in
+    zwei Pipelines parallel nachgezogen werden muessen.
+    """
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
         ["📈 Chart", "📋 Trade-Log", "⚙️ Configuration",
          "📐 Grid Levels", "📉 Drawdown", "🎯 Optimizer"]
@@ -304,7 +320,3 @@ def render_bot_detail(view: dict, on_back: Callable[[], None]) -> None:
         render_tab_drawdown(view)
     with tab6:
         render_tab_optimizer(view)
-
-    # (Auftrag Y.2) Optimizer-Block in gespeicherten Backtests entfernt.
-    # Der Backend-Code in src/backtesting/optimizer.py bleibt intakt
-    # — Smart-Setup im neuen Bot-Setup nutzt ihn weiterhin.
