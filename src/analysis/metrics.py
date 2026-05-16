@@ -400,18 +400,28 @@ def calculate_grid_efficiency(trade_log: list, num_grids: int) -> Optional[float
     Grid-Linien ist num_grids + 1 (lower-/upper-Grenze + Zwischen-Linien).
     Daher Divisor num_grids + 1 - sonst waere 100% theoretisch nicht
     erreichbar.
+
+    R.1: Initial-Buys zaehlen NICHT zur Grid Efficiency. Eine Linie gilt
+    erst als aktiv, wenn sie durch einen normalen Buy oder Sell getriggert
+    wurde. Eine Initial-Buy-Linie, die spaeter durch einen normalen Sell
+    (FIFO-Match) bedient wird, zaehlt - aber dann ueber das Sell-Event.
     """
     if num_grids <= 0:
         return None
-    sells = [t for t in trade_log if t.get("type") == "SELL"]
+    # Initial-Buys aus dem Trade-Pool ausschliessen
+    normal_trades = [
+        t for t in trade_log
+        if not (t.get("type") == "BUY" and t.get("initial"))
+    ]
+    sells = [t for t in normal_trades if t.get("type") == "SELL"]
     if not sells:
         return None
-    # Einzigartige Preise der Trades = aktive Grid-Levels.
+    # Einzigartige Preise der (normalen) Trades = aktive Grid-Levels.
     # Vergleich ueber 6 signifikante Stellen statt 2 Dezimalstellen, sonst
     # kollabieren niedrigpreisige Coins (SHIB ~0.000023) auf einen Wert.
     unique_prices = set(
         f"{t.get('price', 0):.6g}"
-        for t in trade_log if t.get("price", 0) > 0
+        for t in normal_trades if t.get("price", 0) > 0
     )
     active_levels = len(unique_prices)
     total_lines   = num_grids + 1
@@ -472,12 +482,19 @@ def calculate_active_levels_ratio(
     num_grids + 1. "total" zaehlt Linien (= num_grids + 1), damit ein
     Bot der alle Linien getradet hat auch tatsaechlich active==total
     erreichen kann.
+
+    R.1: Initial-Buys zaehlen NICHT als aktiver Trigger. Konsistent zu
+    calculate_grid_efficiency.
     """
     if num_grids <= 0:
         return {"active": 0, "total": 0}
+    normal_trades = [
+        t for t in trade_log
+        if not (t.get("type") == "BUY" and t.get("initial"))
+    ]
     unique_prices = set(
         f"{t.get('price', 0):.6g}"
-        for t in trade_log if t.get("price", 0) > 0
+        for t in normal_trades if t.get("price", 0) > 0
     )
     total_lines = num_grids + 1
     return {
