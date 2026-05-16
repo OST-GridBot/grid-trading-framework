@@ -439,17 +439,8 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
     sl_summary = _sltp_trigger_summary(metrics, trade_log, "sl")
     tp_summary = _sltp_trigger_summary(metrics, trade_log, "tp")
 
-    def _sltp_status(enabled: bool, hit) -> str:
-        # P.2: Status englisch klein
-        if not enabled:
-            return "inactive"
-        return "triggered" if hit else "active"
-
-    def _sltp_detail(summary) -> str:
-        # P.2: englisch
-        if summary:
-            return f"sold: ${summary['sold_usdt']:,.2f} — {summary['timestamp']}"
-        return "not yet triggered"
+    # _sltp_status / _sltp_detail entfernt - werden nach P.3 nicht mehr
+    # genutzt (einzeilige Mechanismen-Darstellung via _sltp_compact inline).
 
     # Coin-Inventar fuer Kapital & Aktivitaet
     coin_amt   = metrics.get("coin_holdings") or 0
@@ -458,26 +449,37 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
     coin_inv_main = (f"{coin_amt:.6f} {coin_sym}" if coin_amt > 0 else "–")
     coin_inv_sec  = (f"≈ {coin_val:,.2f} USDT" if coin_amt > 0 else None)
 
-    # Notiz 6.2: DD-Drossel als zwei Zeilen (Status + aktueller Faktor)
+    # P.3: DD-Drosselung einzeilig (Status + Faktor-Detail kombiniert)
     dd_on_all = active.get("dd_throttle", False) or bool(
         metrics.get("enable_dd_throttle", False)
     )
     dd_factor_all = float(metrics.get("dd_throttle_factor", 1.0) or 1.0)
     if not dd_on_all:
         dd_status = "inactive"
-        dd_detail = None
+        dd_sec    = None
     else:
         dd_status = "active"
+        pct = int(round(dd_factor_all * 100))
         if dd_factor_all >= 0.999:
-            dd_detail = "aktueller Faktor: 100% (keine Drosselung)"
+            dd_sec = "factor 100% (no throttling)"
         elif dd_factor_all >= 0.40:
-            dd_detail = (f"aktueller Faktor: "
-                         f"{int(round(dd_factor_all*100))}% "
-                         f"(Schwelle 1 aktiv)")
+            dd_sec = f"factor {pct}% (threshold 1)"
         else:
-            dd_detail = (f"aktueller Faktor: "
-                         f"{int(round(dd_factor_all*100))}% "
-                         f"(Schwelle 2 aktiv)")
+            dd_sec = f"factor {pct}% (threshold 2)"
+
+    # P.3: SL/TP einzeilig - Status + Bedingung ODER Trigger-Detail
+    def _sltp_compact(enabled, hit, cond, summary):
+        if not enabled:
+            return ("inactive", None)
+        if hit and summary:
+            return ("triggered",
+                    f"sold ${summary['sold_usdt']:,.0f} • {summary['timestamp']}")
+        if hit:
+            return ("triggered", None)
+        return ("active", cond)
+
+    sl_main, sl_sec = _sltp_compact(sl_on, sl_hit, sl_cond, sl_summary)
+    tp_main, tp_sec = _sltp_compact(tp_on, tp_hit, tp_cond, tp_summary)
 
     # Zwei Spalten: Mechanismen | Kapital & Aktivitaet
     col_mech, col_cap = st.columns(2)
@@ -487,18 +489,10 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
             ("Grid Trigger",        trigger_label, trigger_sec),
             _mech_row("Recentering Events", rc_on, rc_count, None),
             _mech_row("Trailing Events",    tr_on, tr_count, None),
-            # DD-Drosselung: Status + aktueller Faktor (Notiz 6.2)
-            ("DD-Drosselung", dd_status, None),
-            ("",              dd_detail if dd_on_all else "", None),
-            # SL: Status + Bedingung als zwei Zeilen
-            ("Stop-Loss",   _sltp_status(sl_on, sl_hit),
-                            sl_cond if sl_on else None),
-            ("",            _sltp_detail(sl_summary) if sl_on else "",
-                            None),
-            ("Take-Profit", _sltp_status(tp_on, tp_hit),
-                            tp_cond if tp_on else None),
-            ("",            _sltp_detail(tp_summary) if tp_on else "",
-                            None),
+            # P.3: DD/SL/TP jeweils einzeilig
+            ("DD-Drosselung", dd_status, dd_sec),
+            ("Stop-Loss",     sl_main,   sl_sec),
+            ("Take-Profit",   tp_main,   tp_sec),
         ])
     # P.4: Initial Capital einzeilig - Reserve integriert in Hauptwert
     # (keine separate Sekundaer-Zeile mehr).
