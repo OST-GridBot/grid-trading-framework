@@ -1118,6 +1118,31 @@ def _section_grid_trigger_inline(mode: str,
     return float(trigger_price) if trigger_price > 0 else None
 
 
+def _validate_dd_thresholds(params: dict) -> Optional[str]:
+    """
+    O.2: DD-Schwellen-Validierung. Schwelle 2 muss strikt groesser als
+    Schwelle 1 sein.
+
+    Bei deaktivierter DD-Drosselung wird nicht validiert.
+    Returnt None bei OK, sonst eine User-lesbare Fehlermeldung.
+    """
+    if not params.get("enable_dd_throttle"):
+        return None
+    t1 = params.get("dd_threshold_1")
+    t2 = params.get("dd_threshold_2")
+    if t1 is None or t2 is None:
+        return None
+    try:
+        t1f = float(t1)
+        t2f = float(t2)
+    except (TypeError, ValueError):
+        return None
+    if t2f <= t1f:
+        return (f"DD-Schwelle 2 ({t2f*100:.0f}%) muss groesser als "
+                f"Schwelle 1 ({t1f*100:.0f}%) sein.")
+    return None
+
+
 def _section_dd_throttle(mode: str) -> dict:
     enabled = st.checkbox("Drawdown-Drosselung", key=f"{mode}_new_dd")
     t1, t2 = 0.10, 0.20
@@ -1376,11 +1401,20 @@ def render_bot_setup_form(
         )
         if _min_err:
             st.error(_min_err)
+
+        # O.2: DD-Schwellen-Validierung. Schwelle 2 muss strikt groesser
+        # als Schwelle 1 sein (sonst macht S2-Stufe konzeptionell keinen
+        # Sinn). Backend wuerde sortieren, aber UI sollte das vorher
+        # signalisieren -> Submit blockieren analog Z.X2.
+        _dd_err = _validate_dd_thresholds(params)
+        if _dd_err:
+            st.error(_dd_err)
+
         submit_lbl = ("Backtest starten" if mode == "backtest"
                       else "Bot starten")
         if st.button(submit_lbl, key=f"{mode}_submit", type="primary",
                       use_container_width=True,
-                      disabled=bool(_min_err)):
+                      disabled=bool(_min_err or _dd_err)):
             submit_triggered = True
 
     # ── Aktuelles params-Dict ins session_state schreiben ───────────────────
