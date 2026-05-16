@@ -353,7 +353,7 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
                                     _fmt_or_dash(g_total_p,  "{:+.2f}%")),
             ("Floating Profit",     floating_main, floating_sec),
             ("CAGR",                _fmt_or_dash(cagr,       "{:+.2f}%"), None),
-            ("Avg Profit / Trade",  _fmt_or_dash(avg_p_usdt, "{:+,.2f} USDT"),
+            ("Ø Profit / Trade",    _fmt_or_dash(avg_p_usdt, "{:+,.2f} USDT"),
                                     _fmt_or_dash(avg_p_pct,  "{:+.2f}%")),
         ])
     with col_risk:
@@ -551,15 +551,15 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
         ])
     with col_rv:
         _render_section_table("Returns & Volatilität", [
-            ("Avg Return / Candle",  _fmt_or_dash(avg_r,  "{:+.2f}%"), None),
+            ("Ø % Return / Candle",  _fmt_or_dash(avg_r,  "{:+.2f}%"), None),
             ("Vola Return / Candle", _fmt_or_dash(std_r,  "{:.2f}%"),  None),
             ("Monthly Vola",         _fmt_or_dash(vola_m, "{:.2f}%"),  None),
             ("Yearly Vola",          _fmt_or_dash(vola_y, "{:.2f}%"),  None),
         ])
     with col_ind:
         _render_section_table("Indikatoren", [
-            ("Avg ATR (USDT)", _fmt_or_dash(atr_u, "{:,.2f} USDT"), None),
-            ("Avg ATR (%)",    _fmt_or_dash(atr_p, "{:.2f}%"),      None),
+            ("Ø ATR (USDT)",   _fmt_or_dash(atr_u, "{:,.2f} USDT"), None),
+            ("Ø ATR (%)",      _fmt_or_dash(atr_p, "{:.2f}%"),      None),
             ("ADX 14",         _fmt_or_dash(adx14, "{:.1f}"),       None),
             ("ADX 30",         _fmt_or_dash(adx30, "{:.1f}"),       None),
         ])
@@ -708,11 +708,11 @@ def _render_tab_performance(metrics: dict) -> None:
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
-    # ── Reihe 4: Avg Profit / Profit Factor / Slippage / leer ──────────
+    # ── Reihe 4: Ø Profit / Profit Factor / Slippage / leer ──────────
     cols = st.columns(4)
     with cols[0]:
         _metric_card(
-            "Avg Profit / Trade",
+            "Ø Profit / Trade",
             f"{avg_p_usdt:+,.2f} USDT" if avg_p_usdt is not None else "–",
             delta = f"{avg_p_pct:+.2f}%" if avg_p_pct is not None else None,
             color = _color_roi(avg_p_usdt),
@@ -993,7 +993,7 @@ def _render_tab_market_indicators(metrics: dict) -> None:
     cols = st.columns(4)
     with cols[0]:
         _metric_card(
-            "Avg % Return / Candle",
+            "Ø % Return / Candle",
             f"{avg_r:+.2f}%" if avg_r is not None else "–",
             color = _color_roi(avg_r),
         )
@@ -1027,13 +1027,13 @@ def _render_tab_market_indicators(metrics: dict) -> None:
     cols = st.columns(4)
     with cols[0]:
         _metric_card(
-            "Avg ATR (USDT)",
+            "Ø ATR (USDT)",
             f"{atr_u:,.2f} USDT" if atr_u is not None else "–",
             color = "#94A3B8",
         )
     with cols[1]:
         _metric_card(
-            "Avg ATR (%)",
+            "Ø ATR (%)",
             f"{atr_p:.2f}%" if atr_p is not None else "–",
             color = "#94A3B8",
         )

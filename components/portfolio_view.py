@@ -152,8 +152,8 @@ def _render_metric_cards_running(summary: dict, count_label: str) -> None:
     Fuenf Metrik-Karten fuer PT/LT (identische Struktur, nur Karte-1-Label
     bleibt variabel falls spaeter doch nochmal unterschieden werden soll).
 
-    Reihenfolge: Active Bots / Best ROI / Worst ROI / Avg ROI /
-                 Avg Outperformance B&H.
+    Reihenfolge: Active Bots / Best ROI / Worst ROI / Ø ROI /
+                 Ø Outperformance B&H.
 
     Wenn Bots im Trigger-Warte-Status sind, wird die Anzahl in orange als
     Suffix "(M warten)" hinter die Active-Bots-Zahl gehaengt.
@@ -179,8 +179,8 @@ def _render_metric_cards_running(summary: dict, count_label: str) -> None:
     c1.markdown(_metric_card_html(count_label,              active_value),                                unsafe_allow_html=True)
     c2.markdown(_metric_card_html("Best ROI",               f"{best:+.2f}%",    color=best_color),        unsafe_allow_html=True)
     c3.markdown(_metric_card_html("Worst ROI",              f"{worst:+.2f}%",   color=worst_color),       unsafe_allow_html=True)
-    c4.markdown(_metric_card_html("Avg. ROI",               f"{avg:+.2f}%",     color=avg_color),         unsafe_allow_html=True)
-    c5.markdown(_metric_card_html("Avg. Outperformance B&H", f"{outperf:+.2f}%", color=outp_color),       unsafe_allow_html=True)
+    c4.markdown(_metric_card_html("Ø ROI",               f"{avg:+.2f}%",     color=avg_color),         unsafe_allow_html=True)
+    c5.markdown(_metric_card_html("Ø Outperformance B&H", f"{outperf:+.2f}%", color=outp_color),       unsafe_allow_html=True)
 
 
 def _render_metric_cards_paper(summary: dict) -> None:
@@ -201,8 +201,8 @@ def _render_metric_cards_backtest(summary: dict) -> None:
     """
     Fuenf Metrik-Karten fuer BT.
 
-    Reihenfolge: Historic Bots / Best ROI / Worst ROI / Avg ROI /
-                 Avg Outperformance B&H.
+    Reihenfolge: Historic Bots / Best ROI / Worst ROI / Ø ROI /
+                 Ø Outperformance B&H.
     """
     c1, c2, c3, c4, c5 = st.columns(5)
     best, worst, avg = summary["best_roi"], summary["worst_roi"], summary["avg_roi"]
@@ -214,8 +214,8 @@ def _render_metric_cards_backtest(summary: dict) -> None:
     c1.markdown(_metric_card_html("Historic Bots",           str(summary['count'])),                     unsafe_allow_html=True)
     c2.markdown(_metric_card_html("Best ROI",                f"{best:+.2f}%",    color=best_color),      unsafe_allow_html=True)
     c3.markdown(_metric_card_html("Worst ROI",               f"{worst:+.2f}%",   color=worst_color),     unsafe_allow_html=True)
-    c4.markdown(_metric_card_html("Avg. ROI",                f"{avg:+.2f}%",     color=avg_color),       unsafe_allow_html=True)
-    c5.markdown(_metric_card_html("Avg. Outperformance B&H", f"{outperf:+.2f}%", color=outp_color),      unsafe_allow_html=True)
+    c4.markdown(_metric_card_html("Ø ROI",                f"{avg:+.2f}%",     color=avg_color),       unsafe_allow_html=True)
+    c5.markdown(_metric_card_html("Ø Outperformance B&H", f"{outperf:+.2f}%", color=outp_color),      unsafe_allow_html=True)
 
 
 def _render_compact_card_running(view: dict, dim: bool) -> None:
