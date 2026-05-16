@@ -56,10 +56,26 @@ def _format_duration(td: pd.Timedelta) -> str:
     return f"{minutes}m"
 
 
-def _factor_to_stufe_label(factor: float) -> str:
-    """0.50 -> 'Schwelle 1 (50%)', 0.25 -> 'Schwelle 2 (25%)'."""
+def _factor_to_stufe(factor: float) -> str:
+    """
+    Mapped factor auf diskrete Stufe (drei Werte):
+        - 'normal' : factor ~ 1.0  (keine Drosselung)
+        - 's1'     : factor ~ 0.50 (Schwelle 1)
+        - 's2'     : factor ~ 0.25 (Schwelle 2)
+    """
+    if factor >= 0.999:
+        return "normal"
+    if factor >= 0.40:
+        return "s1"
+    return "s2"
+
+
+def _stufe_label(stufe: str, factor: float) -> str:
+    """Anzeige-Label fuer Stufe inkl. Prozent-Wert."""
+    if stufe == "normal":
+        return "Normal (100%)"
     pct = int(round(factor * 100))
-    if factor <= 0.30:
+    if stufe == "s2":
         return f"Schwelle 2 ({pct}%)"
     return f"Schwelle 1 ({pct}%)"
 
@@ -95,10 +111,15 @@ def _aggregate_phases(
     is_running: bool,
 ) -> List[dict]:
     """
-    Aggregiert dd_history zu Drossel-Phasen.
+    Aggregiert dd_history zu Phasen anhand der diskreten Stufe.
 
-    Eine Phase = zusammenhaengender Block mit gleichem factor < 1.0.
-    Stufenwechsel (0.50 -> 0.25 oder umgekehrt) splittet in 2 Phasen.
+    Eine Phase = zusammenhaengender Block mit gleicher Stufe (Normal / S1 / S2).
+    Phasen wechseln nur bei echten Stufen-Uebergaengen, nicht bei DD-Schwankungen
+    innerhalb derselben Stufe. Damit verschwinden die "Mini-Phasen", die durch
+    DD-Pingponging um eine Schwelle herum entstanden waren.
+
+    Normal-Phasen werden ebenfalls erfasst, damit der zeitliche Verlauf
+    lueckenlos in der Tabelle sichtbar ist.
 
     Args:
         dd_history : Liste von {timestamp, dd_pct, factor}
@@ -107,8 +128,9 @@ def _aggregate_phases(
         is_running : True bei PT/LT-Bots (Ende="laufend"); False bei BT/Completed.
 
     Returns:
-        Liste von dicts: {start, end, factor, max_dd, num_trades,
+        Liste von dicts: {start, end, stufe, factor, max_dd, num_trades,
                            saved_usdt, is_open}.
+        stufe in {"normal", "s1", "s2"}.
     """
     if not dd_history:
         return []
@@ -125,45 +147,48 @@ def _aggregate_phases(
     if not parsed:
         return []
 
-    sorted_ts = [t for t, _, _ in parsed]
+    sorted_ts   = [t for t, _, _ in parsed]
     factors_seq = [f for _, _, f in parsed]
 
-    # 2) Phasen identifizieren: Bloecke mit factor < 1.0, Stufenwechsel splittet
+    # 2) Phasen identifizieren: Bloecke mit gleicher Stufe (inkl. 'normal').
+    #    Phasenwechsel nur bei Stufen-Uebergang, NICHT bei Faktor-Variation
+    #    innerhalb derselben Stufe (factor=0.50 bleibt S1, auch wenn DD schwankt).
     phases: List[dict] = []
     current: Optional[dict] = None
-    for i, (ts, dd, fac) in enumerate(parsed):
-        if fac < 1.0 - 1e-9:
-            if current is None:
-                current = {"start": ts, "end": ts, "factor": fac,
-                            "max_dd": dd, "is_open": False}
-            elif abs(current["factor"] - fac) > 1e-9:
-                # Stufenwechsel -> alte Phase schliessen, neue starten
-                current["end"] = ts
-                phases.append(current)
-                current = {"start": ts, "end": ts, "factor": fac,
-                            "max_dd": dd, "is_open": False}
-            else:
-                current["end"] = ts
-                if dd > current["max_dd"]:
-                    current["max_dd"] = dd
+    for ts, dd, fac in parsed:
+        stufe = _factor_to_stufe(fac)
+        if current is None:
+            current = {"start": ts, "end": ts, "stufe": stufe,
+                        "factor": fac, "max_dd": dd, "is_open": False}
+        elif stufe != current["stufe"]:
+            # Echter Stufen-Uebergang: alte Phase schliessen, neue starten
+            current["end"] = ts
+            phases.append(current)
+            current = {"start": ts, "end": ts, "stufe": stufe,
+                        "factor": fac, "max_dd": dd, "is_open": False}
         else:
-            if current is not None:
-                current["end"] = ts
-                phases.append(current)
-                current = None
-    # Offene Phase am Ende
+            current["end"] = ts
+            if dd > current["max_dd"]:
+                current["max_dd"] = dd
+            # Faktor in Phase erfrischen (bei S1/S2 ohnehin identisch;
+            # bei Normal ohne Effekt).
+            current["factor"] = fac
+
+    # Letzte Phase: offen, falls Drossel-Stufe; Normal-Phase regulaer abschliessen
     if current is not None:
-        current["is_open"] = True
-        if bt_end_ts is not None:
-            current["end"] = bt_end_ts
+        if current["stufe"] != "normal":
+            current["is_open"] = True
+            if bt_end_ts is not None:
+                current["end"] = bt_end_ts
         phases.append(current)
 
-    # 3) Pro Phase: Trades zaehlen + saved_usdt akkumulieren
-    #    Lookup-Tabelle aus dd_history fuer Faktor zur Trade-Zeit
+    # 3) Pro Phase: Trades zaehlen + saved_usdt akkumulieren.
+    #    Bei Normal-Phasen: num_trades = alle Grid-Trades im Zeitfenster,
+    #    saved_usdt = 0 (Tabelle zeigt '–').
     for ph in phases:
         s, e = ph["start"], ph["end"]
         n_trades = 0
-        saved = 0.0
+        saved    = 0.0
         for t in trade_log:
             t_ts = _parse_ts(t.get("timestamp"))
             if t_ts is None or not (s <= t_ts <= e):
@@ -171,6 +196,11 @@ def _aggregate_phases(
             # Initial-Buys ueberspringen (gehoeren nicht zum Grid-Flow)
             if t.get("type") == "BUY" and t.get("initial"):
                 continue
+            if ph["stufe"] == "normal":
+                # Normal-Phase: alle Grid-Trades zaehlen, kein Saved.
+                n_trades += 1
+                continue
+            # S1/S2: nur Trades zaehlen, die tatsaechlich gedrosselt wurden.
             fac_at = _lookup_factor_at(sorted_ts, factors_seq, t_ts)
             if fac_at >= 1.0 - 1e-9:
                 continue
@@ -203,9 +233,9 @@ def _render_overview_box(
     damit Performance-Tab und DD-Tab garantiert identische Werte zeigen.
     """
 
-    # Phasen nach Stufe trennen
-    s1 = [p for p in phases if p["factor"] >= 0.40]   # ~0.50
-    s2 = [p for p in phases if p["factor"] <  0.40]   # ~0.25
+    # Phasen nach Stufe trennen (neue Stufen-Logik)
+    s1 = [p for p in phases if p.get("stufe") == "s1"]
+    s2 = [p for p in phases if p.get("stufe") == "s2"]
 
     def _sum_duration(phs: List[dict]) -> pd.Timedelta:
         total = pd.Timedelta(0)
@@ -342,33 +372,45 @@ def _render_dd_chart(
 
 
 def _render_phases_table(phases: List[dict]) -> None:
-    """C) Phasen-Tabelle mit Spalten-Styling."""
+    """C) Phasen-Tabelle mit Spalten-Styling.
+
+    Zeigt alle Phasen inkl. 'Normal' (kein Drosseln). 'Eingespart' bleibt
+    bei Normal-Phasen leer ('–'), Stufe wird neutral grau gerendert.
+    """
     if not phases:
-        st.info("Keine Drossel-Phasen aufgetreten.")
+        st.info("Keine Phasen-Daten verfuegbar.")
         return
 
     rows = []
     for p in phases:
         dur = p["end"] - p["start"]
         end_label = "laufend" if p["is_open"] else p["end"].strftime("%Y-%m-%d %H:%M")
+        stufe     = p.get("stufe", "normal")
+        # Eingespart: bei Normal '-', sonst USDT-Summe
+        if stufe == "normal":
+            saved_str = "–"
+        else:
+            saved_str = f"≈ {p['saved_usdt']:,.0f} USDT"
         rows.append({
             "Start":           p["start"].strftime("%Y-%m-%d %H:%M"),
             "Ende":            end_label,
             "Dauer":           _format_duration(dur),
-            "Stufe":           _factor_to_stufe_label(p["factor"]),
+            "Stufe":           _stufe_label(stufe, p["factor"]),
             "Max DD in Phase": f"{p['max_dd']*100:.2f}%",
             "Trades":          p["num_trades"],
-            "Eingespart":      f"≈ {p['saved_usdt']:,.0f} USDT",
+            "Eingespart":      saved_str,
         })
 
     df = pd.DataFrame(rows)
 
-    # Styler: Stufen-Spalte einfaerben
+    # Styler: Stufen-Spalte einfaerben (Normal grau, S1 gelb, S2 rot)
     def _stufe_color(val: str) -> str:
         if "Schwelle 2" in str(val):
             return "color:#F87171; font-weight:600;"
         if "Schwelle 1" in str(val):
             return "color:#FBBF24; font-weight:600;"
+        if "Normal" in str(val):
+            return "color:#94A3B8; font-weight:500;"
         return ""
 
     styler = df.style.map(_stufe_color, subset=["Stufe"])
@@ -399,12 +441,6 @@ def render_tab_drawdown(view: dict) -> None:
     mode       = view.get("mode", "")
     status     = view.get("status", "")
 
-    # Edge-Case: DD-Drosselung war nicht aktiviert
-    if not cfg.get("enable_dd_throttle", False):
-        st.info("Die DD-Drosselung war fuer diesen Bot nicht aktiviert. "
-                "Aktivierung erfolgt im Bot-Setup unter 'Risiko-Management'.")
-        return
-
     # Edge-Case: keine History (alter Snapshot ohne Tracking oder Bot noch nicht gelaufen)
     if not dd_history:
         st.info("Keine Drawdown-Historie verfuegbar. "
@@ -412,6 +448,12 @@ def render_tab_drawdown(view: dict) -> None:
                 "getrackt — fuehre einen neuen Backtest aus oder warte auf "
                 "neue Kerzen-Updates.")
         return
+
+    # Hinweis (dezent): bei deaktivierter Drosselung wird trotzdem der
+    # DD-Verlauf gezeigt; Tabelle enthaelt nur eine Normal-Phase.
+    if not cfg.get("enable_dd_throttle", False):
+        st.caption("Hinweis: DD-Drosselung war fuer diesen Bot nicht "
+                    "aktiviert. Der DD-Verlauf wird informativ angezeigt.")
 
     thr1 = float(cfg.get("dd_threshold_1", 0.10) or 0.10)
     thr2 = float(cfg.get("dd_threshold_2", 0.20) or 0.20)
