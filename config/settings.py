@@ -68,6 +68,13 @@ MAX_NUM_GRIDS            = 500
 # USDT-Paare. Wird in validate_min_investment verwendet (Z.X2).
 DEFAULT_MIN_NOTIONAL     = 5.0
 
+# DD-Drosselung: Hysterese-Puffer (Variante B, 20% relativ).
+# Faktor verschaerft sich sofort bei Erreichen der Schwelle, lockert
+# sich erst wenn DD unter Schwelle * DD_HYSTERESIS_FACTOR faellt.
+# Verhindert Pingpong bei DD-Oszillation um eine Schwelle.
+# Nicht UI-konfigurierbar (Komplexitaet niedrig halten).
+DD_HYSTERESIS_FACTOR     = 0.8
+
 GRID_MODES = {
     "Arithmetisch (gleichmaessige Abstaende)": "arithmetic",
     "Geometrisch (prozentuale Abstaende)":     "geometric",

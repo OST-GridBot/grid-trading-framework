@@ -1065,18 +1065,50 @@ class GridBot:
         Schwelle 1 (default -10%): Ordergrösse auf 50%
         Schwelle 2 (default -20%): Ordergrösse auf 25%
         Kein Drawdown:             Ordergrösse 100%
+
+        Hysterese (Variante B): Faktor verschaerft sich sofort bei
+        Erreichen der Schwelle, lockert sich erst wenn DD unter
+        Schwelle * DD_HYSTERESIS_FACTOR faellt (Default 0.8 = 20%
+        Puffer). Verhindert Pingpong bei DD-Oszillation. Die
+        Aktualisierung bleibt zustandsabhaengig (vom aktuellen
+        dd_throttle_factor) — das ist die einzige Stelle, an der
+        Hysterese sichtbar wird.
         """
-        # Guard gegen Null/negative Werte (theoretisch unkritisch durch UI,
-        # aber defensive Programmierung)
         if self._peak_portfolio <= 0 or self.total_investment <= 0:
             return
         dd_pct = (self._peak_portfolio - portfolio_value) / self._peak_portfolio
-        if dd_pct >= self.dd_threshold_2:
-            self.dd_throttle_factor = 0.25
-        elif dd_pct >= self.dd_threshold_1:
-            self.dd_throttle_factor = 0.50
+
+        # Hysterese-Puffer aus config (nicht UI-konfigurierbar)
+        from config.settings import DD_HYSTERESIS_FACTOR
+        trigger_t1 = self.dd_threshold_1
+        trigger_t2 = self.dd_threshold_2
+        release_t1 = self.dd_threshold_1 * DD_HYSTERESIS_FACTOR
+        release_t2 = self.dd_threshold_2 * DD_HYSTERESIS_FACTOR
+
+        cur = self.dd_throttle_factor
+        if cur >= 0.999:
+            # Normal-Stufe: Trigger ohne Hysterese (erste Verschaerfung)
+            if dd_pct >= trigger_t2:
+                self.dd_throttle_factor = 0.25
+            elif dd_pct >= trigger_t1:
+                self.dd_throttle_factor = 0.50
+            # sonst bleibt 1.0
+        elif cur >= 0.40:
+            # S1 aktuell: Verschaerfung sofort, Lockerung mit Puffer
+            if dd_pct >= trigger_t2:
+                self.dd_throttle_factor = 0.25
+            elif dd_pct < release_t1:
+                self.dd_throttle_factor = 1.0
+            # sonst bleibt 0.50
         else:
-            self.dd_throttle_factor = 1.0
+            # S2 aktuell: Lockerung gestaffelt mit Puffer
+            if dd_pct < release_t1:
+                # Direkter Sprung S2 -> Normal (DD ist tief gefallen)
+                self.dd_throttle_factor = 1.0
+            elif dd_pct < release_t2:
+                # S2 -> S1
+                self.dd_throttle_factor = 0.50
+            # sonst bleibt 0.25
 
     def get_state(self) -> dict:
         """Serialisiert den aktuellen Bot-State für Persistenz."""
