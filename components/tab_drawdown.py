@@ -183,14 +183,29 @@ def _aggregate_phases(
     # 3) Pro Phase: Trades zaehlen + saved_usdt akkumulieren.
     #    Bei Normal-Phasen: num_trades = alle Grid-Trades im Zeitfenster,
     #    saved_usdt = 0 (Tabelle zeigt '–').
-    for ph in phases:
+    #
+    #    Grenz-Logik: halb-offenes Intervall [s, e) fuer alle Phasen ausser
+    #    der letzten. Ein Trade exakt am Stufenwechsel-Timestamp gehoert zur
+    #    NACHFOLGENDEN Phase (konsistent mit _lookup_factor_at-Semantik
+    #    'letzter Eintrag <= target'). Sonst wuerde der Trade an der
+    #    Phasen-Grenze doppelt zugeordnet (einmal in Vorgaenger-Phase mit
+    #    `<= e`, einmal in Nachfolger-Phase mit `>= s`). Letzte Phase nimmt
+    #    End-Trades inklusiv, da sie keinen Sukzessor hat.
+    for idx, ph in enumerate(phases):
         s, e = ph["start"], ph["end"]
+        is_last = (idx == len(phases) - 1)
         n_trades = 0
         saved    = 0.0
         for t in trade_log:
             t_ts = _parse_ts(t.get("timestamp"))
-            if t_ts is None or not (s <= t_ts <= e):
+            if t_ts is None:
                 continue
+            if is_last:
+                if not (s <= t_ts <= e):
+                    continue
+            else:
+                if not (s <= t_ts < e):
+                    continue
             # Initial-Buys ueberspringen (gehoeren nicht zum Grid-Flow)
             if t.get("type") == "BUY" and t.get("initial"):
                 continue
