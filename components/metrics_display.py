@@ -44,19 +44,34 @@ def _color_dd(value: float) -> str:
 
 def _fmt_price(price, with_unit: bool = True) -> str:
     """
-    Formatiert einen Preis kompakt — 2 Nachkommastellen bei normalen Preisen,
-    6 signifikante Stellen bei niedrigpreisigen Coins (SHIB ~0.000023, PEPE).
+    Adaptive Kommastellen-Regel fuer Coin-Preise (Q.2):
+      - Preis >= 100  ->  2 Nachkommastellen  (BTC, ETH, SOL)
+      - Preis >=   1  ->  4 Nachkommastellen  (XRP, DOGE, ADA)
+      - Preis <    1  ->  6 Nachkommastellen  (SHIB, PEPE, LUNC)
+
+    Bei niedrigpreisigen Coins sind enge Grid-Linien sonst unterscheidbar
+    nicht moeglich. Aggregierte USDT-Betraege (Initial Capital, Fees etc.)
+    nutzen weiterhin den expliziten {:,.2f}-Format-String und sind NICHT
+    von dieser Regel betroffen.
 
     Args:
-        price     : Preis in USDT (kann None sein)
+        price     : Coin-Preis in USDT (kann None sein)
         with_unit : True → " USDT" anhaengen
     """
-    if price is None or price <= 0:
+    if price is None:
         return "–"
-    if price >= 1:
-        s = f"{price:,.2f}"
+    try:
+        p = float(price)
+    except (TypeError, ValueError):
+        return "–"
+    if p <= 0:
+        return "–"
+    if p >= 100:
+        s = f"{p:,.2f}"
+    elif p >= 1:
+        s = f"{p:,.4f}"
     else:
-        s = f"{price:.6g}"
+        s = f"{p:.6f}"
     return f"{s} USDT" if with_unit else s
 
 
@@ -401,10 +416,9 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
     # Grid Trigger + Bot-Status
     bot_status = metrics.get("bot_status")
     grid_trigger = metrics.get("grid_trigger_price")
-    trigger_label = (
-        _fmt_or_dash(grid_trigger, "{:,.2f} USDT") if grid_trigger else "–"
-    )
-    trigger_sec = "Sofortiger Start" if not grid_trigger else None
+    # Q.2: Grid Trigger ist Coin-Preis -> adaptive Kommastellen
+    trigger_label = _fmt_price(grid_trigger) if grid_trigger else "–"
+    trigger_sec = "immediate start" if not grid_trigger else None
 
     num_t        = metrics.get("num_trades")
     grid_eff     = metrics.get("grid_efficiency")
@@ -542,10 +556,11 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
     # Drei Spalten: Market Data | Returns & Volatilitaet | Indikatoren
     col_md, col_rv, col_ind = st.columns(3)
     with col_md:
+        # Q.2: Coin-Preise mit adaptiven Kommastellen via _fmt_price.
         _render_section_table("Market Data", [
-            ("Current Price",  _fmt_or_dash(cur_price, "{:,.2f} USDT"), None),
-            ("Max Price",      _fmt_or_dash(max_p,     "{:,.2f} USDT"), None),
-            ("Min Price",      _fmt_or_dash(min_p,     "{:,.2f} USDT"), None),
+            ("Current Price",  _fmt_price(cur_price), None),
+            ("Max Price",      _fmt_price(max_p),     None),
+            ("Min Price",      _fmt_price(min_p),     None),
             # P.1: USDT-Zahl entfernt - nur Prozent-Range anzeigen.
             ("Max-Min Range",  _fmt_or_dash(range_p, "{:.2f}%"), None),
         ])
@@ -558,8 +573,9 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
         ])
     with col_ind:
         _render_section_table("Indikatoren", [
-            ("Ø ATR (USDT)",   _fmt_or_dash(atr_u, "{:,.2f} USDT"), None),
-            ("Ø ATR (%)",      _fmt_or_dash(atr_p, "{:.2f}%"),      None),
+            # Q.2: ATR ist Preis-Range -> adaptive Kommastellen
+            ("Ø ATR (USDT)",   _fmt_price(atr_u), None),
+            ("Ø ATR (%)",      _fmt_or_dash(atr_p, "{:.2f}%"), None),
             ("ADX 14",         _fmt_or_dash(adx14, "{:.1f}"),       None),
             ("ADX 30",         _fmt_or_dash(adx30, "{:.1f}"),       None),
         ])
@@ -751,8 +767,8 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
     bot_status   = metrics.get("bot_status")
     grid_trigger = metrics.get("grid_trigger_price")
     _bs_str = bot_status if bot_status else "–"
-    _gt_str = (f"{float(grid_trigger):,.2f} USDT"
-                if grid_trigger else "immediate start")
+    # Q.2: Grid Trigger ist Coin-Preis -> adaptive Kommastellen
+    _gt_str = _fmt_price(grid_trigger) if grid_trigger else "immediate start"
     st.markdown(
         f"<div style='color:#94A3B8; font-size:0.85rem; "
         f"margin: -4px 0 12px 0;'>"
@@ -1026,9 +1042,10 @@ def _render_tab_market_indicators(metrics: dict) -> None:
 
     cols = st.columns(4)
     with cols[0]:
+        # Q.2: ATR ist Preis-Range -> adaptive Kommastellen
         _metric_card(
             "Ø ATR (USDT)",
-            f"{atr_u:,.2f} USDT" if atr_u is not None else "–",
+            _fmt_price(atr_u),
             color = "#94A3B8",
         )
     with cols[1]:
