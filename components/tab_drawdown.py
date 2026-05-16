@@ -198,7 +198,12 @@ def _aggregate_phases(
                 # Normal-Phase: alle Grid-Trades zaehlen, kein Saved.
                 n_trades += 1
                 continue
-            # S1/S2: nur Trades zaehlen, die tatsaechlich gedrosselt wurden.
+            # S1/S2: nur Buys werden gedrosselt. Sells nutzen FIFO-Inventar
+            # und sind nicht durch dd_throttle_factor reduziert -> aus Count
+            # und saved_usdt ausschliessen (Semantik: 'eingespartes Cash
+            # das nicht nachgekauft wurde').
+            if t.get("type") != "BUY":
+                continue
             fac_at = _lookup_factor_at(sorted_ts, factors_seq, t_ts)
             if fac_at >= 1.0 - 1e-9:
                 continue
