@@ -386,14 +386,15 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
     tp_hit   = metrics.get("take_profit_triggered")
 
     def _mech_row(label: str, enabled: bool, count, hit) -> tuple:
+        # P.2: Status-Bezeichnungen einheitlich englisch klein
         if not enabled:
-            return (label, "–", "Inactive")
+            return (label, "–", "inactive")
         if count is not None:
             return (label, str(count) if count is not None else "–",
-                    "Triggered" if (count or 0) > 0 else "Never triggered")
+                    "triggered" if (count or 0) > 0 else "never triggered")
         if hit is not None:
             return (label,
-                    "Triggered" if hit else "Not triggered",
+                    "triggered" if hit else "not triggered",
                     None)
         return (label, "–", None)
 
@@ -439,14 +440,16 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
     tp_summary = _sltp_trigger_summary(metrics, trade_log, "tp")
 
     def _sltp_status(enabled: bool, hit) -> str:
+        # P.2: Status englisch klein
         if not enabled:
-            return "Inaktiv"
-        return "Triggered" if hit else "Aktiv"
+            return "inactive"
+        return "triggered" if hit else "active"
 
     def _sltp_detail(summary) -> str:
+        # P.2: englisch
         if summary:
-            return f"Verkauft: ${summary['sold_usdt']:,.2f} — {summary['timestamp']}"
-        return "Noch nicht ausgelöst"
+            return f"sold: ${summary['sold_usdt']:,.2f} — {summary['timestamp']}"
+        return "not yet triggered"
 
     # Coin-Inventar fuer Kapital & Aktivitaet
     coin_amt   = metrics.get("coin_holdings") or 0
@@ -461,10 +464,10 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
     )
     dd_factor_all = float(metrics.get("dd_throttle_factor", 1.0) or 1.0)
     if not dd_on_all:
-        dd_status = "Inaktiv"
+        dd_status = "inactive"
         dd_detail = None
     else:
-        dd_status = "Aktiv"
+        dd_status = "active"
         if dd_factor_all >= 0.999:
             dd_detail = "aktueller Faktor: 100% (keine Drosselung)"
         elif dd_factor_all >= 0.40:
@@ -763,8 +766,9 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
     # ── Karte 1: Recentering / Trailing (exklusiv, UI-Verriegelung) ───
     with cols[0]:
         if not rc_on and not tr_on:
+            # P.2: Status englisch klein
             _metric_card("Recentering / Trailing", "—",
-                          delta="Inaktiv", color="#64748B")
+                          delta="inactive", color="#64748B")
         elif rc_on:
             rc_thr = metrics.get("recenter_threshold")
             d = (f"Schwelle: {float(rc_thr) * 100:.0f}%"
@@ -787,26 +791,27 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
 
     # ── Karte 2: Stop-Loss ────────────────────────────────────────────
     with cols[1]:
+        # P.2: Status englisch klein
         if not sl_on:
-            _metric_card("Stop-Loss", "–", delta="Inactive", color="#64748B")
+            _metric_card("Stop-Loss", "–", delta="inactive", color="#64748B")
         elif sl_hit:
             d = (f"${sl_summary['sold_usdt']:,.0f} • {sl_summary['timestamp']}"
                  if sl_summary else None)
-            _metric_card("Stop-Loss", "Triggered", delta=d, color="#F87171")
+            _metric_card("Stop-Loss", "triggered", delta=d, color="#F87171")
         else:
-            _metric_card("Stop-Loss", "Not triggered",
+            _metric_card("Stop-Loss", "not triggered",
                           delta=sl_cond, color="#94A3B8")
 
     # ── Karte 3: Take-Profit ──────────────────────────────────────────
     with cols[2]:
         if not tp_on:
-            _metric_card("Take-Profit", "–", delta="Inactive", color="#64748B")
+            _metric_card("Take-Profit", "–", delta="inactive", color="#64748B")
         elif tp_hit:
             d = (f"${tp_summary['sold_usdt']:,.0f} • {tp_summary['timestamp']}"
                  if tp_summary else None)
-            _metric_card("Take-Profit", "Triggered", delta=d, color="#34D399")
+            _metric_card("Take-Profit", "triggered", delta=d, color="#34D399")
         else:
-            _metric_card("Take-Profit", "Not triggered",
+            _metric_card("Take-Profit", "not triggered",
                           delta=tp_cond, color="#94A3B8")
 
     # ── Karte 4: DD-Drossel (neu, Notiz 6.2) ──────────────────────────
@@ -816,7 +821,8 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
     dd_factor = float(metrics.get("dd_throttle_factor", 1.0) or 1.0)
     with cols[3]:
         if not dd_on:
-            _metric_card("DD-Drossel", "–", delta="Inaktiv", color="#64748B")
+            # P.2: Status englisch klein
+            _metric_card("DD-Drossel", "–", delta="inactive", color="#64748B")
         elif dd_factor >= 0.999:
             _metric_card("DD-Drossel", "100%",
                           delta="Keine Drosselung", color="#94A3B8")
