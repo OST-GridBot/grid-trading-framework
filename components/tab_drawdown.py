@@ -496,13 +496,25 @@ def render_tab_drawdown(view: dict) -> None:
     # Phasen aggregieren
     phases = _aggregate_phases(dd_history, trade_log, bt_end_ts)
 
-    # Aggregat-Kennzahlen fuer Box
-    total_throttled = sum(p["num_trades"] for p in phases)
+    # Aggregat-Kennzahlen fuer Box.
+    # 'Gedrosselte Trades' zaehlt NUR S1/S2-Trades (Faktor < 1.0).
+    # Normal-Phasen sind nicht gedrosselt, ihre num_trades-Werte dienen
+    # nur als Aktivitaets-Indikator in der Tabelle und gehoeren nicht
+    # in diese Summe.
+    total_throttled = sum(
+        p["num_trades"] for p in phases
+        if p.get("stufe") in ("s1", "s2")
+    )
     total_trades    = sum(
         1 for t in trade_log
         if not (t.get("type") == "BUY" and t.get("initial"))
     )
-    total_saved = sum(p["saved_usdt"] for p in phases)
+    # Normal-Phasen haben saved_usdt=0, der Filter ist also nur fuer
+    # Konsistenz/Robustheit gegen kuenftige Logik-Aenderungen.
+    total_saved = sum(
+        p["saved_usdt"] for p in phases
+        if p.get("stufe") in ("s1", "s2")
+    )
 
     # A) Uebersichts-Box
     # Max-DD aus metrics (zentrale Quelle, identische Formel wie dd_history-
