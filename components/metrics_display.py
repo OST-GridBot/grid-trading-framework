@@ -746,6 +746,22 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
     """
     Bot Details: Mechanismen + Kapital/Aktivität + Konfiguration.
     """
+    # F-3: Bot-Status + Grid Trigger als kompakter Header-Text
+    # (zusaetzlich zu Tab 'All', wo sie als Tabellen-Zeilen erscheinen).
+    bot_status   = metrics.get("bot_status")
+    grid_trigger = metrics.get("grid_trigger_price")
+    _bs_str = bot_status if bot_status else "–"
+    _gt_str = (f"{float(grid_trigger):,.2f} USDT"
+                if grid_trigger else "immediate start")
+    st.markdown(
+        f"<div style='color:#94A3B8; font-size:0.85rem; "
+        f"margin: -4px 0 12px 0;'>"
+        f"Status: <span style='color:#E2E8F0;'>{_bs_str}</span>  |  "
+        f"Grid Trigger: <span style='color:#E2E8F0;'>{_gt_str}</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
     # ── Reihe 1: Mechanismen ───────────────────────────────────────────
     active = metrics.get("mechanism_active", {}) or {}
     rc_on  = active.get("recentering", False)
