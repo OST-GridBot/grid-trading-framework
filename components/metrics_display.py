@@ -315,8 +315,15 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
     g_total_u    = metrics.get("grid_profit_total_usdt")
     g_total_p    = metrics.get("grid_profit_total_pct")
     upnl         = metrics.get("unrealized_pnl") or {}
+    upnl_num     = upnl.get("num_positions", 0) if isinstance(upnl, dict) else 0
     upnl_u       = upnl.get("usdt") if isinstance(upnl, dict) else None
     upnl_p       = upnl.get("pct")  if isinstance(upnl, dict) else None
+    # F-2 (M.1-Audit): Floating Profit zeigt '–' wenn keine offenen
+    # Positionen vorhanden, analog zu Tab 'Performance & Risk'.
+    floating_main = (_fmt_or_dash(upnl_u, "{:+,.2f} USDT")
+                     if upnl_num > 0 else "–")
+    floating_sec  = (_fmt_or_dash(upnl_p, "{:+.2f}%")
+                     if upnl_num > 0 else None)
     avg_p_usdt   = metrics.get("avg_profit_per_trade")
     avg_p_pct    = metrics.get("avg_profit_per_trade_pct")
 
@@ -344,8 +351,7 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
                                     "vs. Buy & Hold" if outperf is not None else None),
             ("Grid Profit Total",   _fmt_or_dash(g_total_u,  "{:+,.2f} USDT"),
                                     _fmt_or_dash(g_total_p,  "{:+.2f}%")),
-            ("Floating Profit",     _fmt_or_dash(upnl_u,     "{:+,.2f} USDT"),
-                                    _fmt_or_dash(upnl_p,     "{:+.2f}%")),
+            ("Floating Profit",     floating_main, floating_sec),
             ("CAGR",                _fmt_or_dash(cagr,       "{:+.2f}%"), None),
             ("Avg Profit / Trade",  _fmt_or_dash(avg_p_usdt, "{:+,.2f} USDT"),
                                     _fmt_or_dash(avg_p_pct,  "{:+.2f}%")),
@@ -562,34 +568,37 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
 # ---------------------------------------------------------------------------
 
 def _render_tab_performance(metrics: dict) -> None:
-    initial      = metrics.get("initial_investment", 0) or 0
-    final        = metrics.get("final_value",        0) or 0
-    pl_usdt      = final - initial
+    # F-1 (M.1-Audit): Defaults None statt 0, damit fehlende Werte einheitlich
+    # mit Tab 'All' als '–' angezeigt werden statt als '+0.00%'.
+    initial      = metrics.get("initial_investment")
+    final        = metrics.get("final_value")
+    pl_usdt      = (final - initial) if (final is not None and initial is not None) else None
 
-    roi          = metrics.get("roi_pct",            0) or 0
+    roi          = metrics.get("roi_pct")
     bh_pct       = metrics.get("benchmark_roi_pct")
     bh_usdt      = metrics.get("benchmark_roi_usdt")
-    gross_pct    = metrics.get("gross_pl_pct",       0) or 0
-    gross_usdt   = metrics.get("gross_pl_usdt",      0) or 0
+    gross_pct    = metrics.get("gross_pl_pct")
+    gross_usdt   = metrics.get("gross_pl_usdt")
     outperf      = metrics.get("outperformance_pct")
 
     cagr         = metrics.get("cagr_pct")
     calmar       = metrics.get("calmar_ratio")
     sharpe       = metrics.get("sharpe_ratio")
-    max_dd_pct   = metrics.get("max_drawdown_pct",   0) or 0
-    max_dd_usdt  = metrics.get("max_drawdown_usdt",  0) or 0
+    max_dd_pct   = metrics.get("max_drawdown_pct")
+    max_dd_usdt  = metrics.get("max_drawdown_usdt")
 
     pf           = metrics.get("profit_factor")
 
     avg_p_usdt   = metrics.get("avg_profit_per_trade")
     avg_p_pct    = metrics.get("avg_profit_per_trade_pct")
-    g_total_u    = metrics.get("grid_profit_total_usdt", 0) or 0
-    g_total_p    = metrics.get("grid_profit_total_pct",  0) or 0
-    upnl         = metrics.get("unrealized_pnl",     {})
-    upnl_u       = upnl.get("usdt", 0) if isinstance(upnl, dict) else 0
-    upnl_p       = upnl.get("pct",  0) if isinstance(upnl, dict) else 0
+    g_total_u    = metrics.get("grid_profit_total_usdt")
+    g_total_p    = metrics.get("grid_profit_total_pct")
+    upnl         = metrics.get("unrealized_pnl",     {}) or {}
+    upnl_num     = upnl.get("num_positions", 0) if isinstance(upnl, dict) else 0
+    upnl_u       = upnl.get("usdt") if isinstance(upnl, dict) else None
+    upnl_p       = upnl.get("pct")  if isinstance(upnl, dict) else None
 
-    fees         = metrics.get("fees_paid",          0) or 0
+    fees         = metrics.get("fees_paid")
     fee_imp      = metrics.get("fee_impact_pct")
     slip_usdt    = metrics.get("slippage_usdt")
     slip_pct     = metrics.get("slippage_avg_pct")
@@ -599,15 +608,15 @@ def _render_tab_performance(metrics: dict) -> None:
     with cols[0]:
         _metric_card(
             "Total Gross P/L",
-            f"{gross_pct:+.2f}%",
-            delta = f"{gross_usdt:+,.2f} USDT",
+            f"{gross_pct:+.2f}%" if gross_pct is not None else "–",
+            delta = f"{gross_usdt:+,.2f} USDT" if gross_usdt is not None else None,
             color = _color_roi(gross_pct),
         )
     with cols[1]:
         _metric_card(
             "Total Net P/L",
-            f"{roi:+.2f}%",
-            delta = f"{pl_usdt:+,.2f} USDT",
+            f"{roi:+.2f}%" if roi is not None else "–",
+            delta = f"{pl_usdt:+,.2f} USDT" if pl_usdt is not None else None,
             color = _color_roi(roi),
         )
     with cols[2]:
@@ -632,26 +641,29 @@ def _render_tab_performance(metrics: dict) -> None:
     with cols[0]:
         _metric_card(
             "Grid Profit Total",
-            f"{g_total_u:+,.2f} USDT",
-            delta = f"{g_total_p:+.2f}%",
+            f"{g_total_u:+,.2f} USDT" if g_total_u is not None else "–",
+            delta = f"{g_total_p:+.2f}%" if g_total_p is not None else None,
             color = _color_roi(g_total_u),
         )
     with cols[1]:
-        if isinstance(upnl, dict) and upnl.get("num_positions", 0) > 0:
+        if upnl_num > 0 and upnl_u is not None:
             _metric_card(
                 "Floating Profit",
                 f"{upnl_u:+,.2f} USDT",
-                delta = f"{upnl_p:+.2f}%",
+                delta = f"{upnl_p:+.2f}%" if upnl_p is not None else None,
                 color = _color_roi(upnl_u),
             )
         else:
             _metric_card("Floating Profit", "–", color="#94A3B8")
     with cols[2]:
-        _metric_card(
-            "Trading Fees",
-            f"{fees:,.2f} USDT",
-            color = "#F87171" if fees > 0 else "#94A3B8",
-        )
+        if fees is None:
+            _metric_card("Trading Fees", "–", color="#94A3B8")
+        else:
+            _metric_card(
+                "Trading Fees",
+                f"{fees:,.2f} USDT",
+                color = "#F87171" if fees > 0 else "#94A3B8",
+            )
     with cols[3]:
         _metric_card(
             "Fee Impact",
@@ -677,11 +689,12 @@ def _render_tab_performance(metrics: dict) -> None:
             color = _color_calmar(calmar),
         )
     with cols[2]:
+        # _color_dd ist nicht None-safe -> defensive Fallback 0 fuer Color
         _metric_card(
             "Max Drawdown",
-            f"{max_dd_pct:.2f}%",
-            delta = f"{max_dd_usdt:,.2f} USDT",
-            color = _color_dd(max_dd_pct),
+            f"{max_dd_pct:.2f}%" if max_dd_pct is not None else "–",
+            delta = f"{max_dd_usdt:,.2f} USDT" if max_dd_usdt is not None else None,
+            color = _color_dd(max_dd_pct if max_dd_pct is not None else 0),
         )
     with cols[3]:
         _metric_card(
@@ -738,8 +751,8 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
     sl_on  = active.get("stop_loss",   False)
     tp_on  = active.get("take_profit", False)
 
-    rc_count = metrics.get("recentering_count", 0) or 0
-    tr_count = metrics.get("trailing_count",    0) or 0
+    # rc_count / tr_count werden in den Kombi-Karten nicht verwendet
+    # (anders als in Tab 'All' -> _mech_row), daher hier nicht ausgelesen.
     sl_hit   = metrics.get("stop_loss_triggered",   False)
     tp_hit   = metrics.get("take_profit_triggered", False)
 
@@ -817,10 +830,12 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
     # ── Reihe 2: Kapital + Aktivität ───────────────────────────────────
-    initial   = metrics.get("initial_investment", 0) or 0
-    final     = metrics.get("final_value",        0) or 0
-    roi       = metrics.get("roi_pct",            0) or 0
-    num_t     = metrics.get("num_trades",         0) or 0
+    # F-1 (M.1-Audit): Defaults None statt 0, damit fehlende Werte einheitlich
+    # mit Tab 'All' als '–' angezeigt werden.
+    initial   = metrics.get("initial_investment")
+    final     = metrics.get("final_value")
+    roi       = metrics.get("roi_pct")
+    num_t     = metrics.get("num_trades")
     grid_eff  = metrics.get("grid_efficiency")
     active_lv = metrics.get("active_levels", {"active": 0, "total": 0})
 
@@ -837,13 +852,23 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
 
     cols = st.columns(4)
     with cols[0]:
-        _metric_card("Initial Capital", f"{initial:,.2f} USDT",
-                      delta=_ic_delta, color="#E2E8F0")
+        _metric_card(
+            "Initial Capital",
+            f"{initial:,.2f} USDT" if initial is not None else "–",
+            delta=_ic_delta, color="#E2E8F0",
+        )
     with cols[1]:
-        _metric_card("Current Capital", f"{final:,.2f} USDT", color=_color_roi(roi))
+        _metric_card(
+            "Current Capital",
+            f"{final:,.2f} USDT" if final is not None else "–",
+            color=_color_roi(roi),
+        )
     with cols[2]:
-        _metric_card("Number of Trades", str(num_t),
-                      delta=trades_delta, color="#E2E8F0")
+        _metric_card(
+            "Number of Trades",
+            str(num_t) if num_t is not None else "–",
+            delta=trades_delta, color="#E2E8F0",
+        )
     with cols[3]:
         ratio = (
             f"{active_lv['active']}/{active_lv['total']}"
@@ -860,20 +885,21 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
 
     # ── Reihe 3: Coin-Inv / Invest-Grid / Initial-Buy Coins / Wert ─────
     cap_per_grid = metrics.get("capital_per_grid")
-    coin_amt     = metrics.get("coin_holdings", 0) or 0
-    coin_val     = metrics.get("coin_holdings_value_usdt", 0) or 0
+    coin_amt     = metrics.get("coin_holdings")
+    coin_val     = metrics.get("coin_holdings_value_usdt")
     coin_sym     = metrics.get("coin_symbol", "")
-    ib_coin      = metrics.get("initial_buy_coin_amount", 0) or 0
-    ib_value     = metrics.get("initial_buy_value_usdt", 0) or 0
-    ib_fee       = metrics.get("initial_buy_fee", 0) or 0
+    ib_coin      = metrics.get("initial_buy_coin_amount")
+    ib_value     = metrics.get("initial_buy_value_usdt")
+    ib_fee       = metrics.get("initial_buy_fee")
 
     cols = st.columns(4)
     with cols[0]:
-        if coin_amt > 0:
+        if coin_amt is not None and coin_amt > 0:
             _metric_card(
                 "Coin-Inventar",
                 f"{coin_amt:.6f} {coin_sym}",
-                delta = f"≈ {coin_val:,.2f} USDT",
+                delta = (f"≈ {coin_val:,.2f} USDT"
+                          if coin_val is not None else None),
                 color = "#E2E8F0",
             )
         else:
@@ -885,13 +911,14 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
             color = "#E2E8F0",
         )
     with cols[2]:
-        if ib_coin > 0:
+        if ib_coin is not None and ib_coin > 0:
             _metric_card("Initial-Buy Coins", f"{ib_coin:,.6f}", color="#E2E8F0")
         else:
             _metric_card("Initial-Buy Coins", "–", color="#64748B")
     with cols[3]:
-        if ib_value > 0:
-            fee_delta = f"Fee {ib_fee:.4f} USDT" if ib_fee else None
+        if ib_value is not None and ib_value > 0:
+            fee_delta = (f"Fee {ib_fee:.4f} USDT"
+                          if ib_fee is not None and ib_fee else None)
             _metric_card("Initial-Buy Wert",
                           f"{ib_value:,.2f} USDT",
                           delta=fee_delta, color="#E2E8F0")
