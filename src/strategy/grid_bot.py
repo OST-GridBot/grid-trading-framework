@@ -1360,16 +1360,23 @@ def simulate_grid_bot(
             stop_bot_on_trigger    = stop_bot_on_trigger,
         )
 
-        # Initial-Buy-Timestamps auf erste Kerze setzen (im __init__ war
-        # _current_timestamp noch None). Betrifft nur den "active"-Pfad —
-        # im Trigger-Modus setzt process_candle den Timestamp korrekt.
+        # Initial-Buy-Timestamps auf erste Kerze setzen. Im __init__ wurde
+        # _current_timestamp via naive_utc_now() vorbelegt (Fallback fuer
+        # PT/LT), daher haben Initial-Buy-Eintraege im BT-Pfad die Wall-
+        # Clock-Zeit statt den Sim-Start. Patch nach initial=True statt
+        # nach None-Timestamp, damit der Trade-Log korrekt im Sim-Zeitraum
+        # liegt. Betrifft nur den "active"-Pfad — im Trigger-Modus setzt
+        # process_candle den Timestamp ohnehin korrekt.
         first_ts = df.iloc[0]["timestamp"]
         for t in bot.trade_log:
-            if t.get("timestamp") is None:
+            if t.get("initial") or t.get("timestamp") is None:
                 t["timestamp"] = first_ts
-        # Inventar-Timestamps analog
+        # Inventar-Timestamps analog: Initial-Buy-Inventar haengt am
+        # _current_timestamp aus __init__ -> auf first_ts patchen.
+        # Erkennung: ts ist None ODER ts liegt ausserhalb [first_ts, last_ts].
+        last_ts = df.iloc[-1]["timestamp"]
         bot.coin_inventory = [
-            (a, p, ts if ts is not None else first_ts)
+            (a, p, first_ts if (ts is None or ts < first_ts or ts > last_ts) else ts)
             for (a, p, ts) in bot.coin_inventory
         ]
 

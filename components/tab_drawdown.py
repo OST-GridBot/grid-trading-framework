@@ -108,7 +108,6 @@ def _aggregate_phases(
     dd_history: list,
     trade_log:  list,
     bt_end_ts:  Optional[pd.Timestamp],
-    is_running: bool,
 ) -> List[dict]:
     """
     Aggregiert dd_history zu Phasen anhand der diskreten Stufe.
@@ -125,7 +124,6 @@ def _aggregate_phases(
         dd_history : Liste von {timestamp, dd_pct, factor}
         trade_log  : Trade-Log fuer Trade-Zaehlung + Saved-USDT pro Phase
         bt_end_ts  : Letzter Timestamp im Backtest (fuer offene Phasen).
-        is_running : True bei PT/LT-Bots (Ende="laufend"); False bei BT/Completed.
 
     Returns:
         Liste von dicts: {start, end, stufe, factor, max_dd, num_trades,
@@ -371,11 +369,17 @@ def _render_dd_chart(
     st.plotly_chart(fig, use_container_width=True)
 
 
-def _render_phases_table(phases: List[dict]) -> None:
+def _render_phases_table(phases: List[dict], is_running: bool) -> None:
     """C) Phasen-Tabelle mit Spalten-Styling.
 
     Zeigt alle Phasen inkl. 'Normal' (kein Drosseln). 'Eingespart' bleibt
     bei Normal-Phasen leer ('–'), Stufe wird neutral grau gerendert.
+
+    Args:
+        phases     : aggregierte Phasen aus _aggregate_phases
+        is_running : True bei PT/LT-Bots mit Status 'running' -> offene
+                     Phase am Ende zeigt 'laufend'; False bei BT/completed
+                     oder gestoppten Bots -> stattdessen End-Timestamp.
     """
     if not phases:
         st.info("Keine Phasen-Daten verfuegbar.")
@@ -384,7 +388,12 @@ def _render_phases_table(phases: List[dict]) -> None:
     rows = []
     for p in phases:
         dur = p["end"] - p["start"]
-        end_label = "laufend" if p["is_open"] else p["end"].strftime("%Y-%m-%d %H:%M")
+        # 'laufend' nur fuer offene Phasen wenn Bot tatsaechlich laeuft;
+        # bei BT/completed -> End-Timestamp anzeigen.
+        if p["is_open"] and is_running:
+            end_label = "laufend"
+        else:
+            end_label = p["end"].strftime("%Y-%m-%d %H:%M")
         stufe     = p.get("stufe", "normal")
         # Eingespart: bei Normal '-', sonst USDT-Summe
         if stufe == "normal":
@@ -465,7 +474,7 @@ def render_tab_drawdown(view: dict) -> None:
     is_running = (mode in ("paper", "live") and status == "running")
 
     # Phasen aggregieren
-    phases = _aggregate_phases(dd_history, trade_log, bt_end_ts, is_running)
+    phases = _aggregate_phases(dd_history, trade_log, bt_end_ts)
 
     # Aggregat-Kennzahlen fuer Box
     total_throttled = sum(p["num_trades"] for p in phases)
@@ -489,4 +498,4 @@ def render_tab_drawdown(view: dict) -> None:
 
     # C) Phasen-Tabelle
     st.markdown("##### Drossel-Phasen")
-    _render_phases_table(phases)
+    _render_phases_table(phases, is_running)
