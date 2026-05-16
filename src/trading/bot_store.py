@@ -309,6 +309,8 @@ class BotStore:
             "trade_log":       list(result.get("trade_log", [])),
             "trailing_events": list(result.get("trailing_events", [])),
             "recentering_events": list(result.get("recentering_events", [])),
+            # DD-Verlauf pro Kerze (fuer Drawdown-Tab)
+            "dd_history":      list(result.get("dd_history", [])),
             # Punkt 3: final_position als state.position ablegen, damit UI
             # das Coin-Inventar bei gespeicherten BT-Bots lesen kann.
             "state":           ({"position": dict(result.get("final_position"))}

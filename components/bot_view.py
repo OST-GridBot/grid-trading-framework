@@ -66,6 +66,10 @@ def bot_view_from_bot_state(bot: dict) -> dict:
         "trade_log":       list(bot.get("trade_log", [])),
         "trailing_events": list(bot.get("trailing_events", [])),
         "recentering_events": list(bot.get("recentering_events", [])),
+        # DD-Verlauf (BT-Snapshot: Top-Level; PT/LT: aus state).
+        # Bei alten Bots ohne Feld -> []. Backward-Compat.
+        "dd_history":      list(bot.get("dd_history",
+                                         state.get("dd_history", []))),
         "state":           bot.get("state"),
         "regime":          _serialize_regime(bot.get("regime")),
         "indicators":      bot.get("indicators"),
@@ -159,6 +163,8 @@ def bot_view_from_backtest_result(
         "trade_log":       list(result.get("trade_log", [])),
         "trailing_events": list(result.get("trailing_events", [])),
         "recentering_events": list(result.get("recentering_events", [])),
+        # DD-Verlauf pro Kerze (fuer Drawdown-Tab).
+        "dd_history":      list(result.get("dd_history", [])),
         # Bug 7: BT-Pfad legt final_position als state.position ab, damit
         # UI (Coin-Inventar-Anzeige) auch bei BT-Bots Werte lesen kann.
         "state":           ({"position": dict(result.get("final_position"))}

@@ -283,6 +283,7 @@ def _error_result(message: str) -> dict:
         "trailing_count":       0,
         "trailing_events":      [],
         "recentering_events":   [],
+        "dd_history":           [],
         "stop_loss_triggered":  False,
         "take_profit_triggered": False,
         "initial_buy_coin_amount": 0.0,

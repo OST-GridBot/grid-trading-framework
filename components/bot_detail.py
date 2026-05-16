@@ -30,6 +30,7 @@ from components.tab_chart          import render_tab_chart
 from components.tab_trades         import render_tab_trades
 from components.tab_configuration  import render_tab_configuration
 from components.tab_grid_levels    import render_tab_grid_levels
+from components.tab_drawdown       import render_tab_drawdown
 from components.tab_optimizer      import render_tab_optimizer
 from src.trading.bot_store         import store as bot_store
 
@@ -287,9 +288,9 @@ def render_bot_detail(view: dict, on_back: Callable[[], None]) -> None:
     st.divider()
 
     # ── Sub-Tabs ────────────────────────────────────────────────────────────
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
         ["📈 Chart", "📋 Trade-Log", "⚙️ Configuration",
-         "📐 Grid Levels", "🎯 Optimizer"]
+         "📐 Grid Levels", "📉 Drawdown", "🎯 Optimizer"]
     )
     with tab1:
         render_tab_chart(view)
@@ -300,6 +301,8 @@ def render_bot_detail(view: dict, on_back: Callable[[], None]) -> None:
     with tab4:
         render_tab_grid_levels(view)
     with tab5:
+        render_tab_drawdown(view)
+    with tab6:
         render_tab_optimizer(view)
 
     # (Auftrag Y.2) Optimizer-Block in gespeicherten Backtests entfernt.

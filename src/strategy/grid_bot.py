@@ -192,6 +192,11 @@ class GridBot:
         # historischen Peak muss diesen Wert verwenden, sonst waere der
         # erste portfolio_value < total_investment faelschlich der "Peak".
         self._peak_portfolio    = total_investment
+        # DD-Verlaufs-Tracking pro Kerze (fuer Drawdown-Tab).
+        # Jeder Eintrag: {"timestamp": str, "dd_pct": float, "factor": float}.
+        # Wird IMMER gefuellt (auch bei enable_dd_throttle=False), damit der
+        # Tab den DD-Verlauf zeigen kann; factor bleibt dann konstant 1.0.
+        self.dd_history: List[dict] = []
         self.enable_trailing_up      = enable_trailing_up
         self.trailing_up_stop        = trailing_up_stop
         self.trail_stop_levels       = trail_stop_levels
@@ -531,6 +536,20 @@ class GridBot:
             # Drosselung aktualisieren
             if self.enable_dd_throttle:
                 self._update_dd_throttle(portfolio_value)
+
+            # DD-Verlauf tracken (immer, auch ohne aktivierte Drosselung).
+            # dd_pct = peak-relativer Drawdown in [0, 1].
+            if self._peak_portfolio > 0:
+                _dd_pct = max(0.0,
+                              (self._peak_portfolio - portfolio_value)
+                                / self._peak_portfolio)
+            else:
+                _dd_pct = 0.0
+            self.dd_history.append({
+                "timestamp": str(self._current_timestamp),
+                "dd_pct":    float(_dd_pct),
+                "factor":    float(self.dd_throttle_factor),
+            })
 
             # Stop-Loss pruefen (Preis- und/oder ROI-basiert, ODER-verknuepft)
             if self._check_stop_loss(current_price, portfolio_value):
@@ -1076,6 +1095,7 @@ class GridBot:
             "take_profit_pl_usdt": self.take_profit_pl_usdt,
             "dd_throttle_factor":  self.dd_throttle_factor,
             "_peak_portfolio":     self._peak_portfolio,
+            "dd_history":          self.dd_history,
             "enable_trailing_up":  self.enable_trailing_up,
             "trailing_up_stop":    self.trailing_up_stop,
             "trail_stop_levels":   self.trail_stop_levels,
@@ -1147,6 +1167,8 @@ class GridBot:
             # faelschlich als Peak gespeichert wird).
             self._peak_portfolio      = state.get("_peak_portfolio",
                                                    self.total_investment)
+            # DD-Verlauf (Backward-Compat: alte States ohne Feld -> [])
+            self.dd_history           = list(state.get("dd_history", []))
             self.enable_trailing_up   = state.get("enable_trailing_up", False)
             self.trailing_up_stop     = state.get("trailing_up_stop", None)
             # Alte Felder enable_trailing_down/trailing_down_stop werden
@@ -1397,6 +1419,8 @@ def simulate_grid_bot(
             "recentering_events":  bot.recentering_events,
             "trailing_count":      bot.trailing_count,
             "trailing_events":     bot.trailing_events,
+            # DD-Verlauf pro Kerze (fuer Drawdown-Tab)
+            "dd_history":          bot.dd_history,
             "stop_loss_triggered": bot.stop_loss_triggered,
             "take_profit_triggered": bot.take_profit_triggered,
             # Trigger-Daten fuer Chart-Marker (M.2)
