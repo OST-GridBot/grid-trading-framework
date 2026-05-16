@@ -1109,8 +1109,21 @@ def render_trade_log(trade_log: list, max_rows: int = 100000) -> None:
         except Exception:
             ts_str = str(t.get("timestamp", ""))[:16]
         # Punkt 2: Buy-Bezug fuer Sells (matched_buy_price aus trade_log).
+        # N.3: Force-Sell mit n>1 Paketen -> 'Ø X.XX (n=N)' (gewichteter
+        # Durchschnitt), sonst Single-Match -> '@ X.XX'. Backward-Compat
+        # via Fallback 1 fuer alte Trade-Log-Eintraege ohne matched_buy_count.
         mbp = t.get("matched_buy_price")
-        buy_ref = f"@ {float(mbp):,.2f}" if (is_sell and mbp) else "–"
+        if is_sell and mbp:
+            if t.get("force_sell"):
+                n = int(t.get("matched_buy_count", 1) or 1)
+                if n > 1:
+                    buy_ref = f"Ø {float(mbp):,.2f} (n={n})"
+                else:
+                    buy_ref = f"@ {float(mbp):,.2f}"
+            else:
+                buy_ref = f"@ {float(mbp):,.2f}"
+        else:
+            buy_ref = "–"
         rows.append({
             "Zeit":                ts_str,
             "Typ":                 type_label,

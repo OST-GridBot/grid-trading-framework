@@ -795,7 +795,12 @@ class GridBot:
         """
         if not self.coin_inventory:
             return
-        # Aggregat ueber alle Inventory-Eintraege
+        # Aggregat ueber alle Inventory-Eintraege.
+        # n_packets vor clear() merken -> Trade-Log macht sichtbar, ueber
+        # wie viele Inventar-Pakete dieser Force-Sell konsolidiert wurde
+        # (N.3: 'matched_buy_price' ist gewichteter Durchschnitt, kein
+        # Single-Match).
+        n_packets = len(self.coin_inventory)
         total_amount = sum(amt for amt, _, _ in self.coin_inventory)
         total_buy_value = sum(amt * bp for amt, bp, _ in self.coin_inventory)
         # Safety: bei Inkonsistenz zwischen Inventar und position["coin"]
@@ -831,6 +836,9 @@ class GridBot:
         }
         if avg_buy_price is not None:
             entry["matched_buy_price"] = float(avg_buy_price)
+        # Anzahl konsolidierter Inventar-Pakete (N.3) - macht in der UI
+        # sichtbar dass matched_buy_price ein Durchschnitt ueber n Pakete ist.
+        entry["matched_buy_count"] = int(n_packets)
         if trigger:
             entry["force_sell_trigger"] = trigger
         self.trade_log.append(entry)
