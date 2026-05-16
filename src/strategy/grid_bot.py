@@ -704,12 +704,17 @@ class GridBot:
                 self.position["coin"] -= actual_sell_amt
                 self.position["usdt"] += (actual_sell_amt * grid.price) - fee
 
-                # trade_amount fuer den Log auf tatsaechliche Menge setzen
-                grid.trade_amount = actual_sell_amt
+                # Tatsaechlich gehandelte Menge fuer den Log. grid.trade_amount
+                # bleibt UNVERAENDERT - sonst wuerde beim naechsten Trade auf
+                # derselben Linie der gedrosselte/Sell-Wert als neue Basis
+                # genutzt (kumulative Drosselung).
+                traded_amount = actual_sell_amt
 
             else:  # buy
                 matched_buy_price = None
-                # Drawdown-Drosselung: Ordergrösse reduzieren
+                # Drawdown-Drosselung: Ordergrösse reduzieren.
+                # grid.trade_amount = Original-Menge aus _build_grids;
+                # niemals ueberschreiben.
                 throttled_amount = grid.trade_amount * self.dd_throttle_factor
                 # Defensive Guard: trade_amount=0 erzeugt Empty-Inventar-
                 # Eintraege und verhindert spaetere Sells. Kann passieren
@@ -726,7 +731,7 @@ class GridBot:
                 self.coin_inventory.append(
                     (throttled_amount, grid.price, timestamp)
                 )
-                grid.trade_amount = throttled_amount
+                traded_amount = throttled_amount
 
             # Trade loggen
             entry = {
@@ -734,7 +739,7 @@ class GridBot:
                 "type":         grid.side.upper(),
                 "cprice":       float(candle["close"]),
                 "price":        float(grid.price),
-                "amount":       float(grid.trade_amount),
+                "amount":       float(traded_amount),
                 "fee":          float(fee),
                 "profit":       float(profit),        # netto (nach Sell-Fee)
                 "profit_gross": float(profit_gross),  # brutto (Preisdifferenz × Menge)
