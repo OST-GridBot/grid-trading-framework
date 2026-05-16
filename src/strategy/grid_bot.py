@@ -869,11 +869,16 @@ class GridBot:
         Returns:
             True wenn einer der aktiven Trigger ausgeloest hat.
         """
-        # Einmalige Trigger-Semantik: nach erstem Trigger wird SL nicht
-        # mehr feuern. Verhindert Force-Sell-Loop wenn der Bot mit
-        # stop_bot_on_trigger=False weiterlaeuft und Buy-Limits den
-        # Preis erneut unter die SL-Schwelle bringen.
-        if self.stop_loss_triggered:
+        # N.1: Re-Trigger-Logik. Bei stop_bot_on_trigger=True bleibt das
+        # Flag dauerhaft blockierend (Bot ist gestoppt). Bei =False darf
+        # der Trigger erneut feuern - sobald wieder Inventar aufgebaut
+        # wurde (N.2 als Loop-Schutz).
+        if self.stop_loss_triggered and self.stop_bot_on_trigger:
+            return False
+        # N.2: Ohne Coin-Inventar nichts zu verkaufen -> kein Trigger sinnvoll.
+        # Verhindert auch Trigger-Loops bei dauerhaft unter SL-Grenze
+        # gefallenem Preis ohne neue Buys.
+        if not self.coin_inventory:
             return False
         # Preis-basiert
         if (self.stop_loss_price is not None
@@ -913,8 +918,13 @@ class GridBot:
         Returns:
             True wenn einer der aktiven Trigger ausgeloest hat.
         """
-        # Einmalige Trigger-Semantik (analog _check_stop_loss).
-        if self.take_profit_triggered:
+        # N.1: Re-Trigger-Logik analog _check_stop_loss. Bei
+        # stop_bot_on_trigger=True dauerhaft blockierend, sonst Re-Trigger
+        # moeglich sobald wieder Inventar vorhanden.
+        if self.take_profit_triggered and self.stop_bot_on_trigger:
+            return False
+        # N.2: Ohne Coin-Inventar kein Trigger sinnvoll.
+        if not self.coin_inventory:
             return False
         # Preis-basiert
         if (self.take_profit_price is not None
