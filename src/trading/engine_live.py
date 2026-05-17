@@ -165,6 +165,9 @@ class LiveRunner(BotRunnerBase):
             self.store.update_bot(self.bot_id, {"state": bot_state})
             return
 
+        # Phase Live-2.4: parallele sell_lines-Liste pflegen
+        sell_lines_list = list(bot_state.get("live_inventory_sell_lines") or [])
+
         # Order-Loop: pro Sell-Linie einen MARKET-Buy senden
         success_count = 0
         for price, grid in sell_grids:
@@ -210,6 +213,10 @@ class LiveRunner(BotRunnerBase):
                 (exec_qty, current_price, pd.Timestamp(order["timestamp"]))
             )
 
+            # Phase Live-2.4: parallele sell_lines-Liste
+            # Initial-Buy auf Sell-Linie X -> Coin soll auf X verkauft werden.
+            sell_lines_list.append(float(price))
+
             # Aggregat-Tracking analog zur Simulation
             self._grid_bot.initial_buy_coin_amount += exec_qty
             self._grid_bot.initial_buy_fee         += commission
@@ -220,11 +227,8 @@ class LiveRunner(BotRunnerBase):
         # Variante A: Flag nur setzen wenn mindestens 1 Buy erfolgreich war.
         # Sonst Retry beim naechsten Aufruf.
         if success_count > 0:
-            bot_state["live_initial_buys_done"] = True
-            # Trade-Log + Inventar persistieren via _save_state-Aufruf
-            # NICHT hier — _save_state ist ein Base-Helper, ruft sich
-            # selbst in step() auf. In Live-2.2 koennen wir aber
-            # zumindest den State + trade_log direkt schreiben:
+            bot_state["live_initial_buys_done"]      = True
+            bot_state["live_inventory_sell_lines"]   = sell_lines_list
             self.store.update_bot(self.bot_id, {
                 "state":     bot_state,
                 "trade_log": list(self._grid_bot.trade_log),
@@ -305,33 +309,36 @@ class LiveRunner(BotRunnerBase):
             occupied.add(key)
             new_count += 1
 
-        # ── SELL-Orders fuer Initial-Buy-Inventar ───────────────────────
-        # Quelle: trade_log mit initial=True (kommt aus _ensure_initial_buys).
-        initial_trades = [
-            t for t in self._grid_bot.trade_log
-            if t.get("initial") and t.get("type") == "BUY"
-        ]
-        for trade in initial_trades:
-            grid_price = float(trade.get("price", 0))
-            amount     = float(trade.get("amount", 0))
-            if grid_price <= 0 or amount <= 0:
+        # ── SELL-Orders aus live_inventory_sell_lines ───────────────────
+        # Phase Live-2.4: Statt aus trade_log mit initial=True iterieren
+        # wir ueber die parallele sell_lines-Liste, die fuer JEDEN Inventar-
+        # Eintrag die Ziel-Sell-Linie kennt. Initial-Buys haben dort die
+        # Sell-Linie aus _ensure_initial_buys, Normal-Buys (gefuellt via
+        # _poll_open_orders) haben die naechsthoehere Linie ueber buy_price.
+        sell_lines_list = list(bot_state.get("live_inventory_sell_lines") or [])
+        inv = self._grid_bot.coin_inventory
+        # Gleiche Laenge erwarten; defensiv das Minimum nehmen
+        n = min(len(inv), len(sell_lines_list))
+        for i in range(n):
+            qty    = float(inv[i][0])
+            target = float(sell_lines_list[i])
+            if qty <= 0 or target <= 0:
                 continue
-            key = ("SELL", grid_price)
+            key = ("SELL", target)
             if key in occupied:
                 continue
             result = self._broker.place_limit_order(
-                side="SELL",
-                price=grid_price,
-                quantity=amount,
+                side="SELL", price=target, quantity=qty,
             )
             if result.get("error"):
                 continue
             open_orders[result["client_order_id"]] = {
                 "side":             "SELL",
-                "grid_price":       grid_price,
+                "grid_price":       target,
                 "quantity":         float(result["quantity"]),
                 "binance_order_id": result["binance_order_id"],
                 "placed_at":        result["timestamp"],
+                "inventory_idx":    i,
             }
             occupied.add(key)
             new_count += 1
@@ -340,3 +347,163 @@ class LiveRunner(BotRunnerBase):
         if new_count > 0:
             bot_state["live_open_orders"] = open_orders
             self.store.update_bot(self.bot_id, {"state": bot_state})
+
+    # =======================================================================
+    # Phase Live-2.4 (L-13, L-6): Polling + step()-Override
+    # =======================================================================
+
+    def _poll_open_orders(self) -> None:
+        """
+        Status-Check fuer alle tracked Orders via batched openOrders-Call.
+        Verschwundene Orders -> Einzel-Status fuer Fill-Details.
+
+        Buchhaltung (Variante 2 — Trennung Poll/Sync):
+          FILLED BUY  -> coin_inventory.append + sell_lines.append(
+                          next_grid_above(grid_price)) + trade_log-Eintrag
+          FILLED SELL -> coin_inventory.pop(0)   + sell_lines.pop(0) (FIFO)
+                          + trade_log-Eintrag (matched_buy_price, profit)
+          CANCELED/REJECTED/EXPIRED -> nur aus live_open_orders raus
+          PARTIALLY_FILLED -> bleibt offen (taucht weiter in openOrders auf)
+
+        Gegen-Orders werden NICHT hier platziert. _sync_limit_orders
+        macht das beim naechsten Aufruf automatisch (idempotent, sieht
+        neue sell_lines-Eintraege ohne korrespondierende SELL-Order).
+        """
+        # Guards
+        if self._broker is None or not getattr(self._broker, "init_ok", False):
+            return
+        if self._grid_bot is None:
+            return
+
+        self._bot   = self.store.get_bot(self.bot_id) or self._bot
+        bot_state   = (self._bot.get("state") or {}).copy()
+        open_orders = dict(bot_state.get("live_open_orders") or {})
+        if not open_orders:
+            return  # Nichts zu pollen
+
+        sell_lines = list(bot_state.get("live_inventory_sell_lines") or [])
+
+        # 1. Batched fetch
+        binance_open = self._broker.get_open_orders()
+        still_open_cids = {o.get("clientOrderId") for o in binance_open}
+
+        # 2. Diff: state-CIDs nicht mehr in Binance-openOrders
+        disappeared = [
+            (cid, info) for cid, info in open_orders.items()
+            if cid not in still_open_cids
+        ]
+        if not disappeared:
+            return  # Alle Orders unveraendert offen
+
+        grid_lines_sorted = sorted(self._grid_bot.grids.keys())
+        changed = False
+
+        for cid, info in disappeared:
+            details = self._broker.get_order_status(cid)
+            status  = (details.get("status") or "").upper()
+            side    = info.get("side", "")
+            grid_p  = float(info.get("grid_price", 0))
+
+            if status == "FILLED":
+                fills      = details.get("fills", []) or []
+                agg        = self._broker._aggregate_fills(fills)
+                exec_avg   = (agg["avg_price"]
+                              if agg["total_qty"] > 0 else grid_p)
+                exec_qty   = (agg["total_qty"]
+                              if agg["total_qty"] > 0
+                              else float(details.get("executedQty", 0)))
+                commission = agg["total_commission"]
+                comm_asset = agg["commission_asset"]
+                ts         = naive_utc_now().isoformat()
+
+                if side == "BUY":
+                    # Inventar + sell_lines wachsen
+                    self._grid_bot.coin_inventory.append(
+                        (exec_qty, grid_p, pd.Timestamp(ts))
+                    )
+                    next_above = next(
+                        (g for g in grid_lines_sorted if g > grid_p),
+                        None,
+                    )
+                    sell_lines.append(float(next_above) if next_above else 0.0)
+                    self._grid_bot.trade_log.append({
+                        "timestamp":        ts,
+                        "type":             "BUY",
+                        "cprice":           exec_avg,
+                        "price":            grid_p,
+                        "amount":           exec_qty,
+                        "fee":              commission,
+                        "profit":           0.0,
+                        "profit_gross":     0.0,
+                        "initial":          False,
+                        "client_order_id":  cid,
+                        "binance_order_id": info.get("binance_order_id"),
+                        "commission_asset": comm_asset,
+                    })
+                elif side == "SELL":
+                    # FIFO-Match auf Inventar + sell_lines
+                    matched_buy_price = None
+                    if self._grid_bot.coin_inventory:
+                        matched = self._grid_bot.coin_inventory.pop(0)
+                        matched_buy_price = float(matched[1])
+                    if sell_lines:
+                        sell_lines.pop(0)
+                    profit_gross = (
+                        (exec_avg - matched_buy_price) * exec_qty
+                        if matched_buy_price is not None else 0.0
+                    )
+                    profit = profit_gross - commission
+                    self._grid_bot.trade_log.append({
+                        "timestamp":         ts,
+                        "type":              "SELL",
+                        "cprice":            exec_avg,
+                        "price":             grid_p,
+                        "amount":            exec_qty,
+                        "fee":               commission,
+                        "matched_buy_price": matched_buy_price,
+                        "profit_gross":      profit_gross,
+                        "profit":            profit,
+                        "initial":           False,
+                        "client_order_id":   cid,
+                        "binance_order_id":  info.get("binance_order_id"),
+                        "commission_asset":  comm_asset,
+                    })
+
+            # Order in jedem Fall (FILLED/CANCELED/...) aus tracked-Liste raus
+            open_orders.pop(cid, None)
+            changed = True
+
+        if changed:
+            bot_state["live_open_orders"]          = open_orders
+            bot_state["live_inventory_sell_lines"] = sell_lines
+            self.store.update_bot(self.bot_id, {
+                "state":     bot_state,
+                "trade_log": list(self._grid_bot.trade_log),
+            })
+
+    def step(self, candle: dict) -> list:
+        """
+        Phase Live-2.4: Override von BotRunnerBase.step.
+        Live-Pipeline statt Simulation:
+            1. _poll_open_orders   (Status-Check + Buchhaltung)
+            2. _ensure_initial_buys (einmalig, idempotent)
+            3. _sync_limit_orders   (fehlende + Gegen-Orders)
+            4. _save_state          (Metriken)
+
+        GridBot.process_candle wird NICHT mehr aufgerufen — keine
+        Simulation im Live-Modus. Trades entstehen ausschliesslich
+        durch echte Binance-Fills, verbucht im Poll.
+
+        Returns: Liste der neu hinzugekommenen Trades seit letztem step.
+        """
+        if self._grid_bot is None:
+            return []
+        cprice = float(candle.get("close", 0))
+        trades_before = len(self._grid_bot.trade_log)
+
+        self._poll_open_orders()
+        self._ensure_initial_buys(cprice)
+        self._sync_limit_orders(cprice)
+        self._save_state(cprice)
+
+        return self._grid_bot.trade_log[trades_before:]
