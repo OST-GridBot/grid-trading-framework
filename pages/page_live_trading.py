@@ -20,6 +20,10 @@ Autor: Enes Eryilmaz
 Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
 """
 
+import json
+from pathlib import Path
+
+import pandas as pd
 import streamlit as st
 
 from src.trading.bot_store     import store as bot_store
@@ -32,7 +36,11 @@ from components.ui_helpers     import label
 from config.settings import (
     MAX_BOTS_PER_MODE,
     BINANCE_API_KEY, BINANCE_SECRET_KEY,
+    CACHE_DIR, WORKER_INTERVAL_SECONDS,
 )
+
+# Phase Live-3: Pfad zur Worker-Heartbeat-Datei
+WORKER_HEARTBEAT_PATH = Path(CACHE_DIR) / "live_worker_heartbeat.json"
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +101,90 @@ def _get_asset_prices(symbols: list) -> dict:
     except Exception:
         pass
     return prices
+
+
+def _read_worker_heartbeat() -> dict:
+    """
+    Phase Live-3: Liest die Worker-Heartbeat-Datei. Liefert ein Dict
+    mit Status-Infos oder {} falls die Datei fehlt/unlesbar ist.
+    """
+    if not WORKER_HEARTBEAT_PATH.exists():
+        return {}
+    try:
+        return json.loads(WORKER_HEARTBEAT_PATH.read_text())
+    except Exception:
+        return {}
+
+
+def _worker_is_living(hb: dict) -> bool:
+    """
+    Phase Live-3: 'Living'-Check — last_run liegt nicht laenger als
+    2x das Worker-Intervall zurueck UND status ist 'running'.
+    """
+    if not hb or hb.get("status") != "running":
+        return False
+    last = hb.get("last_run_at") or hb.get("updated_at")
+    if not last:
+        return False
+    try:
+        last_dt = pd.Timestamp(last)
+        if last_dt.tzinfo is None:
+            last_dt = last_dt.tz_localize("UTC")
+        now = pd.Timestamp.now(tz="UTC")
+        interval = int(hb.get("interval_seconds", WORKER_INTERVAL_SECONDS))
+        return (now - last_dt).total_seconds() < interval * 2
+    except Exception:
+        return False
+
+
+def _show_worker_status() -> None:
+    """
+    Phase Live-3: Worker-Status-Anzeige aus Heartbeat-Datei.
+    Live / Stopped / Stale (zuletzt aktiv vor > 2x Intervall).
+    """
+    hb = _read_worker_heartbeat()
+    if not hb:
+        st.markdown(
+            "<div style='padding:10px 14px; background:rgba(251,146,60,0.10); "
+            "border:1px solid rgba(251,146,60,0.30); border-radius:8px; "
+            "display:inline-block;'>"
+            "<span style='font-size:0.7rem; color:#64748B; text-transform:uppercase; "
+            "letter-spacing:0.05em; margin-right:8px;'>Live-Worker</span>"
+            "<span style='color:#FB923C; font-weight:700;'>○ Nicht aktiv</span>"
+            "<span style='color:#64748B; font-size:0.78rem; margin-left:10px;'>"
+            "Start im Terminal: <code>python live_worker.py</code></span>"
+            "</div>",
+            unsafe_allow_html=True
+        )
+        return
+
+    living = _worker_is_living(hb)
+    pid    = hb.get("pid", "—")
+    n_bots = hb.get("last_run_bots", 0)
+    errs   = hb.get("last_run_errors", 0)
+    last   = hb.get("last_run_at") or hb.get("updated_at") or "—"
+
+    if living:
+        color = "#34D399"
+        icon  = "●"
+        text  = (f"{icon} Aktiv (PID {pid}) · {n_bots} Bot(s) · "
+                 f"{errs} Fehler im letzten Run")
+    else:
+        color = "#FB923C"
+        icon  = "○"
+        status = hb.get("status", "unknown")
+        text  = f"{icon} Inaktiv (Status: {status}, zuletzt: {last[:19]})"
+
+    st.markdown(
+        "<div style='padding:10px 14px; background:rgba(255,255,255,0.03); "
+        "border:1px solid rgba(255,255,255,0.08); border-radius:8px; "
+        "display:inline-block;'>"
+        "<span style='font-size:0.7rem; color:#64748B; text-transform:uppercase; "
+        "letter-spacing:0.05em; margin-right:8px;'>Live-Worker</span>"
+        f"<span style='color:{color}; font-weight:700;'>{text}</span>"
+        "</div>",
+        unsafe_allow_html=True
+    )
 
 
 def _show_connection_status() -> None:
@@ -382,10 +474,12 @@ def show_live_trading():
         )
         return
 
-    # ── Default-View: Connection-Status + Portfolio-Komponente ──────────────
+    # ── Default-View: Connection-Status + Worker-Status + Portfolio ───────
     # Binance-USDT-Guthaben wird via _show_connection_status() / Wallet-Block
     # angezeigt — nicht mehr als Portfolio-Karte.
     _show_connection_status()
+    # Phase Live-3: Worker-Status (Heartbeat-basiert)
+    _show_worker_status()
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
     render_portfolio_view(
         views             = views,

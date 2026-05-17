@@ -104,6 +104,11 @@ SCANNER_LOOKBACK_DAYS = 14
 MAX_BOTS_PER_MODE           = 10
 MAX_BACKTESTS               = 500   # Maximale Anzahl gespeicherter Backtests
 
+# Live-Worker (Phase Live-3): Polling-Intervall in Sekunden.
+# 30s ist unter Binance Rate-Limit-Druck unkritisch und reagiert zugleich
+# zeitnah auf Markt-Bewegungen. Wird vom live_worker.py-Script gelesen.
+WORKER_INTERVAL_SECONDS     = 30
+
 # UI-Farben
 COLOR_GREEN        = "#00C853"
 COLOR_ORANGE       = "#FF6F00"
