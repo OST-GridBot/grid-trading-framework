@@ -348,8 +348,18 @@ class GridBot:
         # mit minimalem Profit verkauft wird. Ohne Initial-Buy gibt es kein
         # Inventar zu schuetzen -> keine Pufferzone.
         if self.enable_initial_buy:
-            lines_above = sorted(p for p in self.grids.keys()
-                                  if p > initial_price)
+            # B-2: np.isclose-Filter verhindert Pufferzonen-Float-Drift.
+            # Wenn initial_price float-numerisch mit einer Grid-Linie
+            # uebereinstimmt (z.B. Linie = 74867.92000000001 vs
+            # initial_price = 74867.92), wuerde 'p > initial_price' True
+            # liefern und die Linie als Pufferzone klassifizieren - obwohl
+            # sie semantisch die initial_price-Linie ist.
+            # Mit dem Filter wird sie aus lines_above ausgeschlossen, so dass
+            # die naechste Linie strikt darueber korrekt zur Pufferzone wird.
+            lines_above = sorted(
+                p for p in self.grids.keys()
+                if p > initial_price and not np.isclose(p, initial_price)
+            )
             buffer_price: Optional[float] = (lines_above[0]
                                               if lines_above else None)
         else:
