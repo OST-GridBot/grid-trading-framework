@@ -240,10 +240,28 @@ class LiveRunner(BotRunnerBase):
         if success_count > 0:
             bot_state["live_initial_buys_done"]      = True
             bot_state["live_inventory_sell_lines"]   = sell_lines_list
-            self.store.update_bot(self.bot_id, {
+            # Live-2.6 (L-16): Persist-Fehler-Handling nach erfolgreichen
+            # MARKET-Buys. BotStore.update_bot returnt False bei Schreib-
+            # fehler (kein Exception, siehe bot_store.py:329-348). Wenn
+            # State nicht persistiert wird, sind echte Coins bei Binance
+            # aber das Bot-State weiss nichts davon — beim naechsten Run
+            # wuerden Initial-Buys wiederholt (Doppel-Kauf).
+            persist_ok = self.store.update_bot(self.bot_id, {
                 "state":     bot_state,
                 "trade_log": list(self._grid_bot.trade_log),
             })
+            if not persist_ok:
+                # Bot in error-Status setzen damit Worker stoppt und
+                # User manuell eingreifen kann.
+                self.store.update_bot(self.bot_id, {
+                    "status":     "error",
+                    "last_error": (
+                        f"Initial-Buy-Persistierung fehlgeschlagen. "
+                        f"{success_count} MARKET-BUYs bei Binance ausgefuehrt, "
+                        f"aber Bot-State nicht gespeichert. Manuelle "
+                        f"Kontrolle/Abgleich noetig vor Bot-Reaktivierung."
+                    ),
+                })
         # Bei success_count == 0: keine Persistierung, Flag bleibt False,
         # naechster step() wird's nochmal probieren.
 
@@ -294,11 +312,26 @@ class LiveRunner(BotRunnerBase):
         occupied = {(o["side"], float(o["grid_price"]))
                     for o in open_orders.values()}
 
+        # Live-2.6 (L-24): Skip-Set fuer Buy-Linien deren Coin schon im
+        # Inventar liegt. Wirkt nur fuer Normal-Buys (buy_price=Grid-
+        # Linie); Initial-Buys (buy_price=Marktpreis) kollidieren
+        # konstruktionsbedingt nicht mit Buy-Linien.
+        # Convention (siehe gridbot.py + engine_live.py):
+        #   Initial-Buy : coin_inventory[i].buy_price = current_price
+        #   Normal-Buy  : coin_inventory[i].buy_price = grid_p
+        inventory_buy_prices = {
+            float(item[1]) for item in self._grid_bot.coin_inventory
+        }
+
         new_count = 0
 
         # ── BUY-Linien ───────────────────────────────────────────────────
         for price, grid in self._grid_bot.grids.items():
             if grid.side != "buy":
+                continue
+            # L-24: Coin von dieser Linie schon gekauft -> kein Re-Buy
+            # bis die Gegen-Sell-Order gefuellt ist.
+            if float(price) in inventory_buy_prices:
                 continue
             key = ("BUY", float(price))
             if key in occupied:
@@ -320,23 +353,29 @@ class LiveRunner(BotRunnerBase):
             occupied.add(key)
             new_count += 1
 
-        # ── SELL-Orders aus live_inventory_sell_lines ───────────────────
-        # Phase Live-2.4: Statt aus trade_log mit initial=True iterieren
-        # wir ueber die parallele sell_lines-Liste, die fuer JEDEN Inventar-
-        # Eintrag die Ziel-Sell-Linie kennt. Initial-Buys haben dort die
-        # Sell-Linie aus _ensure_initial_buys, Normal-Buys (gefuellt via
-        # _poll_open_orders) haben die naechsthoehere Linie ueber buy_price.
+        # ── SELL-Orders pro Inventar-Eintrag ────────────────────────────
+        # Phase Live-2.6 (L-25): 1 SELL-Order pro Coin mit eigener
+        # clientOrderId. Tracking via inventory_idx im live_open_orders.
+        # Mehrere Coins auf gleicher sell_line bekommen jetzt jeweils
+        # eigene Order (vorher: occupied-Set blockte zweite Order ->
+        # Coin steckte fest).
         sell_lines_list = list(bot_state.get("live_inventory_sell_lines") or [])
         inv = self._grid_bot.coin_inventory
+        # Indizes mit bereits offener SELL-Order
+        covered_indices = {
+            info["inventory_idx"]
+            for info in open_orders.values()
+            if info.get("side") == "SELL"
+               and info.get("inventory_idx") is not None
+        }
         # Gleiche Laenge erwarten; defensiv das Minimum nehmen
         n = min(len(inv), len(sell_lines_list))
         for i in range(n):
+            if i in covered_indices:
+                continue
             qty    = float(inv[i][0])
             target = float(sell_lines_list[i])
             if qty <= 0 or target <= 0:
-                continue
-            key = ("SELL", target)
-            if key in occupied:
                 continue
             result = self._broker.place_limit_order(
                 side="SELL", price=target, quantity=qty,
@@ -351,7 +390,6 @@ class LiveRunner(BotRunnerBase):
                 "placed_at":        result["timestamp"],
                 "inventory_idx":    i,
             }
-            occupied.add(key)
             new_count += 1
 
         # Persistieren nur wenn was Neues platziert wurde
@@ -465,26 +503,54 @@ class LiveRunner(BotRunnerBase):
                         "commission_asset": comm_asset,
                     })
                 elif side == "SELL":
-                    # Live-2.5 (L-1): Linien-basiertes Match statt FIFO.
-                    # Suche Index in sell_lines, wo sell_lines[i] == grid_p
-                    # (float-Toleranz). Pop diesen Index aus beiden
-                    # parallelen Listen. FIFO-Fallback bei De-Sync.
+                    # Live-2.6 (L-25): 3-stufiger Match-Algorithmus.
+                    #   1) inventory_idx aus live_open_orders[cid]
+                    #      (vom Sync gesetzt, eindeutig pro Coin)
+                    #   2) L-1 Linien-Match (sell_lines[i] == grid_p)
+                    #      — defensiv bei Crash/Stale inventory_idx
+                    #   3) FIFO-Fallback (letzte Notnagel-Stufe)
                     matched_buy_price = None
                     matched_idx = None
-                    for i, sl in enumerate(sell_lines):
-                        if abs(float(sl) - grid_p) < 1e-6:
-                            matched_idx = i
-                            break
+
+                    # Stufe 1: inventory_idx
+                    recorded_idx = info.get("inventory_idx")
+                    if (isinstance(recorded_idx, int)
+                            and 0 <= recorded_idx < len(self._grid_bot.coin_inventory)
+                            and recorded_idx < len(sell_lines)
+                            and abs(float(sell_lines[recorded_idx]) - grid_p) < 1e-6):
+                        matched_idx = recorded_idx
+
+                    # Stufe 2: Linien-Match (L-1)
+                    if matched_idx is None:
+                        for j, sl in enumerate(sell_lines):
+                            if abs(float(sl) - grid_p) < 1e-6:
+                                matched_idx = j
+                                break
+
+                    # Stufe 3: FIFO-Fallback
                     if (matched_idx is None
                             and self._grid_bot.coin_inventory):
-                        # Fallback FIFO (De-Sync oder alter State)
                         matched_idx = 0
+
                     if (matched_idx is not None
                             and matched_idx < len(self._grid_bot.coin_inventory)):
                         matched = self._grid_bot.coin_inventory.pop(matched_idx)
                         matched_buy_price = float(matched[1])
                         if matched_idx < len(sell_lines):
                             sell_lines.pop(matched_idx)
+                        # Re-Indizierung der noch offenen SELL-Orders:
+                        # Eintraege mit inventory_idx > matched_idx
+                        # zeigen jetzt auf den falschen Index, weil
+                        # pop(matched_idx) alle nachfolgenden um 1 nach
+                        # links verschoben hat.
+                        for other_cid, other_info in open_orders.items():
+                            if other_cid == cid:
+                                continue
+                            if other_info.get("side") != "SELL":
+                                continue
+                            other_idx = other_info.get("inventory_idx")
+                            if isinstance(other_idx, int) and other_idx > matched_idx:
+                                other_info["inventory_idx"] = other_idx - 1
                     profit_gross = (
                         (exec_avg - matched_buy_price) * exec_qty
                         if matched_buy_price is not None else 0.0
@@ -563,16 +629,22 @@ class LiveRunner(BotRunnerBase):
 
     def step(self, candle: dict) -> list:
         """
-        Phase Live-2.4: Override von BotRunnerBase.step.
+        Phase Live-2.4 / 2.6: Override von BotRunnerBase.step.
         Live-Pipeline statt Simulation:
-            1. _poll_open_orders   (Status-Check + Buchhaltung)
+            0. _update_grid_sides   (L-29, dynamische Side-Reklassifikation)
+            1. _poll_open_orders    (Status-Check + Buchhaltung)
             2. _ensure_initial_buys (einmalig, idempotent)
             3. _sync_limit_orders   (fehlende + Gegen-Orders)
             4. _save_state          (Metriken)
 
-        GridBot.process_candle wird NICHT mehr aufgerufen — keine
-        Simulation im Live-Modus. Trades entstehen ausschliesslich
-        durch echte Binance-Fills, verbucht im Poll.
+        GridBot.process_candle wird NICHT aufgerufen — keine Simulation
+        im Live-Modus. Trades entstehen ausschliesslich durch echte
+        Binance-Fills, verbucht im Poll.
+
+        L-29 (Live-2.6): _update_grid_sides analog BT/PT (gridbot.py:603).
+        Damit wechseln Linien dynamisch zwischen 'buy'/'sell' je nach
+        Markt — Standard-Binance-Grid-Verhalten. Pufferzone bleibt durch
+        _buffer_zone_price geschuetzt (siehe gridbot.py:461-463).
 
         Returns: Liste der neu hinzugekommenen Trades seit letztem step.
         """
@@ -580,6 +652,9 @@ class LiveRunner(BotRunnerBase):
             return []
         cprice = float(candle.get("close", 0))
         trades_before = len(self._grid_bot.trade_log)
+
+        # L-29: Side-Reklassifikation als Pre-Step
+        self._grid_bot._update_grid_sides(cprice)
 
         self._poll_open_orders()
         self._ensure_initial_buys(cprice)
