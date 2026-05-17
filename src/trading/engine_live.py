@@ -78,19 +78,24 @@ class LiveRunner(BotRunnerBase):
 
     def initialize(self) -> tuple:
         """
-        Live-Mode-Initialisierung. Ruft super().initialize() (GridBot wird
-        konstruiert + intern _perform_initial_setup ausgefuehrt) und setzt
-        danach den simulierten Initial-Buy-State zurueck, damit der spaetere
-        _ensure_initial_buys() echte Orders senden kann, ohne doppelte
-        Buchung.
+        Live-Mode-Initialisierung.
 
-        Begruendung: GridBot.__init__ ruft bei bot_status='active' selbst
-        _perform_initial_setup (grid_bot.py:291), das die Sell-Linien-Buys
-        SIMULIERT (trade_log + coin_inventory + position). Im Live-Modus
-        sind das aber keine echten Trades — wir wollen sie durch echte
-        MARKET-Buys via _broker.execute_market_buy_real ersetzen.
+        Phase Live-2.5 (L-12 + L-2 Fix):
+        State-Reset NUR bei echtem Erst-Init (live_initial_buys_done=False).
+        Bei Re-Init (UI-Refresh, neuer LiveRunner aus Dispatcher) ist
+        super().initialize() bereits via GridBot.load_state(saved_state)
+        durchgelaufen und coin_inventory/trade_log/position sind aus dem
+        persistierten Bot-State wiederhergestellt. Ein Reset hier wuerde
+        sie vernichten und Coins bei Binance "verwaisen".
 
-        Reset betrifft:
+        Begruendung Reset bei Erst-Init: GridBot.__init__ ruft bei
+        bot_status='active' selbst _perform_initial_setup (grid_bot.py:291),
+        das die Sell-Linien-Buys SIMULIERT (trade_log + coin_inventory +
+        position). Im Live-Modus sind das keine echten Trades — wir wollen
+        sie durch echte MARKET-Buys via _broker.execute_market_buy_real
+        ersetzen.
+
+        Reset betrifft (nur Erst-Init):
           - trade_log[]              -> []
           - coin_inventory[]         -> []
           - position                 -> {"usdt": eff_capital, "coin": 0}
@@ -100,9 +105,15 @@ class LiveRunner(BotRunnerBase):
         ok, err = super().initialize()
         if not ok or self._grid_bot is None:
             return ok, err
+
+        # Live-2.5: Re-Init eines bestehenden Bots → State erhalten
+        bot_state = self._bot.get("state") or {}
+        if bot_state.get("live_initial_buys_done"):
+            return ok, err
+
+        # Erst-Init: GridBot hat simulierte Buys gemacht → resetten
         gb  = self._grid_bot
         cfg = self._bot.get("config", {})
-        # Effektives Kapital nach reserve_pct (= base_amount_usdt * num_grids)
         effective_investment = (cfg["total_investment"]
                                 * (1 - cfg.get("reserve_pct", 0.03)))
         gb.trade_log               = []
@@ -385,6 +396,11 @@ class LiveRunner(BotRunnerBase):
 
         # 1. Batched fetch
         binance_open = self._broker.get_open_orders()
+        # Live-2.5 (L-22): API-Fehler -> None. Wir wissen nicht welche
+        # Orders wirklich offen sind, also keine Diff-Verarbeitung.
+        # State bleibt unveraendert, naechster step retried.
+        if binance_open is None:
+            return
         still_open_cids = {o.get("clientOrderId") for o in binance_open}
 
         # 2. Diff: state-CIDs nicht mehr in Binance-openOrders
@@ -404,20 +420,28 @@ class LiveRunner(BotRunnerBase):
             side    = info.get("side", "")
             grid_p  = float(info.get("grid_price", 0))
 
-            if status == "FILLED":
-                fills      = details.get("fills", []) or []
+            # Live-2.5 (L-7): Fill-Erkennung via has_fill statt nur
+            # status=FILLED. Bei CANCELED/EXPIRED mit executedQty>0
+            # (Partial-Fill + Cancel) wurden Coins tatsaechlich
+            # gehandelt — muessen analog verbucht werden, sonst gehen
+            # sie im Bot-State verloren.
+            fills        = details.get("fills", []) or []
+            executed_qty = float(details.get("executedQty", 0) or 0)
+            has_fill     = executed_qty > 0 or any(
+                float(f.get("qty", 0)) > 0 for f in fills
+            )
+
+            if has_fill:
                 agg        = self._broker._aggregate_fills(fills)
                 exec_avg   = (agg["avg_price"]
                               if agg["total_qty"] > 0 else grid_p)
                 exec_qty   = (agg["total_qty"]
-                              if agg["total_qty"] > 0
-                              else float(details.get("executedQty", 0)))
+                              if agg["total_qty"] > 0 else executed_qty)
                 commission = agg["total_commission"]
                 comm_asset = agg["commission_asset"]
                 ts         = naive_utc_now().isoformat()
 
                 if side == "BUY":
-                    # Inventar + sell_lines wachsen
                     self._grid_bot.coin_inventory.append(
                         (exec_qty, grid_p, pd.Timestamp(ts))
                     )
@@ -441,13 +465,26 @@ class LiveRunner(BotRunnerBase):
                         "commission_asset": comm_asset,
                     })
                 elif side == "SELL":
-                    # FIFO-Match auf Inventar + sell_lines
+                    # Live-2.5 (L-1): Linien-basiertes Match statt FIFO.
+                    # Suche Index in sell_lines, wo sell_lines[i] == grid_p
+                    # (float-Toleranz). Pop diesen Index aus beiden
+                    # parallelen Listen. FIFO-Fallback bei De-Sync.
                     matched_buy_price = None
-                    if self._grid_bot.coin_inventory:
-                        matched = self._grid_bot.coin_inventory.pop(0)
+                    matched_idx = None
+                    for i, sl in enumerate(sell_lines):
+                        if abs(float(sl) - grid_p) < 1e-6:
+                            matched_idx = i
+                            break
+                    if (matched_idx is None
+                            and self._grid_bot.coin_inventory):
+                        # Fallback FIFO (De-Sync oder alter State)
+                        matched_idx = 0
+                    if (matched_idx is not None
+                            and matched_idx < len(self._grid_bot.coin_inventory)):
+                        matched = self._grid_bot.coin_inventory.pop(matched_idx)
                         matched_buy_price = float(matched[1])
-                    if sell_lines:
-                        sell_lines.pop(0)
+                        if matched_idx < len(sell_lines):
+                            sell_lines.pop(matched_idx)
                     profit_gross = (
                         (exec_avg - matched_buy_price) * exec_qty
                         if matched_buy_price is not None else 0.0
@@ -469,7 +506,7 @@ class LiveRunner(BotRunnerBase):
                         "commission_asset":  comm_asset,
                     })
 
-            # Order in jedem Fall (FILLED/CANCELED/...) aus tracked-Liste raus
+            # Order in jedem Fall aus tracked-Liste raus
             open_orders.pop(cid, None)
             changed = True
 
@@ -480,6 +517,49 @@ class LiveRunner(BotRunnerBase):
                 "state":     bot_state,
                 "trade_log": list(self._grid_bot.trade_log),
             })
+
+    # =======================================================================
+    # Live-2.5 (L-23): _save_state-Override um Live-spezifische State-Felder
+    # gegen Ueberschreibung durch Base zu schuetzen.
+    # =======================================================================
+
+    _LIVE_STATE_FIELDS = (
+        "live_initial_buys_done",
+        "live_inventory_sell_lines",
+        "live_open_orders",
+    )
+
+    def _save_state(self, current_price: float, df=None) -> None:
+        """
+        Phase Live-2.5 (L-23): BotRunnerBase._save_state ersetzt bot['state']
+        komplett mit GridBot.get_state(). Unsere Live-spezifischen Felder
+        (live_initial_buys_done, live_inventory_sell_lines, live_open_orders)
+        sind aber nicht in GridBot.get_state() — sie wuerden bei jedem
+        Step verloren gehen. Multi-Step-Tests vor diesem Fix zeigten:
+        nach 30 Steps 120 statt 4 Inventar-Eintraege (Flag wurde
+        ueberschrieben -> Initial-Buys wiederholt).
+
+        Fix: vor super()._save_state Snapshot der Live-Felder nehmen,
+        danach in den frisch geschriebenen State zurueckmergen.
+        """
+        # Snapshot vor Base-Save
+        bot_before = self.store.get_bot(self.bot_id) or {}
+        state_before = bot_before.get("state") or {}
+        live_snapshot = {
+            k: state_before[k]
+            for k in self._LIVE_STATE_FIELDS
+            if k in state_before
+        }
+
+        super()._save_state(current_price, df)
+
+        if not live_snapshot:
+            return  # Nichts zu mergen (z.B. ganz neuer Bot)
+
+        bot_after = self.store.get_bot(self.bot_id) or {}
+        state_after = dict(bot_after.get("state") or {})
+        state_after.update(live_snapshot)
+        self.store.update_bot(self.bot_id, {"state": state_after})
 
     def step(self, candle: dict) -> list:
         """

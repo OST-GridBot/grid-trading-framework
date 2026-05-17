@@ -709,25 +709,30 @@ class LiveBroker:
         }
         return self._signed_request("GET", "/api/v3/order", params)
 
-    def get_open_orders(self) -> list:
+    def get_open_orders(self) -> Optional[list]:
         """
-        Phase Live-2.4: Batched Polling — alle offenen Orders fuer
-        self.symbol mit einem einzigen API-Call.
+        Phase Live-2.4 / 2.5-Fix (L-22): Batched Polling — alle offenen
+        Orders fuer self.symbol mit einem einzigen API-Call.
 
         Effizienter als Einzel-Polling pro tracked clientOrderId:
         bei N offenen Orders 1 Request statt N. Reduziert Rate-Limit-
         Druck (Weight des Endpoints ist auch nur 6 statt 2*N).
 
         Returns:
-            Liste von Order-Dicts (clientOrderId, orderId, status, side,
-            price, origQty, executedQty, ...). Bei Fehler oder leerer
-            Antwort: leere Liste.
+            list[dict] bei Erfolg (kann auch leer sein wenn wirklich
+                       keine Orders offen sind).
+            None       bei API-Fehler / unbekanntem Stand. Aufrufer
+                       muss das pruefen und Poll-Cycle ueberspringen,
+                       damit tracked Orders nicht faelschlich als
+                       "verschwunden" interpretiert werden (L-22 Fix).
         """
         params = {"symbol": self.symbol}
         data = self._signed_request("GET", "/api/v3/openOrders", params)
         if isinstance(data, dict) and "error" in data:
-            return []
-        return data if isinstance(data, list) else []
+            return None
+        if not isinstance(data, list):
+            return None
+        return data
 
     def cancel_order(self, client_order_id: str) -> dict:
         """
