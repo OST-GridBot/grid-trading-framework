@@ -23,6 +23,7 @@ import hashlib
 import requests
 import pandas as pd
 from datetime import datetime
+from decimal import Decimal, ROUND_DOWN
 from src.utils.timezone import naive_utc_now
 from typing import Optional
 
@@ -489,27 +490,47 @@ class LiveBroker:
         """
         return f"{prefix}_{uuid.uuid4().hex[:16]}"
 
+    @staticmethod
+    def _decimals_from_step(step: float) -> int:
+        """
+        Robuste Decimal-Stellen-Ableitung aus tickSize/stepSize.
+        Loest F2 aus Live-2.1-Audit: log10(0.5)=-0.301 wurde frueher
+        gerundet zu 0 -> falsche Decimal-Stellen. String-Parsing umgeht
+        das.
+        """
+        s = f"{step:.10f}".rstrip("0").rstrip(".")
+        return len(s.split(".")[1]) if "." in s else 0
+
     def _format_price(self, price: float) -> str:
         """
-        Rundet auf das naechste Vielfache von tickSize ab (rounded-down,
-        Binance-konform). Decimal-Stellen werden aus tickSize abgeleitet.
+        Rundet auf das naechste Vielfache von tickSize ab (Binance-konform).
+        Decimal-basiert um Float-Drift zu vermeiden (Live-2.1b-Fix fuer
+        F1: tickSize=0.0001, F2: tickSize=0.5).
 
-        Beispiel: tickSize=0.01, price=70123.456 -> "70123.45"
-                  tickSize=1.0,  price=70123.456 -> "70123"
+        Beispiel: tickSize=0.01,    price=70123.456    -> "70123.45"
+                  tickSize=0.5,     price=70123.7      -> "70123.5"
+                  tickSize=0.0001,  price=70123.4567   -> "70123.4567"
+                  tickSize=1.0,     price=70123.456    -> "70123"
         """
         tick = self.symbol_filters.get("tickSize", 0.01)
         if tick <= 0:
             tick = 0.01
-        rounded = math.floor(price / tick) * tick
-        decimals = max(0, -int(round(math.log10(tick)))) if tick < 1 else 0
-        return f"{rounded:.{decimals}f}"
+        d_tick    = Decimal(str(tick))
+        d_price   = Decimal(str(price))
+        # ROUND_DOWN: niemals ueber den Soll-Tick — Binance lehnt sonst ab.
+        n_ticks   = (d_price / d_tick).quantize(Decimal("1"),
+                                                rounding=ROUND_DOWN)
+        d_rounded = n_ticks * d_tick
+        decimals  = self._decimals_from_step(tick)
+        return f"{float(d_rounded):.{decimals}f}"
 
     def _format_quantity(self, qty: float) -> str:
         """
-        Rundet auf stepSize ab, prueft minQty/maxQty. Bei qty < minQty wird
-        ValueError geworfen — Aufrufer muss das abfangen (z.B. zu kleine
-        Order-Menge gar nicht erst senden). Bei qty > maxQty wird auf maxQty
-        gekappt.
+        Rundet auf stepSize ab, prueft minQty/maxQty. Decimal-basiert
+        (Live-2.1b-Fix fuer F3: qty exakt maxQty wegen Float-Drift).
+
+        Bei qty < minQty wird ValueError geworfen.
+        Bei qty > maxQty wird auf maxQty gekappt.
 
         Beispiel: stepSize=0.00001, qty=0.000123456 -> "0.00012"
         """
@@ -518,15 +539,23 @@ class LiveBroker:
         max_qty = self.symbol_filters.get("maxQty",   9e18)
         if step <= 0:
             step = 1e-8
-        rounded = math.floor(qty / step) * step
-        if rounded < min_qty:
+        d_step    = Decimal(str(step))
+        d_qty     = Decimal(str(qty))
+        n_steps   = (d_qty / d_step).quantize(Decimal("1"),
+                                              rounding=ROUND_DOWN)
+        d_rounded = n_steps * d_step
+        f_rounded = float(d_rounded)
+        if f_rounded < min_qty:
             raise ValueError(
-                f"Quantity {rounded:.10f} < minQty {min_qty:.10f}"
+                f"Quantity {f_rounded:.10f} < minQty {min_qty:.10f}"
             )
-        if rounded > max_qty:
-            rounded = math.floor(max_qty / step) * step
-        decimals = max(0, -int(round(math.log10(step)))) if step < 1 else 0
-        return f"{rounded:.{decimals}f}"
+        if f_rounded > max_qty:
+            d_max     = Decimal(str(max_qty))
+            n_cap     = (d_max / d_step).quantize(Decimal("1"),
+                                                  rounding=ROUND_DOWN)
+            d_rounded = n_cap * d_step
+        decimals  = self._decimals_from_step(step)
+        return f"{float(d_rounded):.{decimals}f}"
 
     def _aggregate_fills(self, fills_list: list) -> dict:
         """
