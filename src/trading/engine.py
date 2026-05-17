@@ -108,31 +108,48 @@ class BotRunner:
         # Aktuellen Preis als initial_price für GridBot bestimmen
         initial_price = float(df["close"].iloc[-1]) if df is not None and not df.empty else None
 
-        # GridBot erstellen — direkt mit Parametern (kein grid_config Objekt)
+        # GridBot erstellen — Args 1:1 abgestimmt auf aktuelle
+        # GridBot.__init__-Signatur (siehe src/strategy/grid_bot.py:104).
+        # Frueher uebergebene Args df=, enable_trailing_down=, trailing_down_stop=
+        # existieren in GridBot nicht mehr (Auftrag N / ee05156). Neu ergaenzt:
+        # ROI/PL-basierte SL/TP, Grid Trigger, Initial-Buy-Flag, Stop-Bot-Flag,
+        # Trail-Stop-Levels - das sind alles Werte, die ueber bot_setup_form
+        # in bot["config"] geschrieben werden und bisher beim Re-Init verloren
+        # gingen.
         self._grid_bot = GridBot(
-            total_investment   = cfg["total_investment"],
-            lower_price        = cfg["lower_price"],
-            upper_price        = cfg["upper_price"],
-            num_grids          = cfg["num_grids"],
-            grid_mode          = cfg["grid_mode"],
-            fee_rate           = cfg.get("fee_rate", DEFAULT_FEE_RATE),
-            reserve_pct        = cfg.get("reserve_pct", 0.03),
-            stop_loss_pct      = cfg.get("stop_loss_pct"),
-            take_profit_pct    = cfg.get("take_profit_pct"),
+            total_investment    = cfg["total_investment"],
+            lower_price         = cfg["lower_price"],
+            upper_price         = cfg["upper_price"],
+            num_grids           = cfg["num_grids"],
+            grid_mode           = cfg["grid_mode"],
+            fee_rate            = cfg.get("fee_rate", DEFAULT_FEE_RATE),
+            reserve_pct         = cfg.get("reserve_pct", 0.03),
+            # SL/TP: drei moegliche Trigger-Varianten (UI erlaubt exklusiv eine)
+            stop_loss_pct       = cfg.get("stop_loss_pct"),
+            take_profit_pct     = cfg.get("take_profit_pct"),
+            stop_loss_roi_pct   = cfg.get("stop_loss_roi_pct"),
+            take_profit_roi_pct = cfg.get("take_profit_roi_pct"),
+            stop_loss_pl_usdt   = cfg.get("stop_loss_pl_usdt"),
+            take_profit_pl_usdt = cfg.get("take_profit_pl_usdt"),
+            # DD-Drosselung
             enable_dd_throttle  = cfg.get("enable_dd_throttle", False),
             dd_threshold_1      = cfg.get("dd_threshold_1", 0.10),
             dd_threshold_2      = cfg.get("dd_threshold_2", 0.20),
-            enable_trailing_up     = cfg.get("enable_trailing_up", False),
-            enable_trailing_down   = cfg.get("enable_trailing_down", False),
-            trailing_up_stop       = cfg.get("trailing_up_stop"),
-            trailing_down_stop     = cfg.get("trailing_down_stop"),
+            # Trailing (nur Up-Variante, Binance-Standard)
+            enable_trailing_up  = cfg.get("enable_trailing_up", False),
+            trailing_up_stop    = cfg.get("trailing_up_stop"),
+            trail_stop_levels   = cfg.get("trail_stop_levels", False),
+            # Recentering
             enable_recentering_up   = cfg.get("enable_recentering_up",
                                               cfg.get("enable_recentering", False)),
             enable_recentering_down = cfg.get("enable_recentering_down",
                                               cfg.get("enable_recentering", False)),
-            recenter_threshold     = cfg.get("recenter_threshold", 0.05),
-            df                     = df,
-            initial_price          = initial_price,
+            recenter_threshold  = cfg.get("recenter_threshold", 0.05),
+            # Grid Trigger / Initial-Buy / Stop-on-Trigger
+            grid_trigger_price  = cfg.get("grid_trigger_price"),
+            enable_initial_buy  = cfg.get("enable_initial_buy", True),
+            stop_bot_on_trigger = cfg.get("stop_bot_on_trigger", False),
+            initial_price       = initial_price,
         )
 
         # Bestehenden State laden falls vorhanden
@@ -253,8 +270,9 @@ class BotRunner:
                                    cfg.get("enable_recentering", False))
                            or cfg.get("enable_recentering_down",
                                       cfg.get("enable_recentering", False)),
-            "trailing":    cfg.get("enable_trailing_up", False)
-                           or cfg.get("enable_trailing_down", False),
+            # Trailing nur noch Up-Variante (Down wurde in Auftrag N entfernt).
+            # Alte cfg-Dicts mit enable_trailing_down werden ignoriert.
+            "trailing":    cfg.get("enable_trailing_up", False),
             "stop_loss":   cfg.get("stop_loss_pct")   is not None,
             "take_profit": cfg.get("take_profit_pct") is not None,
         }
