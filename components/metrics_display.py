@@ -1193,16 +1193,19 @@ def render_trade_log(trade_log: list, max_rows: int = 100000) -> None:
         # N.3: Force-Sell mit n>1 Paketen -> 'Ø X.XX (n=N)' (gewichteter
         # Durchschnitt), sonst Single-Match -> '@ X.XX'. Backward-Compat
         # via Fallback 1 fuer alte Trade-Log-Eintraege ohne matched_buy_count.
+        # B-3: adaptive Kommastellen analog Q.2 - bei niedrigpreisigen
+        # Coins mehr Nachkommastellen, damit Grid-Linien-Match sichtbar ist.
         mbp = t.get("matched_buy_price")
         if is_sell and mbp:
+            mbp_str = _fmt_price(float(mbp), with_unit=False)
             if t.get("force_sell"):
                 n = int(t.get("matched_buy_count", 1) or 1)
                 if n > 1:
-                    buy_ref = f"Ø {float(mbp):,.2f} (n={n})"
+                    buy_ref = f"Ø {mbp_str} (n={n})"
                 else:
-                    buy_ref = f"@ {float(mbp):,.2f}"
+                    buy_ref = f"@ {mbp_str}"
             else:
-                buy_ref = f"@ {float(mbp):,.2f}"
+                buy_ref = f"@ {mbp_str}"
         else:
             buy_ref = "–"
         # T.1: Preis-Spalte mit adaptiver Stellen-Regel (Q.2). Ohne USDT-
