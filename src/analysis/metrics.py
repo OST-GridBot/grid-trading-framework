@@ -5,8 +5,8 @@ Zentrale Kennzahlen-Bibliothek fuer das Grid-Trading-Framework.
 
 Wird von allen Betriebsmodi verwendet:
     - Backtesting  : src/backtesting/engine.py
-    - Paper Trading: src/trading/engine.py
-    - Live Trading : src/trading/engine.py (geplant)
+    - Paper Trading: src/trading/engine_paper.py (PaperRunner)
+    - Live Trading : src/trading/engine_live.py  (LiveRunner)
 
 Kennzahlen:
     ROI, CAGR, Sharpe Ratio, Sortino Ratio, Calmar Ratio,

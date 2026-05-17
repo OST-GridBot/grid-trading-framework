@@ -114,11 +114,11 @@ def _render_header_actions(mode: str, views: list, on_back: Callable[[], None]) 
                 disabled=len(running) == 0,
                 key="bl_update_all",
             ):
-                from src.trading.engine import BotRunner
+                from src.trading.engine import make_bot_runner
                 errors = []
                 for v in running:
                     try:
-                        BotRunner(v["id"]).run_update()
+                        make_bot_runner(v["id"]).run_update()
                     except Exception as e:
                         errors.append(f"{v['id']}: {e}")
                 if errors:

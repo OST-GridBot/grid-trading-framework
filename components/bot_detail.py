@@ -239,10 +239,10 @@ def _render_actions_running_bot(view: dict, on_back: Callable[[], None]) -> None
     with col_upd:
         if st.button("Preis aktualisieren", key=f"bd_update_{bid}",
                      disabled=not is_running, use_container_width=True):
-            from src.trading.engine import BotRunner
+            from src.trading.engine import make_bot_runner
             with st.spinner("Verarbeite neue Kerzen..."):
                 try:
-                    result = BotRunner(bid).run_update()
+                    result = make_bot_runner(bid).run_update()
                     if result.get("error"):
                         st.error(f"Fehler: {result['error']}")
                     else:
