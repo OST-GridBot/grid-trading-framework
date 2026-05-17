@@ -70,7 +70,7 @@ class BotRunner:
                 )
                 if not self._broker.init_ok:
                     self.store.update_bot(self.bot_id, {
-                        "status":     "Error",
+                        "status":     "error",
                         "last_error": self._broker.init_error,
                     })
             except Exception as e:
@@ -79,7 +79,7 @@ class BotRunner:
                 # nicht aufgeben (UI soll Bot weiter anzeigen koennen).
                 self._broker = None
                 self.store.update_bot(self.bot_id, {
-                    "status":     "Error",
+                    "status":     "error",
                     "last_error": f"Broker-Init fehlgeschlagen: {e}",
                 })
 
