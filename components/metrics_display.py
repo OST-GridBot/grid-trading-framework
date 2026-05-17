@@ -1172,7 +1172,18 @@ def render_trade_log(trade_log: list, max_rows: int = 100000) -> None:
         # Vorzeichen). Einnahmen (Sell) = Preis × Menge − Fee (Cash-Zufluss,
         # positives Vorzeichen). Initial-Buys -> Buy-Logik, Force-Sell ->
         # Sell-Logik.
-        cash_flow  = (price * amount - fee) if is_sell else -(price * amount + fee)
+        # B-1: Initial-Buys werden zum Marktpreis (cprice) ausgefuehrt, nicht
+        # zum Grid-Linien-Preis (price). 'price' ist nur Anchor fuer Chart-
+        # Marker und Sell-Linien-Match. Fuer cash_flow muss cprice genutzt
+        # werden, damit der angezeigte USDT-Abfluss dem realen position-
+        # Abzug entspricht. Fallback auf price wenn cprice fehlt (alte
+        # Snapshots oder defekte Eintraege).
+        if t.get("initial"):
+            effective_price = float(t.get("cprice") or price)
+        else:
+            effective_price = price
+        cash_flow  = ((effective_price * amount - fee) if is_sell
+                       else -(effective_price * amount + fee))
         cash_label = f"{cash_flow:+,.2f}" if cash_flow else "–"
         try:
             ts_str = utc_to_zurich(t.get("timestamp", "")).strftime("%Y-%m-%d %H:%M")
