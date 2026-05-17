@@ -204,13 +204,30 @@ def render_tab_grid_levels(view: dict) -> None:
 
     styled = df.style.applymap(_color_status, subset=["Status"])
 
+    # T.3: Adaptive Stellen-Regel fuer Preis-Spalte (analog Q.2).
+    # Beruht auf Max-Preis der Tabelle - so haben alle Zeilen die gleiche
+    # Stellen-Anzahl (Streamlit column_config laesst keine Per-Row-Format-
+    # Variation zu). Order-Volumen und Profit bleiben 2 Stellen, da
+    # USDT-Aggregate (keine Coin-Preise).
+    _prices = [r["price"] for r in rows_sorted if r["price"] > 0]
+    if not _prices:
+        _price_fmt = "$%.2f"     # Default bei leerer/inkonsistenter Liste
+    else:
+        _max_p = max(_prices)
+        if _max_p >= 100:
+            _price_fmt = "$%.2f"
+        elif _max_p >= 1:
+            _price_fmt = "$%.4f"
+        else:
+            _price_fmt = "$%.6f"
+
     st.dataframe(
         styled,
         use_container_width=True,
         hide_index=True,
         column_config={
             "Level": st.column_config.NumberColumn(format="%d"),
-            "Preis": st.column_config.NumberColumn(format="$%.2f"),
+            "Preis": st.column_config.NumberColumn(format=_price_fmt),
             "Order-Volumen": st.column_config.NumberColumn(
                 "Order-Volumen (USDT)", format="$%.2f"
             ),
