@@ -75,6 +75,10 @@ def _write_heartbeat(**kwargs) -> None:
     """
     Schreibt aktuellen Worker-Status in HEARTBEAT_PATH. Wird von der
     Streamlit-UI gelesen (page_live_trading._show_worker_status).
+
+    Atomic via Temp-File + os.replace (LF-1-Fix): write_text truncates+writes,
+    weshalb ein gleichzeitiger Reader die Datei im Truncate-Window leer sieht.
+    Mit os.replace wird der Wechsel atomar (POSIX + Windows auf gleichem FS).
     """
     data = {
         "pid":        os.getpid(),
@@ -83,7 +87,9 @@ def _write_heartbeat(**kwargs) -> None:
     data.update(kwargs)
     try:
         HEARTBEAT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        HEARTBEAT_PATH.write_text(json.dumps(data, indent=2))
+        tmp = HEARTBEAT_PATH.with_suffix(HEARTBEAT_PATH.suffix + ".tmp")
+        tmp.write_text(json.dumps(data, indent=2))
+        os.replace(tmp, HEARTBEAT_PATH)
     except Exception as e:
         # Heartbeat-Schreibfehler darf den Worker nicht stoppen.
         print(f"[Worker] Heartbeat-Schreibfehler: {e}")
@@ -96,10 +102,16 @@ def _check_pid_lock() -> bool:
     - Existiert ein PID-File mit lebendem Prozess: return False.
     - Existiert ein PID-File mit toter PID (stale): ueberschreiben, return True.
 
+    LF-2-Fix: os.kill(pid, 0) unterscheidet zwischen ProcessLookupError
+    (ESRCH: PID existiert nicht → stale) und PermissionError (EPERM: PID
+    existiert, gehoert anderem User → konservativ blockieren). Vorher wurde
+    EPERM faelschlich als stale interpretiert (PermissionError ist Subklasse
+    von OSError) — kritisch bei PID-Recycling auf privilegierte Prozesse.
+
     Auf Windows hat os.kill(pid, 0) eine etwas andere Semantik, aber der
     Best-Effort-Check funktioniert in der Praxis. Bei Race-Conditions
     (zwei Worker gleichzeitig starten) ist das Verhalten undefiniert —
-    fuer Single-User-App akzeptabel.
+    fuer Single-User-App akzeptabel (siehe LF-3 in Commit-Body).
     """
     if PID_PATH.exists():
         try:
@@ -110,14 +122,26 @@ def _check_pid_lock() -> bool:
             # Pruefen ob Prozess lebt
             try:
                 os.kill(old_pid, 0)
+                # Lebt — Lock verweigern
                 print(f"[Worker] Es laeuft bereits ein Worker (PID {old_pid}).")
                 print(f"[Worker] Falls dieser nicht mehr aktiv ist, manuell "
                       f"loeschen: {PID_PATH}")
                 return False
-            except (OSError, ProcessLookupError):
-                # Prozess existiert nicht -> stale PID
+            except ProcessLookupError:
+                # ESRCH: PID existiert nicht -> stale PID
                 print(f"[Worker] Stale PID-File ({old_pid}) wird "
                       f"ueberschrieben.")
+            except PermissionError:
+                # EPERM: PID existiert, gehoert anderem User
+                # Konservativ blockieren — kein Doppel-Worker riskieren.
+                print(f"[Worker] PID {old_pid} existiert (anderer Owner). "
+                      f"Falls dies kein Worker ist, manuell loeschen: "
+                      f"{PID_PATH}")
+                return False
+            except OSError as e:
+                # Andere errno-Werte: defensive als stale behandeln
+                print(f"[Worker] PID-Check unklar (errno={e.errno}), "
+                      f"behandle als stale.")
     try:
         PID_PATH.parent.mkdir(parents=True, exist_ok=True)
         PID_PATH.write_text(str(os.getpid()))
@@ -260,7 +284,8 @@ def main(max_iterations: Optional[int] = None) -> int:
     if not _check_pid_lock():
         return 1
 
-    interval = int(WORKER_INTERVAL_SECONDS)
+    # LF-4-Fix: min. 1s — schuetzt vor Konfig-Unfall (float < 1 oder 0)
+    interval = max(1, int(WORKER_INTERVAL_SECONDS))
     started_at = datetime.now(timezone.utc).isoformat()
 
     print(f"[Worker] Live-Trading-Worker gestartet (PID {os.getpid()})")
