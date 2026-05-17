@@ -781,8 +781,8 @@ def _render_chart_main(params: dict, mode: str = "paper") -> None:
                                           if mode == "backtest"
                                           else float(df["close"].iloc[-1])),
             # TP/SL-Trigger gibt's im Setup-Stadium noch nicht
-            sl_trigger                = None,
-            tp_trigger                = None,
+            sl_triggers               = None,
+            tp_triggers               = None,
             show_sltp_trigger_markers = settings.get("show_sltp_trigger_markers", True),
             grid_lines_outside        = gl_outside,
             show_grid_outside_range   = settings.get("show_grid_outside_range", True),

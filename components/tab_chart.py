@@ -241,30 +241,31 @@ def render_tab_chart(
         except Exception:
             chart_anchor = None
 
-    # ── M.2: TP/SL-Trigger-Daten extrahieren ────────────────────────────────
-    metrics_view = view.get("metrics") or {}
-    sl_trigger_obj = None
-    tp_trigger_obj = None
-    sl_ts_raw = metrics_view.get("stop_loss_trigger_timestamp") \
-                 or state.get("stop_loss_trigger_timestamp")
-    sl_pr_raw = metrics_view.get("stop_loss_trigger_price") \
-                 or state.get("stop_loss_trigger_price")
-    if sl_ts_raw and sl_pr_raw:
+    # ── M.2 / U.1: TP/SL-Trigger-Marker als LISTEN aus trade_log ──────────
+    # Seit N.1 koennen SL/TP mehrfach pro Bot-Lauf triggern. Quelle: alle
+    # trade_log-Eintraege mit force_sell=True (force_sell_trigger gibt die
+    # Art an). Funktioniert auch fuer alte Snapshots, da Force-Sells
+    # bereits seit langem im trade_log persistiert sind.
+    sl_triggers_list = []
+    tp_triggers_list = []
+    for t in (trade_log_display or []):
+        if not t.get("force_sell"):
+            continue
+        ts_raw = t.get("timestamp")
+        # cprice = Marktpreis bei Trigger (close der Trigger-Kerze);
+        # Fallback price falls cprice fehlt.
+        pr_raw = t.get("cprice") if t.get("cprice") is not None else t.get("price")
+        trig_kind = t.get("force_sell_trigger")
+        if not ts_raw or pr_raw is None:
+            continue
         try:
-            sl_trigger_obj = {"time": utc_to_zurich(sl_ts_raw),
-                              "price": float(sl_pr_raw)}
+            entry = {"time": utc_to_zurich(ts_raw), "price": float(pr_raw)}
         except Exception:
-            sl_trigger_obj = None
-    tp_ts_raw = metrics_view.get("take_profit_trigger_timestamp") \
-                 or state.get("take_profit_trigger_timestamp")
-    tp_pr_raw = metrics_view.get("take_profit_trigger_price") \
-                 or state.get("take_profit_trigger_price")
-    if tp_ts_raw and tp_pr_raw:
-        try:
-            tp_trigger_obj = {"time": utc_to_zurich(tp_ts_raw),
-                              "price": float(tp_pr_raw)}
-        except Exception:
-            tp_trigger_obj = None
+            continue
+        if trig_kind == "stop_loss":
+            sl_triggers_list.append(entry)
+        elif trig_kind == "take_profit":
+            tp_triggers_list.append(entry)
 
     plot_grid_chart_v2(
         df                  = df_display,
@@ -295,8 +296,8 @@ def render_tab_chart(
         show_trailing_fill     = settings["show_trailing_fill"],
         show_recentering_fill  = settings["show_recentering_fill"],
         chart_anchor_price        = chart_anchor,
-        sl_trigger                = sl_trigger_obj,
-        tp_trigger                = tp_trigger_obj,
+        sl_triggers               = sl_triggers_list,
+        tp_triggers               = tp_triggers_list,
         show_sltp_trigger_markers = settings.get("show_sltp_trigger_markers", True),
         grid_lines_outside        = grid_lines_outside,
         show_grid_outside_range   = settings.get("show_grid_outside_range", True),

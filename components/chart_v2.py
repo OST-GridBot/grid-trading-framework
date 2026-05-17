@@ -40,9 +40,11 @@ def plot_grid_chart_v2(
     show_recentering_fill:  bool  = True,
     # M.1 — Anker fuer Y-Achsen-Zentrierung (None = Auto-Scale)
     chart_anchor_price:        Optional[float] = None,
-    # M.2 — TP/SL-Trigger-Marker
-    sl_trigger:                Optional[dict]  = None,  # {time, price}
-    tp_trigger:                Optional[dict]  = None,
+    # M.2 / U.1 — TP/SL-Trigger-Marker als LISTEN (mehrere Trigger pro Bot-
+    # Lauf moeglich seit N.1 Re-Trigger). Jeder Eintrag: {time, price}.
+    # Backward-Compat: None / leere Liste -> keine Marker.
+    sl_triggers:               Optional[list]  = None,
+    tp_triggers:               Optional[list]  = None,
     show_sltp_trigger_markers: bool            = True,
     # D — graue Vorschau-Linien oberhalb der current Upper-Range
     grid_lines_outside:        Optional[list]  = None,
@@ -278,17 +280,27 @@ def plot_grid_chart_v2(
         round(float(chart_anchor_price), 4) if chart_anchor_price else None
     )
 
-    # M.2 — TP/SL-Trigger-Marker als {time, price}
-    def _serialize_trigger(trig):
-        if not trig or not show_sltp_trigger_markers:
-            return None
-        ts = _to_unix(trig.get("time")) if isinstance(trig, dict) else None
-        pr = trig.get("price") if isinstance(trig, dict) else None
-        if ts is None or pr is None:
-            return None
-        return {"time": ts, "price": round(float(pr), 4)}
-    sl_trigger_json = json.dumps(_serialize_trigger(sl_trigger))
-    tp_trigger_json = json.dumps(_serialize_trigger(tp_trigger))
+    # M.2 / U.1 — TP/SL-Trigger-Marker als Listen.
+    # Jeder Eintrag: {time: unix_ts, price: float}. Defensive: ungueltige
+    # Eintraege (None timestamp / price) werden uebersprungen.
+    def _serialize_triggers(triggers):
+        if not triggers or not show_sltp_trigger_markers:
+            return []
+        out = []
+        for trig in triggers:
+            if not isinstance(trig, dict):
+                continue
+            ts = _to_unix(trig.get("time"))
+            pr = trig.get("price")
+            if ts is None or pr is None:
+                continue
+            try:
+                out.append({"time": ts, "price": round(float(pr), 4)})
+            except (TypeError, ValueError):
+                continue
+        return out
+    sl_triggers_json = json.dumps(_serialize_triggers(sl_triggers))
+    tp_triggers_json = json.dumps(_serialize_triggers(tp_triggers))
 
     HEADER_H = 44
     chart_h  = height - HEADER_H
@@ -449,8 +461,8 @@ def plot_grid_chart_v2(
   const showTrailingFill     = {show_trailing_fill_js};
   const showRecenteringFill  = {show_recentering_fill_js};
   const chartAnchorPrice     = {chart_anchor_json};
-  const slTrigger            = {sl_trigger_json};
-  const tpTrigger            = {tp_trigger_json};
+  const slTriggers           = {sl_triggers_json};
+  const tpTriggers           = {tp_triggers_json};
 
   // Marker colours — slightly darker than original
   const BUY_COLOR  = '#158A50';  // darker green
@@ -560,22 +572,28 @@ def plot_grid_chart_v2(
       text:     'Bot Start',
     }});
   }}
-  if (slTrigger !== null) {{
-    seriesMarkers.push({{
-      time:     slTrigger.time,
-      position: 'aboveBar',
-      color:    '#EF4444',
-      shape:    'circle',
-      text:     'SL',
+  // U.1: alle SL/TP-Trigger-Events visualisieren (mehrere pro Bot-Lauf
+  // moeglich seit N.1 Re-Trigger).
+  if (Array.isArray(slTriggers)) {{
+    slTriggers.forEach(function(trig) {{
+      seriesMarkers.push({{
+        time:     trig.time,
+        position: 'aboveBar',
+        color:    '#EF4444',
+        shape:    'circle',
+        text:     'SL',
+      }});
     }});
   }}
-  if (tpTrigger !== null) {{
-    seriesMarkers.push({{
-      time:     tpTrigger.time,
-      position: 'aboveBar',
-      color:    '#10B981',
-      shape:    'circle',
-      text:     'TP',
+  if (Array.isArray(tpTriggers)) {{
+    tpTriggers.forEach(function(trig) {{
+      seriesMarkers.push({{
+        time:     trig.time,
+        position: 'aboveBar',
+        color:    '#10B981',
+        shape:    'circle',
+        text:     'TP',
+      }});
     }});
   }}
   // setMarkers erwartet aufsteigende Zeitstempel
