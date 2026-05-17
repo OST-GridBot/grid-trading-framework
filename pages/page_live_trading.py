@@ -236,11 +236,43 @@ def _lt_handle_submit(params: dict) -> None:
     Wird von render_bot_setup_form aufgerufen, sobald der User auf
     "Bot starten" klickt. Erstellt einen Live-Trading-Bot und springt
     direkt in die Detail-View.
+
+    Phase Live-1: Vor dem create_bot wird ein Probe-LiveBroker instanziiert.
+    Dieser laedt /api/v3/time, /api/v3/exchangeInfo und /api/v3/account und
+    prueft Permissions sowie die Konfiguration gegen die Binance-Filter
+    (tickSize, minNotional, minQty). Bei Init-Fehler oder Konfig-Verstoss
+    wird der Bot NICHT erstellt — User-Feedback per st.error / st.warning.
     """
     name = (params.get("name") or "").strip() or f"{params['coin']}/USDT"
     # create_bot kennt weder "name" noch "period" - rausfiltern
     sim_kwargs = {k: v for k, v in params.items()
                   if k not in ("name", "period")}
+
+    # ── Phase Live-1: Probe-Validierung gegen Binance ───────────────────
+    from src.trading.live_broker import LiveBroker
+    probe = LiveBroker(
+        api_key    = BINANCE_API_KEY,
+        api_secret = BINANCE_SECRET_KEY,
+        coin       = params["coin"],
+        testnet    = False,
+    )
+    if not probe.init_ok:
+        st.error(f"Live-Bot kann nicht erstellt werden: {probe.init_error}")
+        return
+    for warn in probe.init_warnings:
+        st.warning(warn)
+
+    ok, errs = probe.validate_config(
+        lower_price      = params["lower_price"],
+        upper_price      = params["upper_price"],
+        num_grids        = params["num_grids"],
+        total_investment = params["total_investment"],
+    )
+    if not ok:
+        for err_msg in errs:
+            st.error(f"Konfig-Fehler: {err_msg}")
+        return
+
     bot_id, err = bot_store.create_bot(mode="live", **sim_kwargs)
     if err or bot_id is None:
         st.error(err or "Bot konnte nicht erstellt werden.")

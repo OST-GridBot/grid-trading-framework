@@ -27,6 +27,9 @@ BINANCE_EXCHANGE_INFO   = "/api/v3/exchangeInfo"
 BINANCE_TICKER_ENDPOINT = "/api/v3/ticker/24hr"
 BINANCE_REQUEST_TIMEOUT = 15
 BINANCE_MAX_LIMIT       = 1000
+# Live-Trading (Phase Live-1): recvWindow fuer signed Requests in ms.
+# 5000ms ist Binance-Default und reicht bei normalem Netzwerk-Latenz.
+BINANCE_RECV_WINDOW     = 5000
 
 BINANCE_INTERVAL_MAP = {
     "1m": "1m", "5m": "5m", "15m": "15m",

@@ -48,6 +48,41 @@ class BotRunner:
             raise ValueError(f"Bot {bot_id} nicht gefunden")
         self._grid_bot: Optional[GridBot] = None
 
+        # Phase Live-1 (L-1): Broker-Instanz fuer Live-Modus.
+        # PT/BT bleiben unveraendert (_broker=None, GridBot.process_candle
+        # macht Simulation). LT bekommt LiveBroker, der beim Init Server-
+        # Time, exchangeInfo und Permissions prueft. Echte Orders kommen
+        # erst in Phase Live-2.
+        self._broker = None
+        if self._bot.get("mode") == "live":
+            try:
+                from config.settings import (
+                    BINANCE_API_KEY, BINANCE_SECRET_KEY
+                )
+                from src.trading.live_broker import LiveBroker
+                cfg = self._bot.get("config", {})
+                self._broker = LiveBroker(
+                    api_key    = BINANCE_API_KEY,
+                    api_secret = BINANCE_SECRET_KEY,
+                    coin       = self._bot["coin"],
+                    testnet    = False,
+                    fee_rate   = cfg.get("fee_rate", DEFAULT_FEE_RATE),
+                )
+                if not self._broker.init_ok:
+                    self.store.update_bot(self.bot_id, {
+                        "status":     "Error",
+                        "last_error": self._broker.init_error,
+                    })
+            except Exception as e:
+                # Defensiv: falls Import/Instanziierung crasht, Bot in
+                # Error-Status setzen, aber BotRunner-Konstruktor selbst
+                # nicht aufgeben (UI soll Bot weiter anzeigen koennen).
+                self._broker = None
+                self.store.update_bot(self.bot_id, {
+                    "status":     "Error",
+                    "last_error": f"Broker-Init fehlgeschlagen: {e}",
+                })
+
     # ── Bot initialisieren ───────────────────────────────────────────────────
 
     def initialize(self) -> tuple[bool, str]:
