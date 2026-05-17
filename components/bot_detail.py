@@ -50,21 +50,48 @@ _BADGE_COLORS = {
     "active":              "#34D399",  # gruen
 }
 _BADGE_LABELS = {
-    "running":   "● LÄUFT",
-    "stopped":   "■ GESTOPPT",
-    "completed": "✓ ABGESCHLOSSEN",
-    "error":     "⚠ FEHLER",
-    "waiting_for_trigger": "⏳ WARTET AUF TRIGGER",
-    "paused":              "⏸ PAUSIERT (out-of-range)",
-    "active":              "● AKTIV",
+    # S.3: Title Case englisch, Symbole bleiben fuer Badge-Visual
+    "running":   "● Running",
+    "stopped":   "■ Stopped",
+    "completed": "✓ Completed",
+    "error":     "⚠ Error",
+    "waiting_for_trigger": "⏳ Waiting for Trigger",
+    "paused":              "⏸ Paused (out-of-range)",
+    "active":              "● Active",
 }
+
+# S.3: Plain-Text-Mapping (ohne Symbole) fuer Tabellen und Header.
+# Wird in metrics_display Tab 'All' + F-3-Header genutzt.
+_STATUS_LABELS_PLAIN = {
+    "running":             "Running",
+    "stopped":             "Stopped",
+    "completed":           "Completed",
+    "error":               "Error",
+    "waiting_for_trigger": "Waiting for Trigger",
+    "paused":              "Paused",
+    "active":              "Active",
+}
+
+
+def format_bot_status(status: str) -> str:
+    """
+    Liefert ein lesbares Title-Case-Label fuer den Bot-Status (ohne Symbole).
+
+    Fallback fuer unbekannte Werte: snake_case wird zu Title Case
+    konvertiert (z.B. 'foo_bar' -> 'Foo Bar'). None / leerer String -> '–'.
+    """
+    if not status:
+        return "–"
+    return _STATUS_LABELS_PLAIN.get(
+        status, str(status).replace("_", " ").title()
+    )
 
 
 def status_badge(status: str) -> str:
     """Status-Pill als HTML-Snippet. Kennt running/stopped/completed/error
     sowie die inneren Grid-Bot-Status (waiting_for_trigger/paused/active)."""
     color = _BADGE_COLORS.get(status, "#94A3B8")
-    label = _BADGE_LABELS.get(status, str(status).upper())
+    label = _BADGE_LABELS.get(status, str(status).replace("_", " ").title())
     return (f"<span style='color:{color}; font-weight:700; "
             f"font-size:0.8rem;'>{label}</span>")
 

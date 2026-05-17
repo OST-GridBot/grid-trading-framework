@@ -497,9 +497,12 @@ def _render_tab_all(metrics: dict, trade_log: list) -> None:
 
     # Zwei Spalten: Mechanismen | Kapital & Aktivitaet
     col_mech, col_cap = st.columns(2)
+    # S.3: Bot-Status als Title-Case-Label (z.B. 'Waiting for Trigger'
+    # statt 'waiting_for_trigger').
+    from components.bot_detail import format_bot_status
     with col_mech:
         _render_section_table("Mechanismen", [
-            ("Bot-Status",          bot_status if bot_status else "–", None),
+            ("Bot-Status",          format_bot_status(bot_status), None),
             ("Grid Trigger",        trigger_label, trigger_sec),
             _mech_row("Recentering Events", rc_on, rc_count, None),
             _mech_row("Trailing Events",    tr_on, tr_count, None),
@@ -766,7 +769,9 @@ def _render_tab_bot_details(metrics: dict, trade_log: list) -> None:
     # (zusaetzlich zu Tab 'All', wo sie als Tabellen-Zeilen erscheinen).
     bot_status   = metrics.get("bot_status")
     grid_trigger = metrics.get("grid_trigger_price")
-    _bs_str = bot_status if bot_status else "–"
+    # S.3: Bot-Status als Title-Case-Label.
+    from components.bot_detail import format_bot_status
+    _bs_str = format_bot_status(bot_status)
     # Q.2: Grid Trigger ist Coin-Preis -> adaptive Kommastellen
     _gt_str = _fmt_price(grid_trigger) if grid_trigger else "immediate start"
     st.markdown(
