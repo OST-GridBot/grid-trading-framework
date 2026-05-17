@@ -1134,8 +1134,34 @@ def render_trade_log(trade_log: list, max_rows: int = 100000) -> None:
 
     from src.utils.timezone import utc_to_zurich
 
+    # T.2: Coin-Inventar pro Trade cumulative aus VOLLSTAENDIGEM trade_log
+    # berechnen (chronologisch, aelteste zuerst). Dann gleiches Slice wie
+    # die gerenderten Trades nehmen, damit Truncation (max_rows) den Stand
+    # ab Truncation-Punkt korrekt darstellt.
+    #
+    # Logik:
+    #   BUY              -> running_coin += amount
+    #   SELL force_sell  -> running_coin  = 0      (komplettes Inventar weg)
+    #   SELL normal      -> running_coin -= amount
+    inv_full = []
+    running_coin = 0.0
+    for t in trade_log:
+        ttype = (t.get("type") or "").upper()
+        amt   = float(t.get("amount", 0) or 0)
+        if ttype == "BUY":
+            running_coin += amt
+        elif ttype == "SELL":
+            if t.get("force_sell"):
+                running_coin = 0.0
+            else:
+                running_coin -= amt
+        inv_full.append(max(0.0, running_coin))
+
+    trades_slice = trade_log[-max_rows:]
+    inv_slice    = inv_full[-max_rows:]
+
     rows = []
-    for t in trade_log[-max_rows:]:
+    for t, inv in zip(trades_slice, inv_slice):
         type_label = _classify_trade_type(t)
         is_sell    = type_label in ("sell", "Stop-Loss", "Take-Profit")
         profit     = t.get("profit", 0) or 0
@@ -1168,11 +1194,17 @@ def render_trade_log(trade_log: list, max_rows: int = 100000) -> None:
                 buy_ref = f"@ {float(mbp):,.2f}"
         else:
             buy_ref = "–"
+        # T.1: Preis-Spalte mit adaptiver Stellen-Regel (Q.2). Ohne USDT-
+        # Suffix in der Zelle - die Spalte selbst heisst "Preis".
+        price_str = _fmt_price(price, with_unit=False) if price > 0 else "–"
         rows.append({
             "Zeit":                ts_str,
             "Typ":                 type_label,
-            "Preis":               f"{price:,.2f}",
+            "Preis":               price_str,
             "Menge":               f"{amount:.6f}",
+            # T.2: Coin-Inventar nach diesem Trade (gleiche Stellen-Konvention
+            # wie Menge fuer Konsistenz).
+            "Coin-Inventar":       f"{inv:.6f}",
             "Gebühr":              f"{fee:.4f}",
             "Einnahmen / Ausgaben": cash_label,
             "Profit":              f"{profit:+.4f}" if is_sell else "–",
