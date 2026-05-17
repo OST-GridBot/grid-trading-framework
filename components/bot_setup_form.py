@@ -1138,7 +1138,7 @@ def _validate_dd_thresholds(params: dict) -> Optional[str]:
     except (TypeError, ValueError):
         return None
     if t2f <= t1f:
-        return (f"DD-Schwelle 2 ({t2f*100:.0f}%) muss groesser als "
+        return (f"DD-Schwelle 2 ({t2f*100:.0f}%) muss grösser als "
                 f"Schwelle 1 ({t1f*100:.0f}%) sein.")
     return None
 
@@ -1151,10 +1151,10 @@ def _section_dd_throttle(mode: str) -> dict:
             _caption("Drawdown vom Peak des Portfolio-Werts"),
             unsafe_allow_html=True,
         )
-        st.markdown(_caption("Schwelle 1 (%)  → 50% Ordergröße"), unsafe_allow_html=True)
+        st.markdown(_caption("Schwelle 1 (%)  → 50% Ordergrösse"), unsafe_allow_html=True)
         t1 = st.slider("", 5.0, 30.0, 10.0, 1.0,
                         key=f"{mode}_new_dd_t1", label_visibility="collapsed") / 100
-        st.markdown(_caption("Schwelle 2 (%)  → 25% Ordergröße"), unsafe_allow_html=True)
+        st.markdown(_caption("Schwelle 2 (%)  → 25% Ordergrösse"), unsafe_allow_html=True)
         t2 = st.slider("", 10.0, 50.0, 20.0, 1.0,
                         key=f"{mode}_new_dd_t2", label_visibility="collapsed") / 100
     return {"enable_dd_throttle": enabled, "dd_threshold_1": t1, "dd_threshold_2": t2}

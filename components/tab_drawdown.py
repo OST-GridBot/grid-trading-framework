@@ -336,7 +336,7 @@ def _render_dd_chart(
     # Nones rausfiltern
     pairs = [(t, d) for t, d in zip(ts, dd) if t is not None]
     if not pairs:
-        st.info("Keine gueltigen Timestamps in der DD-Historie.")
+        st.info("Keine gültigen Timestamps in der DD-Historie.")
         return
     xs, ys = zip(*pairs)
 
@@ -402,7 +402,7 @@ def _render_phases_table(phases: List[dict], is_running: bool) -> None:
                      oder gestoppten Bots -> stattdessen End-Timestamp.
     """
     if not phases:
-        st.info("Keine Phasen-Daten verfuegbar.")
+        st.info("Keine Phasen-Daten verfügbar.")
         return
 
     rows = []
@@ -472,16 +472,16 @@ def render_tab_drawdown(view: dict) -> None:
 
     # Edge-Case: keine History (alter Snapshot ohne Tracking oder Bot noch nicht gelaufen)
     if not dd_history:
-        st.info("Keine Drawdown-Historie verfuegbar. "
-                "Bei aelteren Bot-Snapshots wurde dieser Verlauf noch nicht "
-                "getrackt — fuehre einen neuen Backtest aus oder warte auf "
+        st.info("Keine Drawdown-Historie verfügbar. "
+                "Bei älteren Bot-Snapshots wurde dieser Verlauf noch nicht "
+                "getrackt — führe einen neuen Backtest aus oder warte auf "
                 "neue Kerzen-Updates.")
         return
 
     # Hinweis (dezent): bei deaktivierter Drosselung wird trotzdem der
     # DD-Verlauf gezeigt; Tabelle enthaelt nur eine Normal-Phase.
     if not cfg.get("enable_dd_throttle", False):
-        st.caption("Hinweis: DD-Drosselung war fuer diesen Bot nicht "
+        st.caption("Hinweis: DD-Drosselung war für diesen Bot nicht "
                     "aktiviert. Der DD-Verlauf wird informativ angezeigt.")
 
     thr1 = float(cfg.get("dd_threshold_1", 0.10) or 0.10)

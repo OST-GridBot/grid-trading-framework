@@ -158,7 +158,7 @@ def render_chart_settings(key_prefix: str) -> dict:
                 key=f"chs_{key_prefix}_trailing_stops",
             )
             settings["show_grid_outside_range"] = st.checkbox(
-                "Grid-Linien außerhalb Range",
+                "Grid-Linien ausserhalb Range",
                 value=_DEFAULTS["show_grid_outside_range"],
                 key=f"chs_{key_prefix}_grid_outside",
             )

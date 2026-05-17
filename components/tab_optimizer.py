@@ -120,7 +120,7 @@ def render_tab_optimizer(view: dict) -> None:
             st.error(err)
             return
         if df is None or df.empty:
-            st.warning("Keine Preisdaten verfuegbar.")
+            st.warning("Keine Preisdaten verfügbar.")
             return
         with st.spinner("Optimierung läuft…"):
             from src.backtesting.optimizer import evaluate_all_combos
@@ -163,7 +163,7 @@ def render_tab_optimizer(view: dict) -> None:
     st.markdown(
         f"<div style='font-size:0.78rem; color:#94A3B8; "
         f"margin-bottom:6px;'>{len(df_out)} Kombinationen — "
-        f"Default sortiert nach ROI absteigend (Spalten klickbar fuer "
+        f"Default sortiert nach ROI absteigend (Spalten klickbar für "
         f"andere Sortierung).</div>",
         unsafe_allow_html=True,
     )
