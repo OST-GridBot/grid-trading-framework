@@ -1168,7 +1168,7 @@ def render_trade_log(trade_log: list, max_rows: int = 100000) -> None:
             "Typ":                 type_label,
             "Preis":               f"{price:,.2f}",
             "Menge":               f"{amount:.6f}",
-            "Gebuehr":             f"{fee:.4f}",
+            "Gebühr":              f"{fee:.4f}",
             "Einnahmen / Ausgaben": cash_label,
             "Profit":              f"{profit:+.4f}" if is_sell else "–",
             "Buy-Bezug":           buy_ref,
