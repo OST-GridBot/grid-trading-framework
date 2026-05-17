@@ -286,6 +286,35 @@ def _render_actions_backtest(view: dict, on_back: Callable[[], None]) -> None:
 # Hauptfunktion
 # ---------------------------------------------------------------------------
 
+def _render_init_warnings_banner(view: dict) -> None:
+    """
+    Phase Live-1: Persistentes gelbes Banner mit Sicherheits-Warnungen aus
+    LiveBroker-Init (z.B. canWithdraw=True). Verschwindet erst, wenn User
+    "Verstanden" klickt — dann wird init_warnings im Bot-State geleert.
+    """
+    warnings = view.get("init_warnings") or []
+    if not warnings:
+        return
+    bid = view["id"]
+    # Banner-HTML
+    items = "".join(
+        f"<li style='margin-bottom:4px;'>{w}</li>" for w in warnings
+    )
+    st.markdown(
+        f"<div style='padding:12px 16px; background:rgba(251,191,36,0.10); "
+        f"border:1px solid #FBBF24; border-radius:6px; margin-bottom:12px;'>"
+        f"<div style='color:#FBBF24; font-weight:700; margin-bottom:6px;'>"
+        f"⚠ Sicherheits-Hinweis</div>"
+        f"<ul style='margin:0; padding-left:20px; color:#E2E8F0; "
+        f"font-size:0.9rem;'>{items}</ul>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+    if st.button("Verstanden", key=f"bd_warn_ack_{bid}"):
+        bot_store.update_bot(bid, {"init_warnings": []})
+        st.rerun()
+
+
 def render_bot_detail(view: dict, on_back: Callable[[], None]) -> None:
     """
     Rendert die komplette Bot-Detail-Ansicht.
@@ -298,6 +327,7 @@ def render_bot_detail(view: dict, on_back: Callable[[], None]) -> None:
                   zuruecksetzen und st.rerun() ausloesen.
     """
     _render_header(view)
+    _render_init_warnings_banner(view)
 
     mode = view.get("mode", "")
     if mode == "backtest":

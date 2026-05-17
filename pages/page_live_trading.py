@@ -259,8 +259,10 @@ def _lt_handle_submit(params: dict) -> None:
     if not probe.init_ok:
         st.error(f"Live-Bot kann nicht erstellt werden: {probe.init_error}")
         return
-    for warn in probe.init_warnings:
-        st.warning(warn)
+    # init_warnings werden NICHT mehr per st.warning angezeigt (die wuerden
+    # vom st.rerun() in 0.5s ueberschrieben). Stattdessen persistieren wir
+    # sie unten in bot["init_warnings"] und rendern sie als gelbes Banner
+    # in der Bot-Detail-View, bis User auf "Verstanden" klickt.
 
     ok, errs = probe.validate_config(
         lower_price      = params["lower_price"],
@@ -277,8 +279,12 @@ def _lt_handle_submit(params: dict) -> None:
     if err or bot_id is None:
         st.error(err or "Bot konnte nicht erstellt werden.")
         return
-    # Name nachtragen (create_bot speichert keinen Namen)
-    bot_store.update_bot(bot_id, {"name": name})
+    # Name nachtragen + Init-Warnings persistieren (siehe Banner-Logik in
+    # components/bot_detail.render_bot_detail).
+    update = {"name": name}
+    if probe.init_warnings:
+        update["init_warnings"] = list(probe.init_warnings)
+    bot_store.update_bot(bot_id, update)
     # W.1: Smart-Setup-Vorschlag aus der Sidebar zuruecksetzen
     from components.bot_setup_form import reset_smart_setup
     reset_smart_setup("live")
