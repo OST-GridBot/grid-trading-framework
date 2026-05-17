@@ -109,7 +109,7 @@ class LiveBroker:
             resp = requests.get(url, timeout=10)
             data = resp.json()
             if "serverTime" not in data:
-                self.init_error = f"Server-Time-Antwort ungueltig: {data}"
+                self.init_error = f"Server-Time-Antwort ungültig: {data}"
                 return False
             server_ms = int(data["serverTime"])
             local_ms  = int(time.time() * 1000)
@@ -181,7 +181,7 @@ class LiveBroker:
             return False
         if data.get("canWithdraw", False):
             self.init_warnings.append(
-                "API-Key hat canWithdraw=True. Fuer Live-Trading nicht noetig "
+                "API-Key hat canWithdraw=True. Für Live-Trading nicht nötig "
                 "und ein Sicherheitsrisiko — bitte in Binance deaktivieren."
             )
         return True
@@ -213,7 +213,7 @@ class LiveBroker:
 
         # Basis-Sanity
         if lower_price <= 0 or upper_price <= 0:
-            errors.append("Preise muessen > 0 sein.")
+            errors.append("Preise müssen > 0 sein.")
         if lower_price >= upper_price:
             errors.append(
                 f"lower_price ({lower_price}) muss < upper_price "
@@ -239,14 +239,14 @@ class LiveBroker:
             if per_order_usdt < min_notional:
                 errors.append(
                     f"USDT pro Order ({per_order_usdt:.2f}) < Binance "
-                    f"minNotional ({min_notional:.2f}). Erhoehe das "
+                    f"minNotional ({min_notional:.2f}). Erhöhe das "
                     f"Investment oder reduziere num_grids."
                 )
             per_order_qty = per_order_usdt / upper_price
             if per_order_qty < min_qty:
                 errors.append(
                     f"Coin-Menge pro Order ({per_order_qty:.8f}) < Binance "
-                    f"minQty ({min_qty:.8f}). Erhoehe das Investment."
+                    f"minQty ({min_qty:.8f}). Erhöhe das Investment."
                 )
 
         return len(errors) == 0, errors
