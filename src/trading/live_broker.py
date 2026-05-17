@@ -16,7 +16,9 @@ Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
 """
 
 import hmac
+import math
 import time
+import uuid
 import hashlib
 import requests
 import pandas as pd
@@ -426,6 +428,8 @@ class LiveBroker:
             headers = {"X-MBX-APIKEY": self.api_key}
             if method == "POST":
                 resp = requests.post(url, headers=headers, timeout=10)
+            elif method == "DELETE":
+                resp = requests.delete(url, headers=headers, timeout=10)
             else:
                 resp = requests.get(url, headers=headers, timeout=10)
             data = resp.json()
@@ -470,3 +474,308 @@ class LiveBroker:
         )
         self.state.order_log.append(order)
         return order
+
+    # =======================================================================
+    # Phase Live-2.1: Order-Primitives fuer LIMIT-Orders + clientOrderId +
+    # Partial-Fill-Aggregation. Wird vom LiveRunner ab Phase Live-2.2 genutzt.
+    # =======================================================================
+
+    @staticmethod
+    def _make_client_order_id(prefix: str = "gbf") -> str:
+        """
+        L-2: Idempotenz-Schluessel fuer Orders. UUID-basiert, Format:
+            <prefix>_<16 hex chars>
+        Binance erlaubt bis 36 Zeichen. Prefix "gbf" = Grid-Bot-Framework.
+        """
+        return f"{prefix}_{uuid.uuid4().hex[:16]}"
+
+    def _format_price(self, price: float) -> str:
+        """
+        Rundet auf das naechste Vielfache von tickSize ab (rounded-down,
+        Binance-konform). Decimal-Stellen werden aus tickSize abgeleitet.
+
+        Beispiel: tickSize=0.01, price=70123.456 -> "70123.45"
+                  tickSize=1.0,  price=70123.456 -> "70123"
+        """
+        tick = self.symbol_filters.get("tickSize", 0.01)
+        if tick <= 0:
+            tick = 0.01
+        rounded = math.floor(price / tick) * tick
+        decimals = max(0, -int(round(math.log10(tick)))) if tick < 1 else 0
+        return f"{rounded:.{decimals}f}"
+
+    def _format_quantity(self, qty: float) -> str:
+        """
+        Rundet auf stepSize ab, prueft minQty/maxQty. Bei qty < minQty wird
+        ValueError geworfen — Aufrufer muss das abfangen (z.B. zu kleine
+        Order-Menge gar nicht erst senden). Bei qty > maxQty wird auf maxQty
+        gekappt.
+
+        Beispiel: stepSize=0.00001, qty=0.000123456 -> "0.00012"
+        """
+        step    = self.symbol_filters.get("stepSize", 1e-8)
+        min_qty = self.symbol_filters.get("minQty",   0.0)
+        max_qty = self.symbol_filters.get("maxQty",   9e18)
+        if step <= 0:
+            step = 1e-8
+        rounded = math.floor(qty / step) * step
+        if rounded < min_qty:
+            raise ValueError(
+                f"Quantity {rounded:.10f} < minQty {min_qty:.10f}"
+            )
+        if rounded > max_qty:
+            rounded = math.floor(max_qty / step) * step
+        decimals = max(0, -int(round(math.log10(step)))) if step < 1 else 0
+        return f"{rounded:.{decimals}f}"
+
+    def _aggregate_fills(self, fills_list: list) -> dict:
+        """
+        L-6: Aggregiert Binance-fills[]-Liste zu gewichtetem Average-Price,
+        Summe der Quantities und Summe der Commissions. Erkennt gemischte
+        commissionAssets (BNB-Discount + USDT-Fees).
+
+        Args:
+            fills_list: Liste von Dicts {price, qty, commission, commissionAsset}
+
+        Returns:
+            {
+                "avg_price":        gewichteter avg-price (0 bei leer),
+                "total_qty":        Summe qty,
+                "total_commission": Summe commission,
+                "commission_asset": Asset-Symbol oder "mixed" oder None,
+            }
+        """
+        if not fills_list:
+            return {
+                "avg_price":        0.0,
+                "total_qty":        0.0,
+                "total_commission": 0.0,
+                "commission_asset": None,
+            }
+        total_qty        = 0.0
+        total_quote      = 0.0
+        total_commission = 0.0
+        assets           = set()
+        for f in fills_list:
+            qty        = float(f.get("qty", 0))
+            price      = float(f.get("price", 0))
+            commission = float(f.get("commission", 0))
+            total_qty        += qty
+            total_quote      += qty * price
+            total_commission += commission
+            asset = f.get("commissionAsset")
+            if asset:
+                assets.add(asset)
+        avg_price = (total_quote / total_qty) if total_qty > 0 else 0.0
+        if len(assets) == 0:
+            commission_asset = None
+        elif len(assets) == 1:
+            commission_asset = next(iter(assets))
+        else:
+            commission_asset = "mixed"
+        return {
+            "avg_price":        avg_price,
+            "total_qty":        total_qty,
+            "total_commission": total_commission,
+            "commission_asset": commission_asset,
+        }
+
+    def place_limit_order(
+        self,
+        side:             str,
+        price:            float,
+        quantity:         float,
+        client_order_id:  Optional[str] = None,
+    ) -> dict:
+        """
+        L-13 + L-2: Platziert eine LIMIT-Order (timeInForce=GTC) mit
+        clientOrderId fuer Idempotenz. Returns ein Dict (kein Order-
+        Dataclass, weil LIMIT noch nicht gefuellt ist).
+
+        Args:
+            side            : "BUY" oder "SELL"
+            price           : Limit-Preis (wird via _format_price gerundet)
+            quantity        : Coin-Menge (wird via _format_quantity gerundet)
+            client_order_id : Optional. Wird generiert wenn None.
+
+        Returns dict:
+            {
+                "client_order_id":   gbf_<hex> (immer gesetzt),
+                "binance_order_id":  str (orderId von Binance) oder "",
+                "symbol":            "BTCUSDT" etc.,
+                "side":              "BUY"/"SELL",
+                "price":             float (gerundet auf tickSize),
+                "quantity":          float (gerundet auf stepSize),
+                "status":            "NEW" / "PARTIALLY_FILLED" / "FILLED",
+                "timestamp":         ISO-String,
+                "error":             str | None,
+            }
+        """
+        ts = naive_utc_now().isoformat()
+        if client_order_id is None:
+            client_order_id = self._make_client_order_id()
+
+        # Format-Validierung
+        try:
+            price_str = self._format_price(price)
+            qty_str   = self._format_quantity(quantity)
+        except ValueError as e:
+            return {
+                "client_order_id":  client_order_id,
+                "binance_order_id": "",
+                "symbol":           self.symbol,
+                "side":             side,
+                "price":            float(price),
+                "quantity":         float(quantity),
+                "status":           "rejected",
+                "timestamp":        ts,
+                "error":            str(e),
+            }
+
+        params = {
+            "symbol":           self.symbol,
+            "side":             side,
+            "type":             "LIMIT",
+            "timeInForce":      "GTC",
+            "price":            price_str,
+            "quantity":         qty_str,
+            "newClientOrderId": client_order_id,
+        }
+        response = self._signed_request("POST", "/api/v3/order", params)
+        if "error" in response:
+            return {
+                "client_order_id":  client_order_id,
+                "binance_order_id": "",
+                "symbol":           self.symbol,
+                "side":             side,
+                "price":            float(price_str),
+                "quantity":         float(qty_str),
+                "status":           "rejected",
+                "timestamp":        ts,
+                "error":            response["error"],
+            }
+        return {
+            "client_order_id":  client_order_id,
+            "binance_order_id": str(response.get("orderId", "")),
+            "symbol":           self.symbol,
+            "side":             side,
+            "price":            float(price_str),
+            "quantity":         float(qty_str),
+            "status":           response.get("status", "NEW"),
+            "timestamp":        ts,
+            "error":            None,
+        }
+
+    def get_order_status(self, client_order_id: str) -> dict:
+        """
+        Holt den aktuellen Status einer Order ueber die clientOrderId.
+
+        Returns die Raw-Binance-Response (mit zusaetzlichem 'error'-Feld
+        bei Misserfolg). Aufrufer sollte 'status' auswerten:
+            NEW / PARTIALLY_FILLED / FILLED / CANCELED / REJECTED / EXPIRED
+        """
+        params = {
+            "symbol":           self.symbol,
+            "origClientOrderId": client_order_id,
+        }
+        return self._signed_request("GET", "/api/v3/order", params)
+
+    def cancel_order(self, client_order_id: str) -> dict:
+        """
+        Storniert eine offene LIMIT-Order ueber die clientOrderId.
+
+        Returns Raw-Response. Bei Erfolg enthaelt sie u.a. 'status':'CANCELED'
+        und 'executedQty' (falls schon teilweise gefuellt).
+        """
+        params = {
+            "symbol":           self.symbol,
+            "origClientOrderId": client_order_id,
+        }
+        return self._signed_request("DELETE", "/api/v3/order", params)
+
+    def execute_market_buy_real(
+        self,
+        amount_usdt:     float,
+        client_order_id: Optional[str] = None,
+    ) -> dict:
+        """
+        L-16-Vorbereitung: Echte MARKET-BUY-Order mit clientOrderId und
+        Partial-Fill-Aggregation. Wird vom LiveRunner._ensure_initial_buys
+        ab Phase Live-2.2 aufgerufen.
+
+        Im Gegensatz zum alten execute_buy:
+          - clientOrderId fuer Idempotenz (L-2)
+          - exec_price = gewichteter avg ueber alle fills (L-6)
+          - exec_qty   = Summe der fills[].qty
+          - fee        = Summe der fills[].commission (echte Fees, nicht
+                         lokal geschaetzt — L-5-Vorgriff bereits hier)
+
+        Args:
+            amount_usdt     : USDT-Betrag (quoteOrderQty)
+            client_order_id : Optional, wird generiert wenn None
+
+        Returns dict:
+            {
+                "client_order_id":  ...,
+                "binance_order_id": ...,
+                "symbol":           ...,
+                "side":             "BUY",
+                "amount_usdt":      Eingesetzter USDT-Betrag,
+                "exec_price":       gewichteter avg-price,
+                "exec_qty":         total qty,
+                "commission":       total commission (echte Binance-Fee),
+                "commission_asset": "USDT"/"BNB"/.../"mixed",
+                "status":           "FILLED" / "rejected",
+                "timestamp":        ...,
+                "error":            str | None,
+            }
+        """
+        ts = naive_utc_now().isoformat()
+        if client_order_id is None:
+            client_order_id = self._make_client_order_id()
+
+        params = {
+            "symbol":           self.symbol,
+            "side":             "BUY",
+            "type":             "MARKET",
+            "quoteOrderQty":    round(amount_usdt, 2),
+            "newClientOrderId": client_order_id,
+        }
+        response = self._signed_request("POST", "/api/v3/order", params)
+        if "error" in response:
+            return {
+                "client_order_id":  client_order_id,
+                "binance_order_id": "",
+                "symbol":           self.symbol,
+                "side":             "BUY",
+                "amount_usdt":      amount_usdt,
+                "exec_price":       0.0,
+                "exec_qty":         0.0,
+                "commission":       0.0,
+                "commission_asset": None,
+                "status":           "rejected",
+                "timestamp":        ts,
+                "error":            response["error"],
+            }
+
+        fills = response.get("fills", []) or []
+        agg   = self._aggregate_fills(fills)
+        # Balances aktualisieren (Binance hat USDT abgebucht + Coin gutgeschrieben)
+        self._update_balances()
+        self.state.filled_orders += 1
+        self.state.total_fees    += agg["total_commission"]
+
+        return {
+            "client_order_id":  client_order_id,
+            "binance_order_id": str(response.get("orderId", "")),
+            "symbol":           self.symbol,
+            "side":             "BUY",
+            "amount_usdt":      amount_usdt,
+            "exec_price":       agg["avg_price"],
+            "exec_qty":         agg["total_qty"],
+            "commission":       agg["total_commission"],
+            "commission_asset": agg["commission_asset"],
+            "status":           response.get("status", "FILLED"),
+            "timestamp":        ts,
+            "error":            None,
+        }
