@@ -231,3 +231,112 @@ class LiveRunner(BotRunnerBase):
             })
         # Bei success_count == 0: keine Persistierung, Flag bleibt False,
         # naechster step() wird's nochmal probieren.
+
+    # =======================================================================
+    # Phase Live-2.3 (L-13): LIMIT-Orders auf Grid-Linien
+    # =======================================================================
+
+    def _sync_limit_orders(self, current_price: float) -> None:
+        """
+        Stellt sicher, dass auf jeder aktiven Grid-Linie eine LIMIT-Order
+        bei Binance liegt. Idempotent: bestehende Orders (tracked via
+        state['live_open_orders']) werden nicht doppelt platziert.
+
+        Order-Logik pro Linie:
+          - grid.side == 'buy'      -> LIMIT BUY  auf grid.price mit
+                                       grid.trade_amount
+          - grid.side == 'sell' und Initial-Buy auf dieser Linie vorhanden
+            -> LIMIT SELL auf trade.price mit trade.amount (echte
+               exec_qty aus Live-2.2, nicht grid.trade_amount — wegen
+               Slippage)
+          - grid.side == 'blocked'  -> keine Order (Pufferzone)
+
+        Idempotenz-Schluessel: (side, grid_price). Pro Linie und Richtung
+        max. 1 Order. State wird nur bei mind. 1 neuer Order geschrieben
+        (vermeidet leere Store-Writes bei No-Op-Sync).
+
+        Failure-Resilience: einzelne Order-Fails werden geloggt
+        (Phase Live-4 zentralisiert), nicht in live_open_orders eingetragen
+        — naechster Sync retried sie.
+
+        Args:
+            current_price: aktueller Marktpreis (Argument fuer Symmetrie
+                           mit _ensure_initial_buys; aktuell nicht direkt
+                           genutzt, kann fuer kuenftige Plausibilitaets-
+                           checks dienen).
+        """
+        # Guards
+        if self._broker is None or not getattr(self._broker, "init_ok", False):
+            return
+        if self._grid_bot is None:
+            return
+
+        self._bot   = self.store.get_bot(self.bot_id) or self._bot
+        bot_state   = (self._bot.get("state") or {}).copy()
+        open_orders = dict(bot_state.get("live_open_orders") or {})
+
+        # Schon belegte (side, grid_price)-Tupel
+        occupied = {(o["side"], float(o["grid_price"]))
+                    for o in open_orders.values()}
+
+        new_count = 0
+
+        # ── BUY-Linien ───────────────────────────────────────────────────
+        for price, grid in self._grid_bot.grids.items():
+            if grid.side != "buy":
+                continue
+            key = ("BUY", float(price))
+            if key in occupied:
+                continue
+            result = self._broker.place_limit_order(
+                side="BUY",
+                price=float(price),
+                quantity=float(grid.trade_amount),
+            )
+            if result.get("error"):
+                continue
+            open_orders[result["client_order_id"]] = {
+                "side":             "BUY",
+                "grid_price":       float(price),
+                "quantity":         float(result["quantity"]),
+                "binance_order_id": result["binance_order_id"],
+                "placed_at":        result["timestamp"],
+            }
+            occupied.add(key)
+            new_count += 1
+
+        # ── SELL-Orders fuer Initial-Buy-Inventar ───────────────────────
+        # Quelle: trade_log mit initial=True (kommt aus _ensure_initial_buys).
+        initial_trades = [
+            t for t in self._grid_bot.trade_log
+            if t.get("initial") and t.get("type") == "BUY"
+        ]
+        for trade in initial_trades:
+            grid_price = float(trade.get("price", 0))
+            amount     = float(trade.get("amount", 0))
+            if grid_price <= 0 or amount <= 0:
+                continue
+            key = ("SELL", grid_price)
+            if key in occupied:
+                continue
+            result = self._broker.place_limit_order(
+                side="SELL",
+                price=grid_price,
+                quantity=amount,
+            )
+            if result.get("error"):
+                continue
+            open_orders[result["client_order_id"]] = {
+                "side":             "SELL",
+                "grid_price":       grid_price,
+                "quantity":         float(result["quantity"]),
+                "binance_order_id": result["binance_order_id"],
+                "placed_at":        result["timestamp"],
+            }
+            occupied.add(key)
+            new_count += 1
+
+        # Persistieren nur wenn was Neues platziert wurde
+        if new_count > 0:
+            bot_state["live_open_orders"] = open_orders
+            self.store.update_bot(self.bot_id, {"state": bot_state})
