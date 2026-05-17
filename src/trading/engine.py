@@ -73,14 +73,6 @@ class BotRunner:
                         "status":     "Error",
                         "last_error": self._broker.init_error,
                     })
-                elif self._broker.init_warnings:
-                    # Re-Init nach Bot-Restart: aktuelle Warnungen erneut
-                    # ins Bot-State legen, damit Banner wieder erscheint
-                    # (falls User vorher auf "Verstanden" geklickt hatte,
-                    # die Warnung aber weiterhin gilt).
-                    self.store.update_bot(self.bot_id, {
-                        "init_warnings": list(self._broker.init_warnings),
-                    })
             except Exception as e:
                 # Defensiv: falls Import/Instanziierung crasht, Bot in
                 # Error-Status setzen, aber BotRunner-Konstruktor selbst

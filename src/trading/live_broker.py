@@ -73,7 +73,6 @@ class LiveBroker:
         self.account_info:   dict            = {}
         self.init_ok:        bool            = False
         self.init_error:     Optional[str]   = None
-        self.init_warnings:  list            = []
 
         # Init-Sequenz: Reihenfolge wichtig!
         # 1. Server-Time (L-11) -> ohne korrektes Offset versagen signed Requests
@@ -164,9 +163,14 @@ class LiveBroker:
         """
         L-14: Prueft die API-Key-Berechtigungen.
             - canTrade=True ist Voraussetzung (sonst Init-Fehler).
-            - canWithdraw=True erzeugt eine Warnung (Sicherheitsrisiko,
-              nicht erforderlich fuer Live-Trading).
+
         Account-Daten werden zusaetzlich in self.account_info gespeichert.
+
+        Hinweis: Die frueher geplante canWithdraw-Warnung wurde entfernt.
+        canWithdraw aus /api/v3/account ist Account-Status, nicht die
+        API-Key-Permission. Im nicht-kommerziellen Single-User-Setup
+        bleibt die Withdraw-Permission auf API-Key-Ebene ohnehin immer
+        deaktiviert — der Check ist daher entbehrlich.
         """
         data = self._signed_request("GET", "/api/v3/account", {})
         if "error" in data:
@@ -179,11 +183,6 @@ class LiveBroker:
                 "Bitte in Binance unter API-Management Spot-Trading aktivieren."
             )
             return False
-        if data.get("canWithdraw", False):
-            self.init_warnings.append(
-                "API-Key hat canWithdraw=True. Für Live-Trading nicht nötig "
-                "und ein Sicherheitsrisiko — bitte in Binance deaktivieren."
-            )
         return True
 
     def validate_config(

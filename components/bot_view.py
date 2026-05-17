@@ -80,10 +80,6 @@ def bot_view_from_bot_state(bot: dict) -> dict:
         "initial_buy_coin_amount": state.get("initial_buy_coin_amount", 0.0),
         "initial_buy_fee":         state.get("initial_buy_fee", 0.0),
         "initial_buy_value_usdt":  state.get("initial_buy_value_usdt", 0.0),
-        # Phase Live-1: persistente Sicherheits-Warnungen aus LiveBroker-Init
-        # (z.B. canWithdraw=True). Wird im Detail-Banner angezeigt bis User
-        # auf "Verstanden" klickt. Fehlt bei PT/BT -> Default [].
-        "init_warnings":  list(bot.get("init_warnings", [])),
     }
 
 
