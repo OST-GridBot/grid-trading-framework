@@ -747,6 +747,47 @@ class LiveBroker:
         }
         return self._signed_request("DELETE", "/api/v3/order", params)
 
+    def get_my_trades(self, binance_order_id) -> list:
+        """
+        Phase Live-4.1 (L-5): Holt die einzelnen Trade-Fills einer Order
+        ueber /api/v3/myTrades.
+
+        Hintergrund: /api/v3/order (get_order_status) liefert KEIN fills[]-
+        Array. Fuer LIMIT-Orders bedeutet das, dass die echten Commission-
+        Werte nicht aus der Status-Abfrage gewonnen werden koennen. Erst
+        myTrades liefert pro Match price/qty/commission/commissionAsset.
+
+        Format der zurueckgegebenen Items ist mit fills[] aus place-/
+        execute-Responses kompatibel, sodass _aggregate_fills(...) sie
+        direkt verarbeiten kann.
+
+        Args:
+            binance_order_id: orderId (int oder str-int) von Binance.
+                              Strings werden tolerant in int gecastet.
+
+        Returns:
+            list[dict] mit Keys price/qty/commission/commissionAsset.
+            Leere Liste bei API-Fehler oder keinen Trades — defensiv,
+            damit der Aufrufer auf den bisherigen 'commission=0'-Pfad
+            zurueckfallen kann ohne zu crashen.
+        """
+        try:
+            order_id_int = int(binance_order_id)
+        except (TypeError, ValueError):
+            return []
+        params = {
+            "symbol":  self.symbol,
+            "orderId": order_id_int,
+        }
+        data = self._signed_request("GET", "/api/v3/myTrades", params)
+        if isinstance(data, dict) and "error" in data:
+            return []
+        if not isinstance(data, list):
+            return []
+        # myTrades-Felder bereits kompatibel mit _aggregate_fills:
+        # price/qty/commission/commissionAsset sind dieselben Keys.
+        return data
+
     def execute_market_buy_real(
         self,
         amount_usdt:     float,
