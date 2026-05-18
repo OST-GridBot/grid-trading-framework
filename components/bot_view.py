@@ -218,11 +218,22 @@ def enrich_metrics_for_display(view: dict) -> dict:
     metrics.setdefault("bot_status",         view.get("bot_status", "active"))
     metrics.setdefault("grid_trigger_price", cfg.get("grid_trigger_price"))
 
-    # Coin-Inventar (Bug 7): PT/LT aus state.position, BT nach Persistenz
-    # auch state.position (save_backtest legt final_position dorthin ab).
+    # Coin-Inventar (Bug 7 + UI-Polish 5):
+    # BT/PT pflegen state.position.coin via grid_bot.process_candle /
+    # _execute_trade aktiv. LT pflegt nur state.coin_inventory (Liste der
+    # Eintraege via _poll_open_orders / _ensure_initial_buys); position.coin
+    # bleibt auf dem Reset-Wert 0.0 aus _ensure_initial_buys.
+    # → max(inventory-summe, position.coin) liefert fuer alle Modi den
+    # korrekten Wert: BT/PT bleiben identitaetserhaltend (beide gleich),
+    # LT nutzt die Inventar-Summe.
     state    = view.get("state") or {}
     position = state.get("position") or {}
-    coin_amt = float(position.get("coin", 0) or 0)
+    inv      = state.get("coin_inventory") or []
+    coin_amt_from_inv = sum(
+        float(item[0]) for item in inv if len(item) >= 1
+    )
+    coin_amt_from_pos = float(position.get("coin", 0) or 0)
+    coin_amt          = max(coin_amt_from_inv, coin_amt_from_pos)
     metrics.setdefault("coin_holdings", coin_amt)
     metrics.setdefault("coin_holdings_value_usdt",
                         coin_amt * float(metrics.get("current_price", 0) or 0))
