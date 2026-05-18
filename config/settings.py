@@ -71,6 +71,13 @@ MAX_NUM_GRIDS            = 500
 # USDT-Paare. Wird in validate_min_investment verwendet (Z.X2).
 DEFAULT_MIN_NOTIONAL     = 5.0
 
+# Sicherheitspuffer auf MIN_NOTIONAL: bei exakt 5 USDT pro Order wuerde
+# bei kleinster Slippage oder Filter-Variation die Order abgelehnt.
+# 5% Puffer ist konservativ genug ohne das Mindest-Investment unnoetig
+# hoch zu treiben. Wird in validate_min_investment auf Binance-MIN_NOTIONAL
+# multipliziert (z.B. 5.00 → 5.25 USDT). Gilt fuer alle Modi (BT/PT/LT).
+MIN_NOTIONAL_BUFFER_PCT  = 0.05
+
 # DD-Drosselung: Hysterese-Puffer (Variante B, 20% relativ).
 # Faktor verschaerft sich sofort bei Erreichen der Schwelle, lockert
 # sich erst wenn DD unter Schwelle * DD_HYSTERESIS_FACTOR faellt.

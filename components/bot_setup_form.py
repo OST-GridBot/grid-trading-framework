@@ -1395,9 +1395,12 @@ def render_bot_setup_form(
         # nicht erfuellen wuerden.
         from src.strategy.grid_builder import validate_min_investment
         _min_err = validate_min_investment(
-            total_investment = params.get("total_investment", 0),
-            num_grids        = params.get("num_grids", 0),
-            reserve_pct      = params.get("reserve_pct", 0.0),
+            total_investment   = params.get("total_investment", 0),
+            num_grids          = params.get("num_grids", 0),
+            reserve_pct        = params.get("reserve_pct", 0.0),
+            enable_initial_buy = params.get("enable_initial_buy", True),
+            upper_price        = params.get("upper_price"),
+            current_price      = current_price,
         )
         if _min_err:
             st.error(_min_err)
