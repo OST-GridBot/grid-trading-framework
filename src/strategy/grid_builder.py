@@ -30,6 +30,7 @@ from config.settings import (
     DEFAULT_GRID_MODE,
     DEFAULT_FEE_RATE,
     DEFAULT_MIN_NOTIONAL,
+    MIN_NOTIONAL_BUFFER_PCT,
     MIN_NUM_GRIDS,
     MAX_NUM_GRIDS,
 )
@@ -195,43 +196,89 @@ def _validate_grid_params(
 
 
 def validate_min_investment(
-    total_investment: float,
-    num_grids:        int,
-    reserve_pct:      float = 0.0,
-    min_notional:     float = DEFAULT_MIN_NOTIONAL,
+    total_investment:   float,
+    num_grids:          int,
+    reserve_pct:        float = 0.0,
+    min_notional:       float = DEFAULT_MIN_NOTIONAL,
+    enable_initial_buy: bool  = False,
+    upper_price:        Optional[float] = None,
+    current_price:      Optional[float] = None,
 ) -> Optional[str]:
     """
-    Z.X2: Prueft ob das Investment fuer die gewaehlte Konfiguration
-    ausreicht. Binance Spot erfordert pro Order >= min_notional USDT
-    (NOTIONAL-Filter). Fuer einen Grid-Bot heisst das:
+    Prueft ob das Investment fuer die gewaehlte Konfiguration ausreicht.
+    Binance Spot erfordert pro Order >= min_notional USDT (NOTIONAL-Filter).
 
-        base_amount = total × (1 − reserve_pct) / num_grids >= min_notional
+    Zwei Checks, jeweils mit MIN_NOTIONAL_BUFFER_PCT (Default 5%) Puffer
+    auf min_notional fuer Slippage-Sicherheit:
+
+      1. Base-Notional: base = effective/num_grids >= min_notional × 1.05
+         (gilt fuer alle Orders: LIMIT-Buy + LIMIT-Sell + Initial-Buy)
+
+      2. Initial-Buy-Notional (nur wenn enable_initial_buy=True und
+         upper_price + current_price gegeben): Worst-Case ist der
+         MARKET-Initial-Buy auf der hoechsten Sell-Linie (upper_price),
+         weil dort die USDT-Kosten = base × (current_price / upper_price)
+         minimal sind. Diese muessen ebenfalls min_notional × 1.05
+         erfuellen, sonst lehnt Binance die MARKET-Order ab.
+
+    num_grids in der Codebase = Anzahl Intervalle (siehe
+    calculate_grid_lines: gibt num_grids+1 Linien zurueck, davon 1
+    Pufferzone ohne Order → num_grids aktive Order-Slots). Daher
+    kein +1-Offset in der Formel.
 
     Args:
-        total_investment : Geplantes Investment in USDT
-        num_grids        : Anzahl Grid-Intervalle
-        reserve_pct      : Kapitalreserve (0.0 – 1.0)
-        min_notional     : Mindestbetrag pro Order (Default 5 USDT,
-                           Binance-Standard fuer USDT-Paare)
+        total_investment   : Geplantes Investment in USDT
+        num_grids          : Anzahl Grid-Intervalle
+        reserve_pct        : Kapitalreserve (0.0 – 1.0)
+        min_notional       : Binance-Filter pro Order (Default 5 USDT)
+        enable_initial_buy : Wenn True, wird Check 2 aktiv
+        upper_price        : Obere Grid-Grenze (fuer Check 2)
+        current_price      : Aktueller Marktpreis (fuer Check 2)
 
     Returns:
-        Fehler-String mit konkretem Mindestbetrag, oder None wenn OK.
+        Fehler-String mit Werten + Empfehlung, oder None wenn OK.
     """
     if num_grids <= 0:
         return None  # andere Validation faengt das ab
-    effective   = float(total_investment) * (1.0 - float(reserve_pct or 0.0))
-    base_amount = effective / num_grids
-    if base_amount >= min_notional:
-        return None
-    # Erforderliches Minimum berechnen
-    required = (min_notional * num_grids) / (1.0 - float(reserve_pct or 0.0))
-    return (
-        f"Investment zu niedrig: {total_investment:.2f} USDT bei "
-        f"{num_grids} Grids und {reserve_pct*100:.0f}% Reserve ergibt "
-        f"{base_amount:.2f} USDT pro Grid (Binance-Minimum: "
-        f"{min_notional:.0f} USDT). Mindestens "
-        f"{required:.2f} USDT erforderlich."
-    )
+    effective = float(total_investment) * (1.0 - float(reserve_pct or 0.0))
+    base      = effective / num_grids
+    min_eff   = min_notional * (1.0 + MIN_NOTIONAL_BUFFER_PCT)
+    buf_pct   = int(MIN_NOTIONAL_BUFFER_PCT * 100)
+
+    # Check 1: Base-Notional mit Puffer
+    if base < min_eff:
+        required = (min_eff * num_grids) / (1.0 - float(reserve_pct or 0.0))
+        return (
+            f"Investment zu niedrig: {total_investment:.2f} USDT bei "
+            f"{num_grids} Grids und {reserve_pct*100:.0f}% Reserve ergibt "
+            f"{base:.2f} USDT pro Order — empfohlenes Minimum {min_eff:.2f} "
+            f"USDT (Binance-Minimum {min_notional:.2f} USDT + {buf_pct}% "
+            f"Sicherheitspuffer fuer Slippage/Filter-Variation). Mindestens "
+            f"{required:.2f} USDT Total-Investment noetig."
+        )
+
+    # Check 2: Initial-Buy-Notional auf hoechster Sell-Linie
+    # Worst-Case-MARKET-Buy hat die niedrigsten Kosten (current_price <
+    # upper_price → ratio > 1 → cost < base).
+    if (enable_initial_buy
+            and upper_price and current_price
+            and float(upper_price) > float(current_price) > 0):
+        ratio                = float(upper_price) / float(current_price)
+        initial_buy_min_cost = base / ratio
+        if initial_buy_min_cost < min_eff:
+            required = (num_grids * min_eff * ratio) / (
+                1.0 - float(reserve_pct or 0.0)
+            )
+            return (
+                f"Investment zu niedrig fuer Initial-Buy auf hoechster "
+                f"Sell-Linie ({upper_price:.2f}, aktueller Markt "
+                f"{current_price:.2f}): erwartete Order-Kosten "
+                f"{initial_buy_min_cost:.2f} USDT < empfohlenes Minimum "
+                f"{min_eff:.2f} USDT (Binance {min_notional:.2f} USDT + "
+                f"{buf_pct}% Puffer). Mindestens {required:.2f} USDT "
+                f"Total-Investment noetig (oder Initial-Buy deaktivieren)."
+            )
+    return None
 
 
 def validate_grid_config(
