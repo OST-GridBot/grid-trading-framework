@@ -64,11 +64,18 @@ def _get_binance_balance() -> dict:
         data      = resp.json()
         if "code" in data:
             return {"error": data.get("msg", "Binance API Fehler")}
+        # UI-Polish 7: free + locked summieren statt nur free.
+        # Bei aktivem LT-Bot sind Coins in offenen LIMIT-SELL-Orders
+        # "locked", USDT in offenen LIMIT-BUY-Orders ebenfalls.
+        # Vorher zeigte das UI ein nahezu leeres Portfolio obwohl
+        # tatsaechlich Werte da waren — nur in Auftrag gebunden.
         balances = {}
         for asset in data.get("balances", []):
-            free = float(asset["free"])
-            if free > 0:
-                balances[asset["asset"]] = round(free, 8)
+            free   = float(asset.get("free",   0) or 0)
+            locked = float(asset.get("locked", 0) or 0)
+            total  = free + locked
+            if total > 0:
+                balances[asset["asset"]] = round(total, 8)
         return {"balances": balances, "usdt": balances.get("USDT", 0.0)}
     except Exception as e:
         return {"error": str(e)}
