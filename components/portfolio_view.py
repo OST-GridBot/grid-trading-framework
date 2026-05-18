@@ -22,7 +22,7 @@ from typing import Callable
 
 import streamlit as st
 
-from config.settings import MAX_BOTS_PER_MODE, MAX_BACKTESTS
+from config.settings import MAX_PAPER_BOTS, MAX_LIVE_BOTS, MAX_BACKTESTS
 
 
 # Anzahl Eintraege in der kompakten BT-Liste in der Portfolio-Ansicht
@@ -323,10 +323,10 @@ def render_portfolio_view(
         summary = _compute_summary_backtest(views, MAX_BACKTESTS)
         _render_metric_cards_backtest(summary)
     elif mode == "live":
-        summary = _compute_summary_running(views, MAX_BOTS_PER_MODE)
+        summary = _compute_summary_running(views, MAX_LIVE_BOTS)
         _render_metric_cards_live(summary)
     else:
-        summary = _compute_summary_running(views, MAX_BOTS_PER_MODE)
+        summary = _compute_summary_running(views, MAX_PAPER_BOTS)
         _render_metric_cards_paper(summary)
 
     st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)

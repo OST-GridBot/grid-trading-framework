@@ -21,7 +21,9 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional
 
-from config.settings import CACHE_DIR, MAX_BOTS_PER_MODE, MAX_BACKTESTS
+from config.settings import (
+    CACHE_DIR, MAX_PAPER_BOTS, MAX_LIVE_BOTS, MAX_BACKTESTS,
+)
 
 BOTS_DIR = Path(CACHE_DIR) / "bots"
 BOTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -108,8 +110,16 @@ class BotStore:
         """
         if mode not in VALID_MODES:
             return False, f"Ungültiger Modus: {mode}"
-        # Backtest hat eigenes (hoeheres) Limit; PT/LT teilen sich das alte
-        limit = MAX_BACKTESTS if mode == "backtest" else MAX_BOTS_PER_MODE
+        # UI-Polish-Split: pro Modus eigenes Limit.
+        #   backtest → MAX_BACKTESTS (500)
+        #   paper    → MAX_PAPER_BOTS (500, simulated, kein Rate-Limit)
+        #   live     → MAX_LIVE_BOTS (10, Binance Rate-Limit + Coin-Konflikte)
+        if mode == "backtest":
+            limit = MAX_BACKTESTS
+        elif mode == "live":
+            limit = MAX_LIVE_BOTS
+        else:
+            limit = MAX_PAPER_BOTS
         count = self.count_bots(mode)
         if count >= limit:
             return False, (

@@ -108,7 +108,14 @@ MIN_VOLUME_USDT       = 1_000_000
 SCANNER_LOOKBACK_DAYS = 14
 
 # Paper-Trading / Live-Trading
-MAX_BOTS_PER_MODE           = 10
+# Getrennte Limits seit UI-Polish: Paper ist simuliertes Trading ohne
+# externe Rate-Limits → grosszuegig (500, analog Backtests). Live ist
+# durch Binance Spot-Weight (1200/Min) + Coin-Balance-Konflikte
+# limitiert: 5-6 Bots sicher, 8-10 moeglich mit Vorsicht, mehr riskant.
+MAX_PAPER_BOTS              = 500
+MAX_LIVE_BOTS               = 10
+# DEPRECATED: nutze MAX_PAPER_BOTS oder MAX_LIVE_BOTS direkt
+MAX_BOTS_PER_MODE           = MAX_LIVE_BOTS
 MAX_BACKTESTS               = 500   # Maximale Anzahl gespeicherter Backtests
 
 # Live-Worker (Phase Live-3): Polling-Intervall in Sekunden.
