@@ -212,15 +212,19 @@ class LiveRunner(BotRunnerBase):
             exec_price       = float(order["exec_price"])
             commission       = float(order["commission"])
             commission_asset = order.get("commission_asset") or ""
+            # MLT-1b (H-1): coin_commission ist die Summe NUR der COIN-
+            # Anteile der commission ueber alle fills. Funktioniert auch
+            # bei commission_asset="mixed" (Multi-Fill mit BNB-Discount-
+            # Teil + COIN-Teil). Vor MLT-1b wurde nur der single-asset
+            # Fall (commission_asset == coin) gefangen → mixed-Fills
+            # speicherten Brutto trotz Coin-Abzug bei Binance.
+            coin_commission  = float(order.get("coin_commission", 0) or 0)
 
-            # MLT-1 LF-N1: Netto-qty wenn Commission in der gekauften Coin
-            # gezahlt wurde (typisch bei Buy ohne BNB-Discount: bei SOL/USDT
-            # ist commission_asset="SOL"). Bei BNB-Discount oder anderer
-            # Asset-Wahl -> kein Abzug. Defensive max(0, ...) gegen
-            # negative qty bei Float-Drift.
-            net_qty = exec_qty
-            if commission_asset and commission_asset == self._broker.coin:
-                net_qty = max(0.0, exec_qty - commission)
+            # MLT-1b (H-1 + H-3): net_qty mit Outer-Cap min(exec_qty, ...)
+            # schuetzt zusaetzlich vor negativer commission (theoretisch
+            # unmoeglich aber defensive). max(0, ...) bleibt fuer den
+            # Fall commission > exec_qty (Edge).
+            net_qty = min(exec_qty, max(0.0, exec_qty - coin_commission))
 
             # Trade-Log-Eintrag (Format identisch zur Simulation, mit
             # zusaetzlichen Live-Feldern client_order_id / binance_order_id).
@@ -518,25 +522,33 @@ class LiveRunner(BotRunnerBase):
                     fills = self._broker.get_my_trades(bin_order_id) or []
 
             if has_fill:
-                agg        = self._broker._aggregate_fills(fills)
-                exec_avg   = (agg["avg_price"]
-                              if agg["total_qty"] > 0 else grid_p)
-                exec_qty   = (agg["total_qty"]
-                              if agg["total_qty"] > 0 else executed_qty)
-                commission = agg["total_commission"]
-                comm_asset = agg["commission_asset"]
-                ts         = naive_utc_now().isoformat()
+                # MLT-1b (H-1): _aggregate_fills mit coin-Param liefert
+                # zusaetzlich coin_commission_total — Summe NUR der COIN-
+                # Anteile. Damit funktioniert die Netto-Berechnung auch
+                # bei mixed-asset-fills (BNB-Discount Teil + COIN Teil).
+                agg             = self._broker._aggregate_fills(
+                    fills, coin=self._broker.coin,
+                )
+                exec_avg        = (agg["avg_price"]
+                                   if agg["total_qty"] > 0 else grid_p)
+                exec_qty        = (agg["total_qty"]
+                                   if agg["total_qty"] > 0 else executed_qty)
+                commission      = agg["total_commission"]
+                comm_asset      = agg["commission_asset"]
+                coin_commission = agg["coin_commission_total"]
+                ts              = naive_utc_now().isoformat()
 
                 if side == "BUY":
-                    # MLT-1 LF-N1: Netto-qty wenn Commission in der gekauften
-                    # Coin gezahlt (typisch SOL bei SOL/USDT-Buy ohne BNB-
-                    # Discount). Bei BNB/USDT-Commission -> kein Abzug.
-                    # Damit ist die spaetere SELL-Order-Quantity = was wir
-                    # wirklich besitzen → Binance lehnt nicht mehr wegen
-                    # Insufficient Balance ab.
-                    net_qty = exec_qty
-                    if comm_asset and comm_asset == self._broker.coin:
-                        net_qty = max(0.0, exec_qty - commission)
+                    # MLT-1b (H-1 + H-3): Netto via coin_commission (statt
+                    # commission_asset-Strikt-Vergleich), Outer-Cap
+                    # min(exec_qty, ...) gegen negative-commission-Bug.
+                    # Vor MLT-1b: nur single-asset SOL → net_qty richtig,
+                    # aber bei mixed/None → Brutto gespeichert →
+                    # Insufficient-Balance-Risk fuer SELL.
+                    net_qty = min(
+                        exec_qty,
+                        max(0.0, exec_qty - coin_commission),
+                    )
 
                     self._grid_bot.coin_inventory.append(
                         (net_qty, grid_p, pd.Timestamp(ts))
@@ -637,10 +649,31 @@ class LiveRunner(BotRunnerBase):
         if changed:
             bot_state["live_open_orders"]          = open_orders
             bot_state["live_inventory_sell_lines"] = sell_lines
-            self.store.update_bot(self.bot_id, {
+            persist_ok = self.store.update_bot(self.bot_id, {
                 "state":     bot_state,
                 "trade_log": list(self._grid_bot.trade_log),
             })
+            # MLT-1b (H-PERSIST): analog Live-2.6 L-16 fuer
+            # _ensure_initial_buys. Wenn update_bot fehlschlaegt (Disk
+            # full, JSON-Error, etc.), ist das in-memory _grid_bot bereits
+            # mutiert (coin_inventory.append, sell_lines.append). Beim
+            # naechsten Runner-Init wird der State frisch aus dem Store
+            # geladen (ohne die Appends), aber bei Binance ist die Order
+            # gefuellt → naechstes _poll_open_orders sieht sie als
+            # 'disappeared' und verbucht sie nochmal → Doppel-Inventar.
+            # Mitigation: Bot in error setzen, Worker pausiert ihn, User
+            # muss manuell pruefen und Bot ggf. neu-initialisieren.
+            if not persist_ok:
+                self.store.update_bot(self.bot_id, {
+                    "status":     "error",
+                    "last_error": (
+                        f"_poll_open_orders Persist fehlgeschlagen nach "
+                        f"{len(disappeared)} Fill-Buchung(en). In-Memory-"
+                        f"Stand nicht gesichert. Bot gestoppt zur "
+                        f"Vermeidung von Doppel-Verbuchung beim naechsten "
+                        f"Tick. Manuelle Bot-State-Kontrolle/Re-Init noetig."
+                    ),
+                })
 
     # =======================================================================
     # Live-2.5 (L-23): _save_state-Override um Live-spezifische State-Felder
