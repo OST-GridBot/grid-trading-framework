@@ -107,10 +107,19 @@ def plot_grid_chart_v2(
                 if ts is None:
                     continue
                 is_buy = "BUY" in str(t.get("type", "")).upper()
+                # UI-Polish 2: cprice (exec_price) statt price (Grid-Linie)
+                # als Y-Position. Semantisch korrekt fuer alle Modi: Marker
+                # zeigt WO der Trade stattfand, nicht wo die Anchor-Grid-
+                # Linie liegt. Im LT war price bei Initial-Buys = Sell-Linie
+                # weit ueber Markt → fiel oft aus dem sichtbaren Y-Range →
+                # priceToCoordinate returnte null → Marker nicht gerendert.
+                # cprice = exec_price liegt am echten Markt → sichtbar.
+                # Backward-Compat fuer alte Snapshots ohne cprice → Fallback
+                # auf price.
                 markers.append({
                     "time":     ts,
                     "is_buy":   is_buy,
-                    "price":    float(t.get("price", 0)),
+                    "price":    float(t.get("cprice") or t.get("price", 0)),
                     "profit":   t.get("profit", None),
                     "amount":   float(t.get("amount", 0)),
                     "fee":      float(t.get("fee", 0)),
