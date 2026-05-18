@@ -29,7 +29,7 @@ from components.bot_list       import render_bot_list
 from components.bot_detail     import render_bot_detail
 from components.bot_setup_form import render_bot_setup_form
 from components.ui_helpers     import label
-from config.settings           import MAX_BOTS_PER_MODE
+from config.settings           import MAX_PAPER_BOTS
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +141,7 @@ def show_paper_trading():
     )
     views      = [bot_view_from_bot_state(b) for b in bots]
     bot_count  = len(bots)
-    can_create = bot_count < MAX_BOTS_PER_MODE
+    can_create = bot_count < MAX_PAPER_BOTS
 
     # ── Sidebar: Ansicht-Buttons ─────────────────────────────────────────────
     st.sidebar.markdown(label("Ansicht"), unsafe_allow_html=True)
@@ -152,14 +152,14 @@ def show_paper_trading():
                           disabled=not can_create, key="pt_btn_new"):
         _pt_show_new_bot()
     if not can_create:
-        st.sidebar.caption(f"Maximum {MAX_BOTS_PER_MODE} Bots erreicht.")
+        st.sidebar.caption(f"Maximum {MAX_PAPER_BOTS} Bots erreicht.")
     if st.sidebar.button(f"Übersicht aktive Bots ({bot_count})",
                           use_container_width=True, key="pt_btn_overview"):
         _pt_show_overview()
 
     # ── Header ───────────────────────────────────────────────────────────────
     st.markdown("# 📄 Paper Trading")
-    st.caption(f"{bot_count}/{MAX_BOTS_PER_MODE} Bots aktiv")
+    st.caption(f"{bot_count}/{MAX_PAPER_BOTS} Bots aktiv")
     st.divider()
 
     # ── Router (Detail / Overview / Empty / Portfolio) ──────────────────────

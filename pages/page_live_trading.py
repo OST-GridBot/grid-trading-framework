@@ -34,7 +34,7 @@ from components.bot_detail     import render_bot_detail
 from components.bot_setup_form import render_bot_setup_form
 from components.ui_helpers     import label
 from config.settings import (
-    MAX_BOTS_PER_MODE,
+    MAX_LIVE_BOTS,
     BINANCE_API_KEY, BINANCE_SECRET_KEY,
     CACHE_DIR, WORKER_INTERVAL_SECONDS,
 )
@@ -416,7 +416,7 @@ def show_live_trading():
     )
     views      = [bot_view_from_bot_state(b) for b in bots]
     bot_count  = len(bots)
-    can_create = bot_count < MAX_BOTS_PER_MODE
+    can_create = bot_count < MAX_LIVE_BOTS
 
     # ── Sidebar: Ansicht-Buttons ─────────────────────────────────────────────
     st.sidebar.markdown(label("Ansicht"), unsafe_allow_html=True)
@@ -427,7 +427,7 @@ def show_live_trading():
                           disabled=not can_create, key="lt_btn_new"):
         _lt_show_new_bot()
     if not can_create:
-        st.sidebar.caption(f"Maximum {MAX_BOTS_PER_MODE} Bots erreicht.")
+        st.sidebar.caption(f"Maximum {MAX_LIVE_BOTS} Bots erreicht.")
     if st.sidebar.button(f"Übersicht aktive Bots ({bot_count})",
                           use_container_width=True, key="lt_btn_overview"):
         _lt_show_overview()
@@ -436,7 +436,7 @@ def show_live_trading():
     col_titel, col_info = st.columns([8, 1])
     with col_titel:
         st.markdown("# 🔴 Live Trading")
-        st.caption(f"{bot_count}/{MAX_BOTS_PER_MODE} Bots aktiv")
+        st.caption(f"{bot_count}/{MAX_LIVE_BOTS} Bots aktiv")
     with col_info:
         st.markdown(
             "<div style='margin-top:22px; text-align:right;'>"
