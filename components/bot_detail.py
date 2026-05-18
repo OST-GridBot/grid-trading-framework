@@ -246,12 +246,13 @@ def _render_actions_running_bot(view: dict, on_back: Callable[[], None]) -> None
                     if result.get("error"):
                         st.error(f"Fehler: {result['error']}")
                     else:
-                        n = len(result.get("new_trades", []))
-                        c = result.get("candles_processed", 0)
-                        p = result.get("current_price", 0)
-                        st.success(f"Kurs: ${p:,.2f} · {c} Kerzen · {n} neue Trades")
+                        # UI-Polish 6: st.success-Toast entfernt (User-Befund:
+                        # birgt Race-Conditions wegen 8s-Block). Marktregime-
+                        # Banner bleibt unveraendert. time.sleep auf 3s
+                        # reduziert — genug Lesezeit fuer Regime-Banner,
+                        # kurz genug fuer minimale Race-Anfaelligkeit.
                         _render_regime_hint(result.get("regime"))
-                        time.sleep(8)
+                        time.sleep(3)
                         st.rerun()
                 except Exception as e:
                     st.error(f"Fehler: {e}")
