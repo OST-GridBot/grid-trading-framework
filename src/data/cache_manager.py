@@ -232,6 +232,71 @@ def get_price_data(
 
 
 # ---------------------------------------------------------------------------
+# UI-Polish 4: Live-Current-Candle fuer Chart-OHLC-Header
+# ---------------------------------------------------------------------------
+
+def get_live_current_candle(
+    coin:     str,
+    interval: str,
+) -> Optional[dict]:
+    """
+    UI-Polish 4: Holt die aktuelle (laufende) Kerze fresh von Binance.
+
+    Wird vom Chart-UI aufgerufen, um den OHLC-Header live zu aktualisieren
+    (vor Page-Refresh). Beruehrt NICHT den Cache (kein _save_to_cache,
+    kein Cache-Append).
+
+    Konsequenz fuer Worker: Worker nutzt get_price_data, nicht diese neue
+    Funktion → Worker-Trade-Logik unbeeinflusst.
+
+    Args:
+        coin     : Coin-Symbol (z.B. "SOL")
+        interval : Kerzen-Intervall ("15m", "1h", etc.)
+
+    Returns:
+        Dict mit time/open/high/low/close/volume der aktuellsten Kerze,
+        oder None bei API-Fehler (defensive — UI faellt auf statische
+        Cache-Daten zurueck).
+    """
+    try:
+        # Window: letzte 2 Intervalle. limit=2 schuetzt vor Edge-Case
+        # dass die "aktuelle" Kerze noch nicht voll ist und Binance
+        # nur 1 zurueckliefert.
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+        _interval_mins = {
+            "1m": 1, "5m": 5, "15m": 15,
+            "1h": 60, "4h": 240, "1d": 1440,
+        }.get(interval, 60)
+        end_dt   = _dt.now(_tz.utc).replace(tzinfo=None)
+        start_dt = end_dt - _td(minutes=_interval_mins * 2)
+
+        symbol_out, df, err = fetch_klines(
+            coin     = coin,
+            interval = interval,
+            start_date = start_dt.replace(tzinfo=_tz.utc),
+            end_date   = end_dt.replace(tzinfo=_tz.utc),
+            max_bars   = 2,
+        )
+        if err or df is None or df.empty:
+            return None
+        # Letzte Zeile = aktuell laufende Kerze
+        row = df.iloc[-1]
+        ts  = pd.to_datetime(row["timestamp"])
+        if ts.tzinfo is None:
+            ts = ts.tz_localize("UTC")
+        return {
+            "time":   int(ts.timestamp()),   # Unix-UTC fuer lightweight-charts
+            "open":   float(row["open"]),
+            "high":   float(row["high"]),
+            "low":    float(row["low"]),
+            "close":  float(row["close"]),
+            "volume": float(row.get("volume", 0)),
+        }
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Top-100 Cache
 # ---------------------------------------------------------------------------
 

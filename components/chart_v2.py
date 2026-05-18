@@ -49,6 +49,9 @@ def plot_grid_chart_v2(
     # D — graue Vorschau-Linien oberhalb der current Upper-Range
     grid_lines_outside:        Optional[list]  = None,
     show_grid_outside_range:   bool            = True,
+    # UI-Polish 4: aktuell laufende Kerze fresh von Binance, fuer OHLC-Header.
+    # None bei BT/historischen Daten — fallback auf candles[-1] (Aufgabe 3).
+    live_current_candle:       Optional[dict]  = None,
 ) -> None:
 
     def _to_unix(ts_val):
@@ -235,6 +238,8 @@ def plot_grid_chart_v2(
     candles_json        = json.dumps(candles)
     volume_json         = json.dumps(volume_data)
     markers_json        = json.dumps(markers)
+    # UI-Polish 4: live-Kerze als JSON (null bei BT oder Fetch-Failure)
+    live_candle_json    = json.dumps(live_current_candle) if live_current_candle else "null"
     price_lines_json    = json.dumps(price_lines)
     outside_lines_json  = json.dumps(outside_lines)
     upper_json          = json.dumps(round(float(upper_price), 4) if upper_price else None)
@@ -446,6 +451,8 @@ def plot_grid_chart_v2(
   const candles        = {candles_json};
   const volData        = {volume_json};
   const allMarkers     = {markers_json};
+  // UI-Polish 4: aktuelle Kerze live von Binance (null bei BT/Failure)
+  const liveCandle     = {live_candle_json};
   const priceLines     = {price_lines_json};
   const outsideLines   = {outside_lines_json};
   const upperPrice     = {upper_json};
@@ -887,21 +894,29 @@ def plot_grid_chart_v2(
   const fmtVol = v => typeof v==='number'
     ? v.toLocaleString('de-CH', {{maximumFractionDigits:2}}) : '—';
 
-  // UI-Polish 3: bei Crosshair-Off → letzte (aktuellste) Kerze anzeigen
-  // statt "—". Bietet immer einen sinnvollen Default-Stand.
-  // Defensive: falls keine Kerzen geladen sind, "—" als Fallback.
+  // UI-Polish 3 + 4: bei Crosshair-Off → live-Kerze priorisiert, sonst
+  // letzte Cache-Kerze, sonst "—".
+  // liveCandle (UI-Polish 4): aktuelle laufende Kerze fresh von Binance
+  // (PT/LT). Im BT oder bei API-Fehler ist liveCandle null → Fallback
+  // auf candles[length-1] (statisch).
   function _resetHdrOHLC() {{
-    if (candles && candles.length > 0) {{
-      const last = candles[candles.length - 1];
-      const isUp = last.close >= last.open;
-      hdrO.textContent = fmt(last.open);
-      hdrH.textContent = fmt(last.high);
-      hdrL.textContent = fmt(last.low);
-      hdrC.textContent = fmt(last.close);
+    const source = (liveCandle && typeof liveCandle === 'object')
+      ? liveCandle
+      : (candles && candles.length > 0 ? candles[candles.length - 1] : null);
+    if (source) {{
+      const isUp = source.close >= source.open;
+      hdrO.textContent = fmt(source.open);
+      hdrH.textContent = fmt(source.high);
+      hdrL.textContent = fmt(source.low);
+      hdrC.textContent = fmt(source.close);
       hdrC.className = isUp ? 'ohlc-val ohlc-up' : 'ohlc-val ohlc-down';
-      hdrV.textContent = (volData && volData.length > 0)
-        ? fmtVol(volData[volData.length - 1].value) : '—';
-      hdrDate.textContent = _fmtHoverDate(last.time);
+      // Volume: bevorzugt aus liveCandle (frisch), Fallback volData
+      const vol = (typeof source.volume === 'number')
+        ? source.volume
+        : ((volData && volData.length > 0)
+            ? volData[volData.length - 1].value : null);
+      hdrV.textContent = typeof vol === 'number' ? fmtVol(vol) : '—';
+      hdrDate.textContent = _fmtHoverDate(source.time);
     }} else {{
       hdrO.textContent = '—';
       hdrH.textContent = '—';
