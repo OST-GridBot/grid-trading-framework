@@ -887,15 +887,34 @@ def plot_grid_chart_v2(
   const fmtVol = v => typeof v==='number'
     ? v.toLocaleString('de-CH', {{maximumFractionDigits:2}}) : '—';
 
-  // Reset Header-OHLC + Hover-Datum auf "—" wenn kein Crosshair-Wert
+  // UI-Polish 3: bei Crosshair-Off → letzte (aktuellste) Kerze anzeigen
+  // statt "—". Bietet immer einen sinnvollen Default-Stand.
+  // Defensive: falls keine Kerzen geladen sind, "—" als Fallback.
   function _resetHdrOHLC() {{
-    hdrO.textContent = '—';
-    hdrH.textContent = '—';
-    hdrL.textContent = '—';
-    hdrC.textContent = '—'; hdrC.className = 'ohlc-val';
-    hdrV.textContent = '—';
-    hdrDate.textContent = '—';
+    if (candles && candles.length > 0) {{
+      const last = candles[candles.length - 1];
+      const isUp = last.close >= last.open;
+      hdrO.textContent = fmt(last.open);
+      hdrH.textContent = fmt(last.high);
+      hdrL.textContent = fmt(last.low);
+      hdrC.textContent = fmt(last.close);
+      hdrC.className = isUp ? 'ohlc-val ohlc-up' : 'ohlc-val ohlc-down';
+      hdrV.textContent = (volData && volData.length > 0)
+        ? fmtVol(volData[volData.length - 1].value) : '—';
+      hdrDate.textContent = _fmtHoverDate(last.time);
+    }} else {{
+      hdrO.textContent = '—';
+      hdrH.textContent = '—';
+      hdrL.textContent = '—';
+      hdrC.textContent = '—'; hdrC.className = 'ohlc-val';
+      hdrV.textContent = '—';
+      hdrDate.textContent = '—';
+    }}
   }}
+
+  // UI-Polish 3: Initial-Aufruf damit OHLC sofort die letzte Kerze zeigt
+  // (vor erstem Crosshair-Move beim Page-Load).
+  _resetHdrOHLC();
 
   chart.subscribeCrosshairMove(param => {{
     // Redraw markers so they stay in sync with crosshair movement
