@@ -27,7 +27,11 @@ Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
 """
 import pandas as pd
 
-from config.settings import DEFAULT_FEE_RATE
+from config.settings import (
+    DEFAULT_FEE_RATE,
+    RESYNC_MIN_INTERVAL_SECONDS,
+    COIN_BALANCE_DIFF_PCT_WARNING,
+)
 from src.utils.timezone import naive_utc_now
 from src.trading.engine_base import BotRunnerBase
 from src.trading.bot_store import BotStore
@@ -109,6 +113,15 @@ class LiveRunner(BotRunnerBase):
         # Live-2.5: Re-Init eines bestehenden Bots → State erhalten
         bot_state = self._bot.get("state") or {}
         if bot_state.get("live_initial_buys_done"):
+            # Phase Live-4.3 (L-8): Bestehender Bot → Resync mit Binance.
+            # Defensiv: jegliche Exception darf den Init-Pfad nicht stoppen.
+            # Resync hat eigenen Cooldown (10 Min) damit Worker-Ticks alle
+            # 30s nicht jedesmal 2 API-Calls ausloesen.
+            try:
+                self._resync_from_binance()
+            except Exception as e:
+                print(f"[LiveRunner] Resync-Exception (best-effort skip): "
+                      f"{type(e).__name__}: {e}")
             return ok, err
 
         # Erst-Init: GridBot hat simulierte Buys gemacht → resetten
@@ -639,6 +652,199 @@ class LiveRunner(BotRunnerBase):
         state_after = dict(bot_after.get("state") or {})
         state_after.update(live_snapshot)
         self.store.update_bot(self.bot_id, {"state": state_after})
+
+    # =======================================================================
+    # Phase Live-4.3 (L-8): Inventar-Resync gegen Binance bei Bot-Start
+    # =======================================================================
+
+    def _resync_from_binance(self) -> dict:
+        """
+        Gleicht den lokalen Bot-State gegen Binance ab, wenn ein bestehender
+        Bot (live_initial_buys_done=True) initialisiert wird. Wird aus
+        initialize() aufgerufen — NICHT in jedem step().
+
+        Drei Pruefungen:
+          1. Open-Orders-Resync: Orders die lokal getrackt aber bei Binance
+             nicht mehr offen sind, werden via _poll_open_orders verbucht
+             (FILLED/CANCELED/EXPIRED).
+          2. Coin-Balance-Check: lokales sum(coin_inventory) gegen Binance
+             free+locked am Symbol-Coin. Diskrepanz >
+             COIN_BALANCE_DIFF_PCT_WARNING -> Warning im state.
+          3. Fremde Orders: openOrders mit clientOrderId NICHT in unserem
+             tracked-state werden gezaehlt (sowohl 'gbf_*'-Stale aus
+             geloeschten Bots als auch User-Manual-Orders). Nur Log,
+             kein Auto-Adopt.
+
+        Cooldown: state["last_resync_at"] verhindert Doppel-Sync innerhalb
+        RESYNC_MIN_INTERVAL_SECONDS (Default 600s). Worker-Ticks alle 30s
+        loesen so nicht jedesmal 2 zusaetzliche API-Calls aus.
+
+        Failure-Verhalten: best-effort skip. API-Fehler setzen kein
+        status='error' — Bot laeuft weiter, naechster initialize() versucht
+        Resync neu.
+
+        Returns dict (auch fuer Tests):
+            {
+                "skipped":              bool,
+                "skip_reason":          str | None,
+                "orders_disappeared":   int,
+                "other_open_orders":    int,
+                "balance_diff_pct":     float | None,
+                "warning":              str | None,
+            }
+        """
+        result = {
+            "skipped":            False,
+            "skip_reason":        None,
+            "orders_disappeared": 0,
+            "other_open_orders":  0,
+            "balance_diff_pct":   None,
+            "warning":            None,
+        }
+
+        # Guards
+        if self._broker is None or not getattr(self._broker, "init_ok", False):
+            result["skipped"]     = True
+            result["skip_reason"] = "broker_not_ready"
+            return result
+        if self._grid_bot is None:
+            result["skipped"]     = True
+            result["skip_reason"] = "gridbot_not_ready"
+            return result
+
+        # Frische Sicht
+        self._bot   = self.store.get_bot(self.bot_id) or self._bot
+        bot_state   = (self._bot.get("state") or {}).copy()
+
+        # ── Cooldown-Check ───────────────────────────────────────────────
+        last = bot_state.get("last_resync_at")
+        if last:
+            try:
+                last_dt = pd.Timestamp(last)
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.tz_localize("UTC")
+                now = pd.Timestamp.now(tz="UTC")
+                delta = (now - last_dt).total_seconds()
+                # Live-4.3b LF-A1: Skip nur wenn delta im plausiblen
+                # Cooldown-Fenster liegt (0 <= delta < INTERVAL).
+                # Negative delta = Timestamp in der Zukunft (NTP-Drift
+                # oder korrupter alter State) — Resync laeuft, ueber-
+                # schreibt am Ende last_resync_at mit now → selbstheilend.
+                if 0 <= delta < RESYNC_MIN_INTERVAL_SECONDS:
+                    result["skipped"]     = True
+                    result["skip_reason"] = (
+                        f"cooldown ({int(delta)}s < "
+                        f"{RESYNC_MIN_INTERVAL_SECONDS}s)"
+                    )
+                    return result
+            except Exception:
+                # Parse-Fehler → kein Skip, Resync laeuft durch
+                pass
+
+        # ── 1. Open-Orders-Resync ────────────────────────────────────────
+        binance_open = self._broker.get_open_orders()
+        if binance_open is None:
+            # API-Fehler: best-effort skip, kein State-Update
+            result["skipped"]     = True
+            result["skip_reason"] = "openOrders_api_error"
+            return result
+
+        our_cids = set((bot_state.get("live_open_orders") or {}).keys())
+
+        # Live-4.3b LF-E1: Direkt iterieren statt Set-Dedup, damit Orders
+        # mit clientOrderId=None / fehlendem Key korrekt einzeln gezaehlt
+        # werden. Vorher: {None, None} → dedupliziert auf 1 → falsch.
+        # binance_cids bleibt als Set fuer disappeared-Check, enthaelt
+        # aber nur echte (nicht-None) cids.
+        binance_cids = set()
+        other_count  = 0
+        for o in binance_open:
+            cid = o.get("clientOrderId")
+            if cid is not None:
+                binance_cids.add(cid)
+            # Fremde Orders: bei Binance offen aber nicht in unserem state.
+            # Erfasst sowohl manuelle User-Orders (cid != gbf_*) als auch
+            # Stale-gbf_-Orders aus geloeschten Bots sowie cid=None.
+            if cid not in our_cids:
+                other_count += 1
+        result["other_open_orders"] = other_count
+
+        # Disappeared: in unserem state aber nicht mehr bei Binance.
+        # _poll_open_orders haendelt die Buchhaltung (fills nachladen via
+        # L-5-myTrades-Fallback, Inventar-Update, sell_lines-Pflege).
+        disappeared = our_cids - binance_cids
+        result["orders_disappeared"] = len(disappeared)
+        if disappeared:
+            try:
+                self._poll_open_orders()
+            except Exception as e:
+                print(f"[LiveRunner Resync] _poll_open_orders-Exception: "
+                      f"{type(e).__name__}: {e}")
+            # Bot-State neu laden (poll hat ggf. persistiert)
+            self._bot = self.store.get_bot(self.bot_id) or self._bot
+            bot_state = (self._bot.get("state") or {}).copy()
+
+        # ── 2. Coin-Balance-Check (free + locked) ────────────────────────
+        try:
+            account = self._broker._signed_request(
+                "GET", "/api/v3/account", {}
+            )
+        except Exception as e:
+            account = {"error": f"{type(e).__name__}: {e}"}
+
+        if isinstance(account, dict) and "error" not in account:
+            free   = 0.0
+            locked = 0.0
+            for asset in account.get("balances", []):
+                if asset.get("asset") == self._broker.coin:
+                    free   = float(asset.get("free",   0) or 0)
+                    locked = float(asset.get("locked", 0) or 0)
+                    break
+            binance_total = free + locked
+            # Live-4.3b LF-F3: coin_inventory or [] schuetzt vor TypeError
+            # falls Inventar irrtuemlich None ist (defensive Migration).
+            inventory_sum = sum(
+                float(item[0])
+                for item in (self._grid_bot.coin_inventory or [])
+            )
+
+            warning_msg = None
+            if binance_total > 0:
+                diff_pct = (abs(inventory_sum - binance_total)
+                            / binance_total * 100)
+                result["balance_diff_pct"] = round(diff_pct, 2)
+                if diff_pct > COIN_BALANCE_DIFF_PCT_WARNING:
+                    warning_msg = (
+                        f"Coin-Balance-Diskrepanz {self._broker.coin}: "
+                        f"inventory={inventory_sum:.8f}, Binance "
+                        f"(free+locked)={binance_total:.8f} "
+                        f"({diff_pct:.1f}%)"
+                    )
+            elif inventory_sum > 0:
+                # Binance hat 0, wir denken wir besitzen Coins
+                result["balance_diff_pct"] = 100.0
+                warning_msg = (
+                    f"Coin-Balance-Diskrepanz {self._broker.coin}: "
+                    f"inventory={inventory_sum:.8f}, Binance "
+                    f"(free+locked)=0"
+                )
+
+            if warning_msg:
+                result["warning"] = warning_msg
+                bot_state["last_resync_warning"] = warning_msg
+                print(f"[LiveRunner Resync] {warning_msg}")
+            else:
+                # Alte Warning loeschen wenn jetzt OK
+                bot_state.pop("last_resync_warning", None)
+
+        # ── 3. State-Update (last_resync_at + Resync-Statistiken) ────────
+        bot_state["last_resync_at"]           = pd.Timestamp.now(
+            tz="UTC"
+        ).isoformat()
+        bot_state["last_resync_other_orders"] = other_count
+        self.store.update_bot(self.bot_id, {"state": bot_state})
+
+        return result
 
     # =======================================================================
     # Phase Live-4.2 (L-4): Cancel-on-Stop fuer offene LIMIT-Orders
