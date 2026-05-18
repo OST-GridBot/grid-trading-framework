@@ -1211,10 +1211,19 @@ def render_trade_log(trade_log: list, max_rows: int = 100000) -> None:
         # T.1: Preis-Spalte mit adaptiver Stellen-Regel (Q.2). Ohne USDT-
         # Suffix in der Zelle - die Spalte selbst heisst "Preis".
         price_str = _fmt_price(price, with_unit=False) if price > 0 else "–"
+        # MLT-1 (Trade-Log-cprice): Marktpreis-Spalte = exec_price der Order.
+        # Bei LIMIT-Fills (Normal-BUY/SELL): cprice == price (gleiche Werte).
+        # Bei MARKET-Orders (Initial-Buy, Force-Sell): cprice = tatsaechlicher
+        # Ausfuehrungspreis, kann von price (Grid-Linie) abweichen (Slippage).
+        # Gilt fuer alle Modi (BT/PT/LT) — bestehende Bots haben cprice schon
+        # im Trade-Log (siehe B-1-Konvention).
+        cprice     = float(t.get("cprice", 0) or 0)
+        cprice_str = _fmt_price(cprice, with_unit=False) if cprice > 0 else "–"
         rows.append({
             "Zeit":                ts_str,
             "Typ":                 type_label,
             "Preis":               price_str,
+            "Marktpreis":          cprice_str,
             "Menge":               f"{amount:.6f}",
             # T.2: Coin-Inventar nach diesem Trade (gleiche Stellen-Konvention
             # wie Menge fuer Konsistenz).
