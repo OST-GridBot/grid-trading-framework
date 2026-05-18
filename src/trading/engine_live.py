@@ -469,6 +469,19 @@ class LiveRunner(BotRunnerBase):
                 float(f.get("qty", 0)) > 0 for f in fills
             )
 
+            # Live-4.1 (L-5): GET /api/v3/order liefert KEIN fills[]-Array
+            # fuer LIMIT-Orders. Konsequenz vor diesem Fix: commission=0
+            # bei allen LIMIT-Fills. Loesung: bei has_fill und leerem
+            # fills[] zusaetzlich myTrades anfragen, das die echten
+            # commission/commissionAsset pro Match liefert.
+            # Backward-Compat: Alte Trade-Log-Eintraege werden NICHT
+            # retrospektiv geaendert — der Fix wirkt nur fuer Fills die
+            # ab jetzt durch _poll_open_orders gehen.
+            if has_fill and not fills:
+                bin_order_id = info.get("binance_order_id")
+                if bin_order_id:
+                    fills = self._broker.get_my_trades(bin_order_id) or []
+
             if has_fill:
                 agg        = self._broker._aggregate_fills(fills)
                 exec_avg   = (agg["avg_price"]
