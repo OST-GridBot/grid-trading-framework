@@ -959,6 +959,40 @@ class LiveRunner(BotRunnerBase):
 
         return result
 
+    def _record_daily_value(self, cprice: float) -> None:
+        """
+        MLT-2 (C-1): Aktualisiert daily_values[heute] mit dem aktuellen
+        Portfolio-Wert (echte Binance-Balance free+locked × cprice +
+        USDT-Balance). Wird in step() nach _save_state aufgerufen.
+
+        Variante B (gemaess Mini-Plan): basiert auf echter Binance-
+        Balance via _update_balances, NICHT auf lokalem position-State
+        (der im LT nicht aktiv gepflegt wird).
+
+        Letzter Wert pro Tag bleibt (mehrfache step-Aufrufe innerhalb
+        eines Tages ueberschreiben mit jeweils aktuellem Stand).
+        Voraussetzung fuer DD-Drosselung in Phase Live-7 (braucht
+        daily_values fuer Drawdown-Berechnung).
+
+        Defensive: jegliche Exception abgefangen — wenn API hin ist,
+        skip silent (nicht Bot-blockierend).
+        """
+        if (self._broker is None
+                or not getattr(self._broker, "init_ok", False)):
+            return
+        try:
+            # Frische Balance von Binance holen (1 zusaetzlicher API-Call
+            # pro step, alle 30s → unkritisch fuer Rate-Limit)
+            self._broker._update_balances()
+            bal_usdt = float(getattr(self._broker.state, "balance_usdt", 0) or 0)
+            bal_coin = float(getattr(self._broker.state, "balance_coin", 0) or 0)
+            portfolio_value = bal_usdt + bal_coin * float(cprice)
+            date_str = pd.Timestamp.now(tz="UTC").strftime("%Y-%m-%d")
+            self._grid_bot.daily_values[date_str] = round(portfolio_value, 4)
+        except Exception as e:
+            print(f"[LiveRunner] daily_value-Update fehlgeschlagen "
+                  f"(uebersprungen): {type(e).__name__}: {e}")
+
     def step(self, candle: dict) -> list:
         """
         Phase Live-2.4 / 2.6: Override von BotRunnerBase.step.
@@ -968,6 +1002,7 @@ class LiveRunner(BotRunnerBase):
             2. _ensure_initial_buys (einmalig, idempotent)
             3. _sync_limit_orders   (fehlende + Gegen-Orders)
             4. _save_state          (Metriken)
+            5. _record_daily_value  (MLT-2 C-1, daily_values fuer DD-Tracking)
 
         GridBot.process_candle wird NICHT aufgerufen — keine Simulation
         im Live-Modus. Trades entstehen ausschliesslich durch echte
@@ -992,5 +1027,6 @@ class LiveRunner(BotRunnerBase):
         self._ensure_initial_buys(cprice)
         self._sync_limit_orders(cprice)
         self._save_state(cprice)
+        self._record_daily_value(cprice)  # MLT-2 C-1
 
         return self._grid_bot.trade_log[trades_before:]

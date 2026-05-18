@@ -17,11 +17,114 @@ Autor: Enes Eryilmaz
 Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
 """
 
+import time
 import numpy as np
 import pandas as pd
+import requests
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
+
+
+# ---------------------------------------------------------------------------
+# MLT-2 (B-2/B-3): Asset-aware Fee-Aggregation
+# ---------------------------------------------------------------------------
+
+# Module-Level-Cache fuer BNB/USDT-Rate. TTL 300s = 5 Min.
+# Bewusst KEIN @st.cache_data, weil metrics.py auch ausserhalb von
+# Streamlit laeuft (Worker, Backtest-Engine).
+_BNB_RATE_CACHE = {"value": None, "ts": 0.0}
+_BNB_RATE_TTL   = 300  # Sekunden
+
+
+def get_bnb_usdt_rate() -> Optional[float]:
+    """
+    MLT-2 (B-2/B-3): Holt aktuelle BNB/USDT-Rate von Binance (public
+    /api/v3/ticker/price — kein Auth noetig). Cached fuer _BNB_RATE_TTL
+    Sekunden via Modul-Level-Dict. Bei Network-Fehler → returns cached
+    value (falls vorhanden, auch wenn abgelaufen) oder None.
+    """
+    now = time.time()
+    cached = _BNB_RATE_CACHE.get("value")
+    cached_ts = _BNB_RATE_CACHE.get("ts", 0.0)
+    if cached is not None and (now - cached_ts) < _BNB_RATE_TTL:
+        return cached
+    try:
+        r = requests.get(
+            "https://api.binance.com/api/v3/ticker/price",
+            params={"symbol": "BNBUSDT"},
+            timeout=5,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            price = float(data.get("price", 0)) if isinstance(data, dict) else 0
+            if price > 0:
+                _BNB_RATE_CACHE["value"] = price
+                _BNB_RATE_CACHE["ts"]    = now
+                return price
+    except Exception:
+        pass
+    # Bei Network-Fehler: stale cached value zurueck (besser als None falls
+    # User schonmal BNB-Rate geholt hat)
+    return cached
+
+
+def aggregate_fees_to_usdt(
+    trade_log:          list,
+    coin:               str,
+    current_coin_price: float,
+) -> float:
+    """
+    MLT-2 (B-2/B-3): Summiert alle Trade-Fees in USDT, asset-aware.
+
+    Pro Trade-Eintrag bestimmt commission_asset die Umrechnung:
+      - "USDT"  : direkt addieren
+      - ""/None : alte Eintraege ohne asset-info → angenommen USDT
+                  (Backward-Compat fuer BT/PT-Trades vor Live-Refactor)
+      - coin    : × current_coin_price (Coin in USDT umrechnen)
+      - "BNB"   : × get_bnb_usdt_rate() (cached). Wenn Rate nicht
+                  verfuegbar → fee wird uebersprungen (best-effort)
+      - "mixed"/sonstige : uebersprungen, defensive (best-effort)
+
+    Vor diesem Fix (B-2/B-3): naives sum(t.get("fee", 0) for t in
+    trade_log) — asset-blind. Bei SOL-Bot mit commission_asset="SOL"
+    wurden 0.0003 SOL als 0.0003 USDT verbucht (real ~0.025 USDT).
+
+    Args:
+        trade_log          : Liste von Trade-Dicts mit fee + commission_asset
+        coin               : Symbol des gehandelten Coins (z.B. "SOL", "BTC")
+        current_coin_price : aktueller Coin/USDT-Preis fuer Umrechnung
+
+    Returns:
+        Total fees in USDT (gerundet auf 6 Stellen)
+    """
+    total       = 0.0
+    coin_upper  = (coin or "").upper()
+    bnb_rate    = None  # lazy lookup, max 1 API-Call pro Aggregation
+    bnb_checked = False
+
+    for t in trade_log:
+        fee = float(t.get("fee", 0) or 0)
+        if fee == 0:
+            continue
+        asset = (t.get("commission_asset") or "").upper()
+
+        if not asset or asset == "USDT":
+            # Backward-Compat: alte Trades ohne commission_asset werden
+            # als USDT-Fees behandelt (BT/PT-Konvention seit jeher).
+            total += fee
+        elif asset == coin_upper:
+            total += fee * float(current_coin_price)
+        elif asset == "BNB":
+            if not bnb_checked:
+                bnb_rate    = get_bnb_usdt_rate()
+                bnb_checked = True
+            if bnb_rate is not None and bnb_rate > 0:
+                total += fee * bnb_rate
+            # else: BNB-Rate nicht verfuegbar → skip (best-effort)
+        # "mixed" oder unbekannte Assets: uebersprungen
+
+    return round(total, 6)
 
 
 # ---------------------------------------------------------------------------
@@ -217,8 +320,14 @@ def calculate_fee_impact(fees_paid: float, gross_pl_usdt: float) -> Optional[flo
     Werte > 100% sind moeglich und korrekt (Fees haben mehr gefressen als
     Brutto-Gewinn war). Bei Brutto-Verlust (gross_pl_usdt <= 0) ist die
     Kennzahl nicht definiert → None.
+
+    MLT-2 B-1: bei sehr kleinem Brutto-Gewinn (< 0.01 USDT) ist die
+    Kennzahl statistisch nicht aussagekraeftig — Division durch eine
+    Mini-Zahl liefert z.B. 102.33% wenn Fees ~ Profit sind, was als
+    Aussage Quark ist. → None bei zu kleinem gross.
     """
-    if gross_pl_usdt <= 0:
+    FEE_IMPACT_MIN_GROSS_USDT = 0.01  # 1 Cent
+    if gross_pl_usdt < FEE_IMPACT_MIN_GROSS_USDT:
         return None
     return round(fees_paid / gross_pl_usdt * 100, 2)
 
