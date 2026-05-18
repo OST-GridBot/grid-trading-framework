@@ -102,6 +102,20 @@ def plot_grid_chart_v2(
             })
         volume_data.sort(key=lambda x: x["time"])
 
+    # UI-Polish 8: Kerzen-Intervall aus den Daten ableiten (robust gegen
+    # Interval-String-Varianten). Wird benoetigt um Marker-Timestamps auf
+    # die Kerzen-Boundary zu snappen. Lightweight-Charts' timeToCoordinate
+    # returnt null fuer Zeiten INNERHALB einer Kerze (nur exakte Boundary
+    # funktioniert) → in LT/PT (mid-candle Real-Time-Fills) wuerden sonst
+    # alle Order-Marker geskippt. BT ist unbeeinflusst (Trades simulieren
+    # bei Candle-Close, sind also bereits aligned).
+    candle_interval_sec = (
+        candles[1]["time"] - candles[0]["time"]
+        if len(candles) >= 2 else 60
+    )
+    if candle_interval_sec <= 0:
+        candle_interval_sec = 60
+
     markers = []
     if show_order_markers:
         for t in trade_log:
@@ -109,6 +123,9 @@ def plot_grid_chart_v2(
                 ts = _to_unix(t["timestamp"])
                 if ts is None:
                     continue
+                # UI-Polish 8: snap auf Kerzen-Start (floor) damit
+                # timeToCoordinate eine Zahl statt null returnt.
+                ts = (ts // candle_interval_sec) * candle_interval_sec
                 is_buy = "BUY" in str(t.get("type", "")).upper()
                 # UI-Polish 2: cprice (exec_price) statt price (Grid-Linie)
                 # als Y-Position. Semantisch korrekt fuer alle Modi: Marker
