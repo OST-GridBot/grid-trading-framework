@@ -42,6 +42,11 @@ from config.settings import CACHE_DIR, WORKER_INTERVAL_SECONDS
 from src.trading.bot_store import store
 from src.trading.engine import make_bot_runner
 
+# MLT-3: Cache-Print-Spam reduzieren — sonst bei jedem Worker-Tick
+# (alle 30s) zweimal "Cache (aktuell): ..." pro Live-Bot.
+from src.data import cache_manager
+cache_manager.set_quiet(True)
+
 
 HEARTBEAT_PATH = Path(CACHE_DIR) / "live_worker_heartbeat.json"
 PID_PATH       = Path(CACHE_DIR) / "live_worker.pid"

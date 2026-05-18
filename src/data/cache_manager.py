@@ -33,6 +33,19 @@ from config.settings import (
 from src.data.binance_api import fetch_klines, get_symbol
 
 
+# MLT-3: Quiet-Flag zur Unterdrueckung der "Cache (aktuell):"-prints im
+# Worker-Kontext. Wird vom live_worker.py beim Start auf True gesetzt
+# (sonst alle 30s 2x Spam pro Live-Bot). Streamlit-Pfade lassen es bei
+# False fuer User-sichtbare Cache-Statusmeldungen.
+_QUIET = False
+
+
+def set_quiet(enabled: bool = True) -> None:
+    """MLT-3: Schaltet die "Cache (aktuell)"-Status-prints aus/ein."""
+    global _QUIET
+    _QUIET = bool(enabled)
+
+
 # ---------------------------------------------------------------------------
 # Pfad-Hilfsfunktionen
 # ---------------------------------------------------------------------------
@@ -172,7 +185,8 @@ def get_price_data(
             _age_mins = (now_utc - last_cached_ts.to_pydatetime()).total_seconds() / 60
             if _age_mins < _interval_mins:
                 # Cache ist aktuell genug
-                print(f"Cache (aktuell): {filepath.name} ({len(df_cached)} Kerzen)")
+                if not _QUIET:
+                    print(f"Cache (aktuell): {filepath.name} ({len(df_cached)} Kerzen)")
                 return df_cached, True
             # Neue Kerzen ab letzter Kerze holen
             print(f"Cache-Append: lade neue Kerzen ab {last_cached_ts} (vor {_age_mins:.0f} min)...")
