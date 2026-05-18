@@ -218,6 +218,18 @@ class BotRunnerBase:
 
         has_dynamic_capital = cfg.get("enable_dd_throttle", False)
 
+        # MLT-2 (B-2/B-3): Asset-aware Fee-Aggregation. Vorher naives sum
+        # ueber t.get("fee") → bei commission_asset != USDT (z.B. SOL bei
+        # SOL/USDT-Buy ohne BNB-Discount) wurden Coin-Mengen als USDT
+        # interpretiert. Neu: in USDT umgerechnet via current_price (Coin)
+        # bzw. get_bnb_usdt_rate (BNB, cached 300s).
+        from src.analysis.metrics import aggregate_fees_to_usdt
+        fees_paid_usdt = aggregate_fees_to_usdt(
+            trade_log          = trade_log,
+            coin               = self._bot.get("coin", "BTC"),
+            current_coin_price = current_price,
+        )
+
         metrics = {}
         try:
             metrics = calculate_all_metrics(
@@ -227,7 +239,7 @@ class BotRunnerBase:
                 final_value         = final_val,
                 initial_price       = self._grid_bot.initial_price or current_price,
                 final_price         = current_price,
-                fees_paid           = sum(t.get("fee", 0) for t in trade_log),
+                fees_paid           = fees_paid_usdt,
                 num_days            = num_days,
                 num_grids           = cfg["num_grids"],
                 current_price       = current_price,
