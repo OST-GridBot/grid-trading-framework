@@ -257,9 +257,14 @@ def _render_actions_running_bot(view: dict, on_back: Callable[[], None]) -> None
                     st.error(f"Fehler: {e}")
     with col_stop:
         label = "Stoppen" if is_running else "Fortfahren"
-        # Phase Live-4.4 (L-12): Final-Sell-Checkbox nur bei Live-Bot mit
-        # Coin-Inventar > 0 sichtbar. Default = NICHT angekreuzt (defensiv,
-        # versehentlicher Final-Sell waere teuer).
+        # Stop-Button OBEN — auf gleicher Hoehe wie die anderen Action-Buttons.
+        button_clicked = st.button(
+            label, key=f"bd_stop_{bid}", use_container_width=True,
+        )
+
+        # Phase Live-4.4 (L-12): Final-Sell-Checkbox UNTER dem Button.
+        # Default = NICHT angekreuzt (defensiv, versehentlicher Final-Sell
+        # waere teuer). Nur bei Live-Bot mit Coin-Inventar > 0 sichtbar.
         final_sell_checked = False
         if is_running and view.get("mode") == "live":
             # Inventar-Check direkt aus Bot-State (view enthaelt es nicht).
@@ -282,7 +287,7 @@ def _render_actions_running_bot(view: dict, on_back: Callable[[], None]) -> None
                           "LIMITs passiert immer (auch ohne diese Option)."),
                 )
 
-        if st.button(label, key=f"bd_stop_{bid}", use_container_width=True):
+        if button_clicked:
             # Phase Live-4.2 (L-4): Bei Live-Bot-Stop offene LIMIT-Orders
             # bei Binance stornieren BEVOR der Status auf 'stopped' geht.
             # Modus-Differenzierung: nur fuer LT, PT/BT bleiben unveraendert.
