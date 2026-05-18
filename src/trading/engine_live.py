@@ -208,33 +208,53 @@ class LiveRunner(BotRunnerBase):
                 # zentrales Logging des Fehlers.
                 continue
 
-            exec_qty    = float(order["exec_qty"])
-            exec_price  = float(order["exec_price"])
-            commission  = float(order["commission"])
+            exec_qty         = float(order["exec_qty"])
+            exec_price       = float(order["exec_price"])
+            commission       = float(order["commission"])
+            commission_asset = order.get("commission_asset") or ""
+
+            # MLT-1 LF-N1: Netto-qty wenn Commission in der gekauften Coin
+            # gezahlt wurde (typisch bei Buy ohne BNB-Discount: bei SOL/USDT
+            # ist commission_asset="SOL"). Bei BNB-Discount oder anderer
+            # Asset-Wahl -> kein Abzug. Defensive max(0, ...) gegen
+            # negative qty bei Float-Drift.
+            net_qty = exec_qty
+            if commission_asset and commission_asset == self._broker.coin:
+                net_qty = max(0.0, exec_qty - commission)
 
             # Trade-Log-Eintrag (Format identisch zur Simulation, mit
             # zusaetzlichen Live-Feldern client_order_id / binance_order_id).
+            # amount = net_qty (was tatsaechlich im Wallet landet, MLT-1 LF-N1).
             self._grid_bot.trade_log.append({
                 "timestamp":        order["timestamp"],
                 "type":             "BUY",
                 "cprice":           exec_price,         # Marktpreis (B-1)
                 "price":            float(price),       # Grid-Linie
-                "amount":           exec_qty,
+                "amount":           net_qty,
                 "fee":              commission,         # echte Fee (L-6)
                 "profit":           0.0,
                 "profit_gross":     0.0,
                 "initial":          True,
                 "client_order_id":  order.get("client_order_id"),
                 "binance_order_id": order.get("binance_order_id"),
-                "commission_asset": order.get("commission_asset"),
+                "commission_asset": commission_asset or None,
             })
 
-            # FIFO-Inventar: (amount, buy_price_for_matching, timestamp)
-            # buy_price_for_matching = current_price (Marktpreis), damit
-            # spaetere Sell-Profit-Berechnung (sell_price - buy_price)
-            # konsistent zur Simulation arbeitet.
+            # MLT-1 B-5: buy_price = exec_price (echter Ausfuehrungspreis aus
+            # fills), NICHT current_price (Markt-Mid vor Submit). Bei MARKET-
+            # Buy entstehen ggf. Slippage zwischen current und exec — fuer
+            # spaetere Sell-Profit-Berechnung (sell_price - buy_price) muss
+            # der TATSAECHLICH gezahlte Preis verwendet werden.
+            # MLT-1 LF-N1: net_qty (Brutto-exec_qty minus Commission falls
+            # commission_asset == coin) — entspricht der real verfuegbaren
+            # Coin-Menge fuer spaetere SELL-Orders, sonst lehnt Binance ab.
+            # Cascade-Hinweis: L-24 (Skip-Buy-bei-Inventar-Linie) nutzt
+            # inventory_buy_prices als Match-Key. Nach B-5-Fix sind diese
+            # Werte exec_price (~current_price, nicht grid_p). L-24 wirkt
+            # damit nur fuer Normal-Buys (die grid_p als buy_price haben)
+            # — Initial-Buys sind auf Sell-Linien, keine Kollision moeglich.
             self._grid_bot.coin_inventory.append(
-                (exec_qty, current_price, pd.Timestamp(order["timestamp"]))
+                (net_qty, exec_price, pd.Timestamp(order["timestamp"]))
             )
 
             # Phase Live-2.4: parallele sell_lines-Liste
@@ -242,7 +262,9 @@ class LiveRunner(BotRunnerBase):
             sell_lines_list.append(float(price))
 
             # Aggregat-Tracking analog zur Simulation
-            self._grid_bot.initial_buy_coin_amount += exec_qty
+            # MLT-1: net_qty fuer initial_buy_coin_amount (Brutto verbleibt
+            # in initial_buy_value_usdt fuer korrekte Cash-Flow-Math).
+            self._grid_bot.initial_buy_coin_amount += net_qty
             self._grid_bot.initial_buy_fee         += commission
             self._grid_bot.initial_buy_value_usdt  += cost_usdt
 
@@ -506,8 +528,18 @@ class LiveRunner(BotRunnerBase):
                 ts         = naive_utc_now().isoformat()
 
                 if side == "BUY":
+                    # MLT-1 LF-N1: Netto-qty wenn Commission in der gekauften
+                    # Coin gezahlt (typisch SOL bei SOL/USDT-Buy ohne BNB-
+                    # Discount). Bei BNB/USDT-Commission -> kein Abzug.
+                    # Damit ist die spaetere SELL-Order-Quantity = was wir
+                    # wirklich besitzen → Binance lehnt nicht mehr wegen
+                    # Insufficient Balance ab.
+                    net_qty = exec_qty
+                    if comm_asset and comm_asset == self._broker.coin:
+                        net_qty = max(0.0, exec_qty - commission)
+
                     self._grid_bot.coin_inventory.append(
-                        (exec_qty, grid_p, pd.Timestamp(ts))
+                        (net_qty, grid_p, pd.Timestamp(ts))
                     )
                     next_above = next(
                         (g for g in grid_lines_sorted if g > grid_p),
@@ -519,7 +551,7 @@ class LiveRunner(BotRunnerBase):
                         "type":             "BUY",
                         "cprice":           exec_avg,
                         "price":            grid_p,
-                        "amount":           exec_qty,
+                        "amount":           net_qty,
                         "fee":              commission,
                         "profit":           0.0,
                         "profit_gross":     0.0,
