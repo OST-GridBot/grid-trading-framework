@@ -557,42 +557,62 @@ class LiveBroker:
         decimals  = self._decimals_from_step(step)
         return f"{float(d_rounded):.{decimals}f}"
 
-    def _aggregate_fills(self, fills_list: list) -> dict:
+    def _aggregate_fills(
+        self,
+        fills_list: list,
+        coin:       Optional[str] = None,
+    ) -> dict:
         """
         L-6: Aggregiert Binance-fills[]-Liste zu gewichtetem Average-Price,
         Summe der Quantities und Summe der Commissions. Erkennt gemischte
         commissionAssets (BNB-Discount + USDT-Fees).
 
+        MLT-1b (H-1): Bei coin=<Symbol> wird zusaetzlich coin_commission_total
+        zurueckgegeben — Summe NUR der commissions in der gehandelten Coin.
+        Wird vom LiveRunner fuer Netto-Inventar-Berechnung verwendet (LF-N1):
+        bei commission_asset="mixed" oder Multi-Fill-Mix ist diese Summe der
+        einzig korrekte Wert fuer "wieviel Coin wurde von Binance abgezogen".
+
         Args:
             fills_list: Liste von Dicts {price, qty, commission, commissionAsset}
+            coin      : Optional. Wenn gegeben → coin_commission_total wird
+                        berechnet. Sonst 0.0 (Backward-Compat).
 
         Returns:
             {
-                "avg_price":        gewichteter avg-price (0 bei leer),
-                "total_qty":        Summe qty,
-                "total_commission": Summe commission,
-                "commission_asset": Asset-Symbol oder "mixed" oder None,
+                "avg_price":             gewichteter avg-price (0 bei leer),
+                "total_qty":             Summe qty,
+                "total_commission":      Summe commission (numerisch ueber alle assets),
+                "commission_asset":      Asset-Symbol / "mixed" / None,
+                "coin_commission_total": Summe commission NUR fuer assets == coin
+                                         (0.0 wenn coin=None oder kein match),
             }
         """
         if not fills_list:
             return {
-                "avg_price":        0.0,
-                "total_qty":        0.0,
-                "total_commission": 0.0,
-                "commission_asset": None,
+                "avg_price":             0.0,
+                "total_qty":             0.0,
+                "total_commission":      0.0,
+                "commission_asset":      None,
+                "coin_commission_total": 0.0,
             }
-        total_qty        = 0.0
-        total_quote      = 0.0
-        total_commission = 0.0
-        assets           = set()
+        total_qty              = 0.0
+        total_quote            = 0.0
+        total_commission       = 0.0
+        coin_commission_total  = 0.0
+        coin_upper             = (coin or "").upper()
+        assets                 = set()
         for f in fills_list:
             qty        = float(f.get("qty", 0))
             price      = float(f.get("price", 0))
             commission = float(f.get("commission", 0))
+            asset      = f.get("commissionAsset")
+            asset_str  = (asset or "").upper()
             total_qty        += qty
             total_quote      += qty * price
             total_commission += commission
-            asset = f.get("commissionAsset")
+            if coin_upper and asset_str == coin_upper:
+                coin_commission_total += commission
             if asset:
                 assets.add(asset)
         avg_price = (total_quote / total_qty) if total_qty > 0 else 0.0
@@ -603,10 +623,11 @@ class LiveBroker:
         else:
             commission_asset = "mixed"
         return {
-            "avg_price":        avg_price,
-            "total_qty":        total_qty,
-            "total_commission": total_commission,
-            "commission_asset": commission_asset,
+            "avg_price":             avg_price,
+            "total_qty":             total_qty,
+            "total_commission":      total_commission,
+            "commission_asset":      commission_asset,
+            "coin_commission_total": coin_commission_total,
         }
 
     def place_limit_order(
@@ -854,23 +875,26 @@ class LiveBroker:
             }
 
         fills = response.get("fills", []) or []
-        agg   = self._aggregate_fills(fills)
+        # MLT-1b (H-1): coin=self.coin durchreichen damit coin_commission_total
+        # berechnet wird — fuer LF-N1 Netto-Inventar bei Mixed-Asset-Fills.
+        agg   = self._aggregate_fills(fills, coin=self.coin)
         # Balances aktualisieren (Binance hat USDT abgebucht + Coin gutgeschrieben)
         self._update_balances()
         self.state.filled_orders += 1
         self.state.total_fees    += agg["total_commission"]
 
         return {
-            "client_order_id":  client_order_id,
-            "binance_order_id": str(response.get("orderId", "")),
-            "symbol":           self.symbol,
-            "side":             "BUY",
-            "amount_usdt":      amount_usdt,
-            "exec_price":       agg["avg_price"],
-            "exec_qty":         agg["total_qty"],
-            "commission":       agg["total_commission"],
-            "commission_asset": agg["commission_asset"],
-            "status":           response.get("status", "FILLED"),
-            "timestamp":        ts,
-            "error":            None,
+            "client_order_id":   client_order_id,
+            "binance_order_id":  str(response.get("orderId", "")),
+            "symbol":            self.symbol,
+            "side":              "BUY",
+            "amount_usdt":       amount_usdt,
+            "exec_price":        agg["avg_price"],
+            "exec_qty":          agg["total_qty"],
+            "commission":        agg["total_commission"],
+            "commission_asset":  agg["commission_asset"],
+            "coin_commission":   agg["coin_commission_total"],  # MLT-1b H-1
+            "status":            response.get("status", "FILLED"),
+            "timestamp":         ts,
+            "error":             None,
         }
