@@ -267,6 +267,18 @@ def render_tab_chart(
         elif trig_kind == "take_profit":
             tp_triggers_list.append(entry)
 
+    # UI-Polish 4: aktuelle Kerze frisch von Binance fuer Live-OHLC im
+    # Chart-Header. Nur bei PT/LT — im BT (historische Daten) ist "live"
+    # nicht sinnvoll, Fallback auf candles[-1] (Aufgabe 3).
+    mode = view.get("mode", "")
+    live_candle = None
+    if mode in ("paper", "live"):
+        try:
+            from src.data.cache_manager import get_live_current_candle
+            live_candle = get_live_current_candle(coin, interval)
+        except Exception:
+            live_candle = None  # defensive: UI faellt auf candles[-1] zurueck
+
     plot_grid_chart_v2(
         df                  = df_display,
         grid_lines          = grid_lines,
@@ -282,6 +294,7 @@ def render_tab_chart(
         show_order_markers  = settings["show_order_markers"],
         bot_start_timestamp = bot_start_ts,
         magnet_crosshair    = settings["magnet_crosshair"],
+        live_current_candle = live_candle,
         trailing_events     = trailing_events_display,
         show_trailing_steps = settings["show_trailing_steps"],
         stop_loss_price     = sl_price,
