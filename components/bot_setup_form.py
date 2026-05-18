@@ -199,10 +199,28 @@ def _section_capital(mode: str, current_price: Optional[float] = None) -> dict:
 
     # ── Visueller Trennstrich + zweiter Abschnitt: Gebuehren + Reserve ──────
     st.markdown(_divider(), unsafe_allow_html=True)
-    st.markdown(_caption("Gebührenrate (%)"), unsafe_allow_html=True)
-    fee_pct = st.number_input("", 0.0, 1.0, DEFAULT_FEE_RATE * 100, 0.01,
-                               format="%.3f", key=f"{mode}_new_fee",
-                               label_visibility="collapsed")
+    # MLT-3: Gebuehrenrate-Feld ist im LT-Modus irrefuehrend — echte
+    # Binance-Fees werden aus den Trade-Fills (commission/commissionAsset)
+    # uebernommen, nicht aus diesem Wert. Default-Wert bleibt im params-
+    # Dict (fee_rate=DEFAULT_FEE_RATE), wird im LT-Pfad aber nicht aktiv
+    # angewendet (LiveRunner nutzt L-5 + MLT-1 echte Fees aus Fills).
+    if mode == "live":
+        st.markdown(
+            "<div style='padding:8px 12px; "
+            "background:rgba(99,102,241,0.08); "
+            "border-left:3px solid #6366F1; border-radius:4px; "
+            "margin-bottom:8px; font-size:0.85rem; color:#94A3B8;'>"
+            "Gebühren: echte Binance-Werte aus Trade-Fills "
+            "(Spot Standard 0.1%, mit BNB-Discount 0.075%)."
+            "</div>",
+            unsafe_allow_html=True
+        )
+        fee_pct = DEFAULT_FEE_RATE * 100  # nicht UI-editierbar im LT
+    else:
+        st.markdown(_caption("Gebührenrate (%)"), unsafe_allow_html=True)
+        fee_pct = st.number_input("", 0.0, 1.0, DEFAULT_FEE_RATE * 100, 0.01,
+                                   format="%.3f", key=f"{mode}_new_fee",
+                                   label_visibility="collapsed")
     st.markdown(_caption("Kapitalreserve (%)"), unsafe_allow_html=True)
     reserve_pct = st.slider("", 0.0, 20.0, DEFAULT_RESERVE_PCT * 100, 1.0,
                              key=f"{mode}_new_reserve",

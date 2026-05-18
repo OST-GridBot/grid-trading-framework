@@ -250,6 +250,13 @@ class BotRunnerBase:
                 reserve_pct         = cfg.get("reserve_pct", 0.0),
                 dd_history          = getattr(self._grid_bot,
                                                 "dd_history", []) or [],
+                # MLT-3 B-4: live_open_orders aus Bot-State (nur LT-Modus
+                # hat das gesetzt — PaperRunner/Base ignorieren stillschweigend
+                # via None-Default). Damit zaehlt active_levels.active im
+                # LT auch Linien mit aktuell offener LIMIT-Order, nicht nur
+                # historisch getradete.
+                live_open_orders    = (self._bot.get("state", {})
+                                       or {}).get("live_open_orders"),
             )
         except Exception as e:
             print(f"BotRunner: Metrik-Fehler: {e}")

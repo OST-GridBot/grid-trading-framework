@@ -381,6 +381,7 @@ def calculate_all_metrics(
     has_dynamic_capital: bool          = False,
     reserve_pct:      float           = 0.0,
     dd_history:       Optional[list]  = None,
+    live_open_orders: Optional[dict]  = None,
 ) -> dict:
     """
     Berechnet alle Kennzahlen auf einmal.
@@ -463,7 +464,9 @@ def calculate_all_metrics(
 
     if num_grids is not None:
         result["grid_efficiency"]  = calculate_grid_efficiency(trade_log, num_grids)
-        result["active_levels"]    = calculate_active_levels_ratio(trade_log, num_grids)
+        result["active_levels"]    = calculate_active_levels_ratio(
+            trade_log, num_grids, live_open_orders=live_open_orders,
+        )
         cap_per_grid               = calculate_capital_per_grid(
             initial_value, num_grids, has_dynamic_capital, reserve_pct
         )
@@ -581,11 +584,13 @@ def calculate_capital_per_grid(
 
 
 def calculate_active_levels_ratio(
-    trade_log: list,
-    num_grids: int,
+    trade_log:        list,
+    num_grids:        int,
+    live_open_orders: Optional[dict] = None,
 ) -> dict:
     """
-    Anzahl aktiv gehandelter Grid-Linien vs. Total.
+    Anzahl aktiv gehandelter ODER aktuell mit Order belegter Grid-Linien
+    vs. Total.
 
     Hinweis: num_grids ist die Anzahl Intervalle. Anzahl Grid-Linien =
     num_grids + 1. "total" zaehlt Linien (= num_grids + 1), damit ein
@@ -594,6 +599,12 @@ def calculate_active_levels_ratio(
 
     R.1: Initial-Buys zaehlen NICHT als aktiver Trigger. Konsistent zu
     calculate_grid_efficiency.
+
+    MLT-3 B-4: live_open_orders (LT-Modus) erweitert die Active-Definition:
+    Linien mit aktuell offener LIMIT-Order zaehlen ebenfalls als "active"
+    (auch wenn sie noch nie gefuellt wurden). Damit zeigt "active" im
+    LT die Anzahl der Linien die JETZT in Aktion sind, statt nur der
+    historisch getradeten. BT/PT-Pfad ohne live_open_orders unveraendert.
     """
     if num_grids <= 0:
         return {"active": 0, "total": 0}
@@ -605,6 +616,12 @@ def calculate_active_levels_ratio(
         f"{t.get('price', 0):.6g}"
         for t in normal_trades if t.get("price", 0) > 0
     )
+    # MLT-3 B-4: Linien mit aktuell offener LIMIT-Order auch zaehlen
+    if live_open_orders:
+        for info in live_open_orders.values():
+            gp = info.get("grid_price")
+            if gp and float(gp) > 0:
+                unique_prices.add(f"{float(gp):.6g}")
     total_lines = num_grids + 1
     return {
         "active": min(len(unique_prices), total_lines),
