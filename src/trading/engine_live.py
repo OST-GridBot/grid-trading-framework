@@ -927,6 +927,164 @@ class LiveRunner(BotRunnerBase):
 
         return result
 
+    # =======================================================================
+    # Phase Live-4.4 (L-12): Final-Sell beim User-Stop
+    # =======================================================================
+
+    def final_sell_all(self) -> dict:
+        """
+        Verkauft alle Coins im coin_inventory via MARKET-SELL. Wird vom
+        UI-Stop-Button mit Checkbox "Position glattstellen" aufgerufen,
+        NACHDEM cancel_all_open_orders bereits durchgelaufen ist.
+
+        Buchhaltung pro Sell:
+          - trade_log-Eintrag im selben Format wie _poll_open_orders-SELL
+            (matched_buy_price aus coin_inventory[i][1], profit-Berechnung)
+          - coin_inventory.pop(i) FIFO
+          - live_inventory_sell_lines.pop(i) FIFO
+        Nach erfolgreichem Lauf: inventory und sell_lines leer.
+
+        Fehler-Verhalten: bei Sell-Error wird der entsprechende Inventar-
+        Eintrag NICHT entfernt (Coin noch da bei Binance) und Bot in
+        status='error' gesetzt — User muss manuell pruefen und kann
+        Bot wieder auf 'running' setzen wenn das Inventar korrigiert ist.
+
+        Wichtig (CLAUDE.md regel 10): Wird nur vom UI-Stop-Button aufgerufen,
+        NICHT vom Worker-Shutdown. Worker-Stop laesst Coins und Orders
+        unangetastet — Final-Sell ist eine explizite User-Aktion.
+
+        Returns dict (auch fuer Tests):
+            {
+                "n_sold":       int,    # erfolgreich verkaufte Coins
+                "n_failed":     int,    # fehlgeschlagene Sells
+                "n_total":      int,    # angefragte Sells
+                "errors":       list,   # Fehler-Strings
+                "total_qty":    float,  # tatsaechlich verkaufte Coin-Menge
+                "total_quote":  float,  # USDT-Gegenwert
+            }
+        """
+        result = {
+            "n_sold": 0, "n_failed": 0, "n_total": 0,
+            "errors": [], "total_qty": 0.0, "total_quote": 0.0,
+        }
+
+        # Guards
+        if self._broker is None or not getattr(self._broker, "init_ok", False):
+            return result
+        if self._grid_bot is None:
+            return result
+
+        inv = list(self._grid_bot.coin_inventory or [])
+        if not inv:
+            return result  # nichts zu verkaufen
+
+        # State fuer sell_lines-Pflege
+        self._bot   = self.store.get_bot(self.bot_id) or self._bot
+        bot_state   = (self._bot.get("state") or {}).copy()
+        sell_lines  = list(bot_state.get("live_inventory_sell_lines") or [])
+
+        result["n_total"] = len(inv)
+
+        # Wir verkaufen FIFO (Index 0 zuerst) und tracken erfolgreiche
+        # Pops separat, weil Fehler zur Mitte des Loops Inventar erhalten
+        # muessen (entfernte Eintraege sind tatsaechlich verkauft).
+        remaining_inv   = list(inv)
+        remaining_lines = list(sell_lines)
+        any_error       = False
+
+        # Index-basiert iterieren ueber Kopie — pop() in remaining_inv
+        # macht naechstes Element zu index 0.
+        i = 0
+        while i < len(remaining_inv):
+            item = remaining_inv[i]
+            qty  = float(item[0])
+            buy_price = float(item[1])
+            if qty <= 0:
+                # Defensiv: 0-qty einfach entfernen
+                remaining_inv.pop(i)
+                if i < len(remaining_lines):
+                    remaining_lines.pop(i)
+                continue
+
+            try:
+                order = self._broker.execute_market_sell_real(amount_coin=qty)
+            except Exception as e:
+                any_error = True
+                msg = f"Sell-Exception qty={qty}: {type(e).__name__}: {e}"
+                result["errors"].append(msg)
+                result["n_failed"] += 1
+                print(f"[LiveRunner final_sell_all] {msg}")
+                i += 1  # nicht poppen, naechstes Element
+                continue
+
+            if order.get("error"):
+                any_error = True
+                msg = f"Sell-Fehler qty={qty}: {order['error']}"
+                result["errors"].append(msg)
+                result["n_failed"] += 1
+                print(f"[LiveRunner final_sell_all] {msg}")
+                i += 1  # nicht poppen
+                continue
+
+            # Erfolgreicher Sell — trade_log-Eintrag im Format von
+            # _poll_open_orders-SELL
+            exec_avg   = float(order["exec_price"])
+            exec_qty   = float(order["exec_qty"])
+            commission = float(order["commission"])
+            comm_asset = order.get("commission_asset")
+            ts         = order["timestamp"]
+
+            profit_gross = (exec_avg - buy_price) * exec_qty
+            profit       = profit_gross - commission
+
+            self._grid_bot.trade_log.append({
+                "timestamp":         ts,
+                "type":              "SELL",
+                "cprice":            exec_avg,
+                "price":             exec_avg,    # MARKET → keine Grid-Linie
+                "amount":            exec_qty,
+                "fee":               commission,
+                "matched_buy_price": buy_price,
+                "profit_gross":      profit_gross,
+                "profit":            profit,
+                "initial":           False,
+                "final_sell":        True,        # Marker fuer UI/Reports
+                "client_order_id":   order.get("client_order_id"),
+                "binance_order_id":  order.get("binance_order_id"),
+                "commission_asset":  comm_asset,
+            })
+
+            result["n_sold"]      += 1
+            result["total_qty"]   += exec_qty
+            result["total_quote"] += exec_qty * exec_avg
+
+            # Inventar + sell_line entfernen
+            remaining_inv.pop(i)
+            if i < len(remaining_lines):
+                remaining_lines.pop(i)
+            # i NICHT incrementen — naechstes Element ist jetzt an i
+
+        # State + trade_log persistieren
+        self._grid_bot.coin_inventory = remaining_inv
+        bot_state["live_inventory_sell_lines"] = remaining_lines
+        patch = {
+            "state":     bot_state,
+            "trade_log": list(self._grid_bot.trade_log),
+        }
+        if any_error:
+            # Bot in error-Status: blockiert weitere Worker-Updates
+            # und signalisiert User dass manueller Eingriff noetig ist.
+            patch["status"]     = "error"
+            patch["last_error"] = (
+                f"Final-Sell teilweise fehlgeschlagen: {result['n_failed']} "
+                f"von {result['n_total']} Sells. Inventar enthaelt noch "
+                f"{len(remaining_inv)} Eintrag/Eintraege. Manuelle "
+                f"Kontrolle/Korrektur noetig."
+            )
+        self.store.update_bot(self.bot_id, patch)
+
+        return result
+
     def step(self, candle: dict) -> list:
         """
         Phase Live-2.4 / 2.6: Override von BotRunnerBase.step.

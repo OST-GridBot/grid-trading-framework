@@ -257,6 +257,31 @@ def _render_actions_running_bot(view: dict, on_back: Callable[[], None]) -> None
                     st.error(f"Fehler: {e}")
     with col_stop:
         label = "Stoppen" if is_running else "Fortfahren"
+        # Phase Live-4.4 (L-12): Final-Sell-Checkbox nur bei Live-Bot mit
+        # Coin-Inventar > 0 sichtbar. Default = NICHT angekreuzt (defensiv,
+        # versehentlicher Final-Sell waere teuer).
+        final_sell_checked = False
+        if is_running and view.get("mode") == "live":
+            # Inventar-Check direkt aus Bot-State (view enthaelt es nicht).
+            inv_count = 0
+            try:
+                _bot = bot_store.get_bot(bid)
+                if _bot:
+                    inv_count = len(
+                        _bot.get("state", {}).get("coin_inventory", []) or []
+                    )
+            except Exception:
+                inv_count = 0
+            if inv_count > 0:
+                final_sell_checked = st.checkbox(
+                    "Position glattstellen (MARKET-Sell)",
+                    value=False,
+                    key=f"bd_final_sell_{bid}",
+                    help=("Verkauft beim Stop alle gehaltenen Coins ueber "
+                          "MARKET-Order an Binance. Cancel der offenen "
+                          "LIMITs passiert immer (auch ohne diese Option)."),
+                )
+
         if st.button(label, key=f"bd_stop_{bid}", use_container_width=True):
             # Phase Live-4.2 (L-4): Bei Live-Bot-Stop offene LIMIT-Orders
             # bei Binance stornieren BEVOR der Status auf 'stopped' geht.
@@ -282,8 +307,30 @@ def _render_actions_running_bot(view: dict, on_back: Callable[[], None]) -> None
                                 f"(ggf. bereits gefüllt — nächster Update-"
                                 f"Lauf verbucht sie automatisch)."
                             )
+                    # Phase Live-4.4 (L-12): Final-Sell wenn vom User
+                    # explizit angekreuzt. Reihenfolge: cancel zuerst,
+                    # dann sell (sonst koennten LIMIT-Sells noch fuellen
+                    # waehrend wir die Coins MARKET verkaufen).
+                    if final_sell_checked and hasattr(runner, "final_sell_all"):
+                        with st.spinner("Verkaufe Coins via MARKET-Sell..."):
+                            fs = runner.final_sell_all()
+                        if fs["n_total"] == 0:
+                            st.info("Keine Coins im Inventar zu verkaufen.")
+                        elif fs["n_failed"] == 0:
+                            st.success(
+                                f"{fs['n_sold']} Position(en) verkauft "
+                                f"(Gesamt: {fs['total_qty']:.8f} Coin / "
+                                f"~{fs['total_quote']:.2f} USDT)."
+                            )
+                        else:
+                            st.error(
+                                f"Final-Sell teilweise fehlgeschlagen: "
+                                f"{fs['n_sold']} verkauft, {fs['n_failed']} "
+                                f"Fehler. Bot in Error-Status — manuelle "
+                                f"Kontrolle noetig."
+                            )
                 except Exception as e:
-                    st.warning(f"Cancel-Vorgang fehlgeschlagen: {e}. "
+                    st.warning(f"Stop-Vorgang teilweise fehlgeschlagen: {e}. "
                                f"Bot wird trotzdem gestoppt.")
             bot_store.set_status(bid, "stopped" if is_running else "running")
             st.rerun()
