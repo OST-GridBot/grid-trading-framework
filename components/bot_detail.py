@@ -258,6 +258,33 @@ def _render_actions_running_bot(view: dict, on_back: Callable[[], None]) -> None
     with col_stop:
         label = "Stoppen" if is_running else "Fortfahren"
         if st.button(label, key=f"bd_stop_{bid}", use_container_width=True):
+            # Phase Live-4.2 (L-4): Bei Live-Bot-Stop offene LIMIT-Orders
+            # bei Binance stornieren BEVOR der Status auf 'stopped' geht.
+            # Modus-Differenzierung: nur fuer LT, PT/BT bleiben unveraendert.
+            # Worker-Stop (Ctrl+C im live_worker.py) ruft KEIN cancel
+            # (siehe LiveRunner.cancel_all_open_orders Docstring + CLAUDE.md
+            # regel 10).
+            if is_running and view.get("mode") == "live":
+                try:
+                    from src.trading.engine import make_bot_runner
+                    runner = make_bot_runner(bid)
+                    if hasattr(runner, "cancel_all_open_orders"):
+                        with st.spinner("Storniere offene LIMIT-Orders..."):
+                            res = runner.cancel_all_open_orders()
+                        if res["n_total"] == 0:
+                            st.info("Keine offenen LIMIT-Orders zu stornieren.")
+                        elif res["n_failed"] == 0:
+                            st.success(f"{res['n_canceled']} Order(s) storniert.")
+                        else:
+                            st.warning(
+                                f"{res['n_canceled']} storniert, "
+                                f"{res['n_failed']} fehlgeschlagen "
+                                f"(ggf. bereits gefüllt — nächster Update-"
+                                f"Lauf verbucht sie automatisch)."
+                            )
+                except Exception as e:
+                    st.warning(f"Cancel-Vorgang fehlgeschlagen: {e}. "
+                               f"Bot wird trotzdem gestoppt.")
             bot_store.set_status(bid, "stopped" if is_running else "running")
             st.rerun()
     with col_del:

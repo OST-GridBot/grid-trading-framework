@@ -640,6 +640,87 @@ class LiveRunner(BotRunnerBase):
         state_after.update(live_snapshot)
         self.store.update_bot(self.bot_id, {"state": state_after})
 
+    # =======================================================================
+    # Phase Live-4.2 (L-4): Cancel-on-Stop fuer offene LIMIT-Orders
+    # =======================================================================
+
+    def cancel_all_open_orders(self) -> dict:
+        """
+        Storniert alle in state['live_open_orders'] getrackte LIMIT-Orders
+        bei Binance. Wird vom UI-Stop-Button aufgerufen, BEVOR der Bot-
+        Status auf 'stopped' gesetzt wird.
+
+        WICHTIG (CLAUDE.md regel 10): Diese Methode wird NICHT vom Worker-
+        Shutdown (Ctrl+C im live_worker.py) aufgerufen. Worker-Stop laesst
+        Orders absichtlich offen, Bot ruht nur. Cancel passiert ausschliesslich
+        bei explizitem User-Stop ueber die UI.
+
+        Fehler-Verhalten: Wenn eine Order nicht stornierbar ist (z.B. weil
+        sie zwischenzeitlich gefuellt wurde, oder API-Error), wird sie
+        einzeln geloggt und uebersprungen. Die anderen Orders werden
+        weiterhin versucht. Bot geht NICHT in error-Status, weil ein
+        Cancel-Miss kein Datenintegritaets-Problem ist (Order ist halt
+        schon weg — der naechste run_update wuerde das via _poll_open_orders
+        ohnehin verbuchen).
+
+        Returns:
+            {
+                "n_canceled":  int,    # erfolgreich storniert
+                "n_failed":    int,    # Cancel-Versuche mit Fehler
+                "n_total":     int,    # Gesamt verarbeitete Orders
+                "errors":      list,   # Fehler-Strings (fuer UI-Anzeige)
+            }
+        """
+        result = {"n_canceled": 0, "n_failed": 0, "n_total": 0, "errors": []}
+
+        # Guards
+        if self._broker is None or not getattr(self._broker, "init_ok", False):
+            return result
+
+        # Aktuellen Bot-State holen
+        self._bot   = self.store.get_bot(self.bot_id) or self._bot
+        bot_state   = (self._bot.get("state") or {}).copy()
+        open_orders = dict(bot_state.get("live_open_orders") or {})
+
+        if not open_orders:
+            return result
+
+        result["n_total"] = len(open_orders)
+        remaining = dict(open_orders)  # Working-Copy
+
+        for cid, info in list(open_orders.items()):
+            try:
+                response = self._broker.cancel_order(cid)
+            except Exception as e:
+                # Defensive: Network-Fehler etc.
+                err = f"{cid}: Exception {type(e).__name__}: {e}"
+                result["errors"].append(err)
+                result["n_failed"] += 1
+                print(f"[LiveRunner] Cancel-Fehler {err}")
+                continue
+
+            if isinstance(response, dict) and "error" in response:
+                # Binance hat Cancel abgelehnt (z.B. Order schon FILLED).
+                # Wir entfernen sie trotzdem aus dem getrackten state —
+                # _poll_open_orders wuerde sie ohnehin als "disappeared"
+                # verbuchen, also ist sie hier nicht mehr relevant.
+                err = f"{cid}: {response['error']}"
+                result["errors"].append(err)
+                result["n_failed"] += 1
+                print(f"[LiveRunner] Cancel-Fehler {err}")
+                remaining.pop(cid, None)
+                continue
+
+            # Erfolg — aus tracked entfernen
+            remaining.pop(cid, None)
+            result["n_canceled"] += 1
+
+        # State persistieren
+        bot_state["live_open_orders"] = remaining
+        self.store.update_bot(self.bot_id, {"state": bot_state})
+
+        return result
+
     def step(self, candle: dict) -> list:
         """
         Phase Live-2.4 / 2.6: Override von BotRunnerBase.step.
