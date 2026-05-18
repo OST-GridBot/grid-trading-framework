@@ -109,6 +109,19 @@ MAX_BACKTESTS               = 500   # Maximale Anzahl gespeicherter Backtests
 # zeitnah auf Markt-Bewegungen. Wird vom live_worker.py-Script gelesen.
 WORKER_INTERVAL_SECONDS     = 30
 
+# Live-Resync (Phase Live-4.3, L-8): Cooldown zwischen Resync-Laeufen.
+# Verhindert dass der Worker bei jedem Bot-Tick (alle 30s) einen vollen
+# Resync mit 2 zusaetzlichen API-Calls (openOrders + account) ausloest.
+# 600s = 10 Min ist gross genug um Rate-Limit zu schonen und klein genug
+# um nach Crash-Recovery zeitnah zu syncen.
+RESYNC_MIN_INTERVAL_SECONDS = 600
+
+# Coin-Balance-Diskrepanz-Schwelle in Prozent. Wenn das lokale Inventar
+# um mehr als diesen Anteil von der Binance-Balance (free+locked)
+# abweicht, wird ein Resync-Warning gesetzt. 5% ist tolerant genug fuer
+# Rundungs- und Fee-Effekte, aber empfindlich genug fuer echte Drifts.
+COIN_BALANCE_DIFF_PCT_WARNING = 5.0
+
 # UI-Farben
 COLOR_GREEN        = "#00C853"
 COLOR_ORANGE       = "#FF6F00"
