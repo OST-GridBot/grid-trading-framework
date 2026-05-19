@@ -22,7 +22,7 @@ import uuid
 import hashlib
 import requests
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal, ROUND_DOWN
 from src.utils.timezone import naive_utc_now
 from typing import Optional
@@ -33,6 +33,40 @@ from src.trading.paper_broker import Order, BrokerState
 
 BINANCE_BASE_URL = "https://api.binance.com"
 BINANCE_TEST_URL = "https://testnet.binance.vision"
+
+
+def fill_time_or_now(fills: list) -> str:
+    """
+    Phase Live-4.6: Liefert ISO-naive-UTC-String der spaetesten Fill-Zeit
+    aus einer Binance-fills-Liste. Fallback auf naive_utc_now() wenn fills
+    leer/None oder kein Eintrag ein gueltiges time-Feld hat.
+
+    Hintergrund: Trade-Log-Eintraege erhielten zuvor den Worker-Poll-Tick-
+    Time (naive_utc_now() zum Zeitpunkt der Verbuchung), nicht die echte
+    Binance-Fill-Zeit. Bei Worker-Offline-Phasen + Resync entstanden so
+    Diskrepanzen von Minuten bis Stunden. Chart-Marker landeten auf der
+    falschen Kerze und stapelten sich (mehrere Fills derselben Poll-Runde
+    → identischer ts).
+
+    Binance liefert fills[i].time als ms-Epoch UTC. Bei Multi-Fill-Orders
+    (partial-fills) wird max(time) = Zeitpunkt der letzten Teil-Fuellung
+    = wann Order vollstaendig war verwendet.
+    """
+    try:
+        fill_times = [
+            int(f.get("time", 0))
+            for f in (fills or [])
+            if f.get("time")
+        ]
+        if fill_times:
+            return (
+                datetime.fromtimestamp(max(fill_times) / 1000, tz=timezone.utc)
+                .replace(tzinfo=None)
+                .isoformat()
+            )
+    except Exception:
+        pass
+    return naive_utc_now().isoformat()
 
 
 class LiveBroker:
@@ -882,6 +916,14 @@ class LiveBroker:
         self._update_balances()
         self.state.filled_orders += 1
         self.state.total_fees    += agg["total_commission"]
+
+        # Phase Live-4.6: ts aus echter Binance-Fill-Zeit ableiten statt
+        # naive_utc_now() vor dem API-Call. fills[i].time existiert bei
+        # MARKET-Orders unmittelbar in der Response. Fallback auf den
+        # vorab gesetzten ts (= naive_utc_now() vor Call) wenn fills leer
+        # oder ohne time-Feld — sollte fuer FILLED MARKET-Orders nie
+        # passieren, aber defensive.
+        ts = fill_time_or_now(fills)
 
         return {
             "client_order_id":   client_order_id,

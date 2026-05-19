@@ -33,6 +33,7 @@ from config.settings import (
     COIN_BALANCE_DIFF_PCT_WARNING,
 )
 from src.utils.timezone import naive_utc_now
+from src.trading.live_broker import fill_time_or_now
 from src.trading.engine_base import BotRunnerBase
 from src.trading.bot_store import BotStore
 
@@ -536,7 +537,13 @@ class LiveRunner(BotRunnerBase):
                 commission      = agg["total_commission"]
                 comm_asset      = agg["commission_asset"]
                 coin_commission = agg["coin_commission_total"]
-                ts              = naive_utc_now().isoformat()
+                # Phase Live-4.6: ts aus echter Binance-Fill-Zeit ableiten.
+                # Vorher: naive_utc_now() = Worker-Poll-Time, bei Resync
+                # nach Worker-Pause/Offline-Phase Stunden daneben. Helper
+                # liest max(fills[].time) und faellt defensiv zurueck auf
+                # naive_utc_now() wenn time-Feld fehlt. fills wurde oben
+                # ggf. via L-5 myTrades-Fallback nachgeladen (Z.519-522).
+                ts              = fill_time_or_now(fills)
 
                 if side == "BUY":
                     # MLT-1b (H-1 + H-3): Netto via coin_commission (statt
