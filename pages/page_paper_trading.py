@@ -20,7 +20,10 @@ Autor: Enes Eryilmaz
 Projekt: Grid-Trading-Framework (Bachelorarbeit OST)
 """
 
+import datetime
+
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 
 from src.trading.bot_store     import store as bot_store
 from components.bot_view       import bot_view_from_bot_state
@@ -33,6 +36,114 @@ from config.settings           import MAX_PAPER_BOTS
 
 
 # ---------------------------------------------------------------------------
+# Phase Paper-Refresh
+# ---------------------------------------------------------------------------
+# Mechanismus 2 — Auto-Refresh beim Bot-Detail-Oeffnen:
+#   Sobald pt_selected_bot von None / vorherigem-Bot auf neuen Bot wechselt,
+#   wird run_update() einmalig fuer diesen Bot getriggert (mit Spinner).
+#   Folge-Reruns fuer denselben Bot triggern NICHT erneut.
+#
+# Mechanismus 3 — Auto-Refresh zu voller Stunde:
+#   st_autorefresh mit dynamischem Intervall (Sekunden bis naechste volle
+#   Stunde). Bei Stundenwechsel werden alle running PT-Bots aktualisiert.
+#   Funktioniert nur solange Streamlit offen und User auf PT-Page ist
+#   (akzeptierte Limitation).
+#
+# Bewusst nicht implementiert:
+#   - Toggle (User-Entscheidung: immer aktiv)
+#   - Sidebar-Status-Anzeige (User-Entscheidung)
+#
+# Bekanntes INFO-Risiko (User-Entscheidung: kein Fix):
+#   - Mehrere Browser-Tabs auf PT-Page → jeder Tab feuert st_autorefresh →
+#     parallele run_updates moeglich. BotStore-File-Write toleriert,
+#     theoretische Race-Condition. Bei BA-Demo einzeln offen halten.
+# ---------------------------------------------------------------------------
+
+def _pt_hourly_refresh() -> None:
+    """
+    Mechanismus 3: zur vollen Stunde alle running PT-Bots aktualisieren.
+
+    Trigger-Logik:
+      - last_hr aus session_state lesen (kann None sein bei erstem Render)
+      - now.hour != last_hr → Stundenwechsel detektiert → Updates feuern
+      - Sonst: kein Update, nur next-refresh registrieren
+    """
+    now = datetime.datetime.now()
+    last_hr = st.session_state.get("pt_last_hourly_hour")
+
+    if last_hr is not None and last_hr != now.hour:
+        # Stundenwechsel → alle running PT-Bots updaten
+        try:
+            running = [
+                b for b in bot_store.get_all_bots(mode="paper")
+                if b.get("status") == "running"
+            ]
+        except Exception:
+            running = []
+        updated = 0
+        for b in running:
+            try:
+                from src.trading.engine import make_bot_runner
+                make_bot_runner(b["bot_id"]).run_update()
+                updated += 1
+            except Exception as e:
+                # Best-effort: bei einem Fehler andere Bots weiter aktualisieren
+                print(f"[PT-Hourly] {b.get('bot_id','?')}: "
+                      f"{type(e).__name__}: {e}")
+        if updated > 0:
+            try:
+                st.toast(f"Paper-Trading: {updated} Bot(s) aktualisiert "
+                         f"({now.strftime('%H:%M')})")
+            except Exception:
+                # st.toast kann in alten Streamlit-Versionen fehlen → silent
+                pass
+
+    st.session_state.pt_last_hourly_hour = now.hour
+
+    # Naechsten Refresh zur naechsten vollen Stunde planen
+    seconds_to_next = (60 - now.minute) * 60 - now.second
+    if seconds_to_next < 1:
+        seconds_to_next = 3600
+    st_autorefresh(
+        interval = seconds_to_next * 1000,
+        key      = "pt_hourly_refresh",
+    )
+
+
+def _pt_auto_update_selected_bot() -> None:
+    """
+    Mechanismus 2: bei erstem Wechsel auf einen Bot run_update() einmalig
+    triggern. Per-Bot-ID getrackt via pt_last_auto_updated_bot — kein
+    Doppel-Update bei Rerun mit gleichem Bot.
+    """
+    bot_id = st.session_state.get("pt_selected_bot")
+    if not bot_id:
+        return
+    if st.session_state.get("pt_last_auto_updated_bot") == bot_id:
+        return  # bereits in dieser Session aktualisiert
+
+    try:
+        bot = bot_store.get_bot(bot_id)
+    except Exception:
+        bot = None
+    # Nur fuer Paper-Bots mit status=running aktualisieren
+    if (bot
+            and bot.get("status") == "running"
+            and bot.get("mode") == "paper"):
+        try:
+            with st.spinner(f"Aktualisiere {bot.get('coin','')}…"):
+                from src.trading.engine import make_bot_runner
+                make_bot_runner(bot_id).run_update()
+        except Exception as e:
+            # UI trotzdem rendern mit altem Stand
+            st.warning(f"Auto-Update fehlgeschlagen: {e}")
+
+    # Marker setzen — auch bei stopped/live-Bot, damit kein Re-Versuch
+    # bei jedem Rerun
+    st.session_state.pt_last_auto_updated_bot = bot_id
+
+
+# ---------------------------------------------------------------------------
 # Navigations-Callbacks (an die neuen Komponenten uebergeben)
 # ---------------------------------------------------------------------------
 
@@ -40,6 +151,9 @@ def _pt_back() -> None:
     st.session_state.pt_show_new_bot  = False
     st.session_state.pt_show_overview = False
     st.session_state.pt_selected_bot  = None
+    # Phase Paper-Refresh: Auto-Update-Marker resetten, damit bei naechstem
+    # Bot-Detail-Open Mechanismus 2 wieder feuert.
+    st.session_state.pt_last_auto_updated_bot = None
     st.rerun()
 
 
@@ -69,6 +183,8 @@ def _pt_back_to_overview() -> None:
     st.session_state.pt_selected_bot   = None
     st.session_state.pt_show_overview  = True
     st.session_state.pt_show_new_bot   = False
+    # Phase Paper-Refresh: Marker resetten fuer Re-Entry-Trigger
+    st.session_state.pt_last_auto_updated_bot = None
     st.rerun()
 
 
@@ -122,9 +238,14 @@ def show_paper_trading():
     st.session_state.setdefault("pt_selected_bot",  None)
     st.session_state.setdefault("pt_show_new_bot",  False)
     st.session_state.setdefault("pt_show_overview", False)
+    # Phase Paper-Refresh: Marker fuer Mechanismus 2 (Bot-Detail-Auto-Update)
+    st.session_state.setdefault("pt_last_auto_updated_bot", None)
 
     # ── Konfigurations-Mode: Sidebar wird komplett von der Setup-Form
     #    uebernommen. Ansicht-Buttons und Page-Header bleiben unsichtbar.
+    #    WICHTIG: Mechanismus 3 (Hourly-Refresh) wird HIER NICHT aufgerufen
+    #    weil ein autorefresh waehrend der Konfiguration die Eingaben
+    #    zerstoeren wuerde (st.rerun → form-state lost).
     if st.session_state.pt_show_new_bot:
         render_bot_setup_form(
             mode      = "paper",
@@ -132,6 +253,10 @@ def show_paper_trading():
             on_back   = _pt_back,
         )
         return
+
+    # Phase Paper-Refresh: Mechanismus 3 — stuendlicher Auto-Refresh.
+    # Wird in allen Nicht-Setup-Views aktiviert (Detail, Overview, Portfolio).
+    _pt_hourly_refresh()
 
     # ── Bots laden + zu BotViews konvertieren ────────────────────────────────
     bots       = sorted(
@@ -164,6 +289,12 @@ def show_paper_trading():
 
     # ── Router (Detail / Overview / Empty / Portfolio) ──────────────────────
     if st.session_state.pt_selected_bot:
+        # Phase Paper-Refresh Mechanismus 2: einmalig beim Wechsel auf Bot
+        # run_update triggern. Per-Bot-Marker verhindert Doppel-Update bei
+        # Folge-Reruns mit gleichem Bot. Reset auf None erfolgt in den back-
+        # Callbacks (_pt_back / _pt_back_to_overview) damit Re-Entry feuert.
+        _pt_auto_update_selected_bot()
+
         bot = bot_store.get_bot(st.session_state.pt_selected_bot)
         if bot:
             view = bot_view_from_bot_state(bot)
