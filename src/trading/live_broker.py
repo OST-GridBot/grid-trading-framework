@@ -51,13 +51,31 @@ def fill_time_or_now(fills: list) -> str:
     Binance liefert fills[i].time als ms-Epoch UTC. Bei Multi-Fill-Orders
     (partial-fills) wird max(time) = Zeitpunkt der letzten Teil-Fuellung
     = wann Order vollstaendig war verwendet.
+
+    Phase Live-4.6b: defensive Haertung nach adversarialem Audit.
+      - hasattr(f, "get") schuetzt explizit gegen Non-Dict-Listen-Eintraege
+        (vorher: try/except aussen — funktional ok, expliziter Guard
+        besser).
+      - t_int > 0 Filter: nur positive ms-Epoch akzeptieren. Vorher liess
+        Truthiness-Check negative ints (-100 ist truthy) durch und
+        produzierte 1969-Datums via datetime.fromtimestamp(-0.1).
+        Real bei Binance unmoeglich, aber defensiv saubererr.
     """
     try:
-        fill_times = [
-            int(f.get("time", 0))
-            for f in (fills or [])
-            if f.get("time")
-        ]
+        fill_times = []
+        for f in (fills or []):
+            if not hasattr(f, "get"):
+                continue  # String/List/anderes statt dict → skip
+            t = f.get("time")
+            if not t:
+                continue  # None / 0 / "" / fehlend
+            try:
+                t_int = int(t)
+            except (TypeError, ValueError):
+                continue  # nicht-numerisch (ISO-String etc.)
+            if t_int <= 0:
+                continue  # Live-4.6b: negative / 0 explizit raus
+            fill_times.append(t_int)
         if fill_times:
             return (
                 datetime.fromtimestamp(max(fill_times) / 1000, tz=timezone.utc)
