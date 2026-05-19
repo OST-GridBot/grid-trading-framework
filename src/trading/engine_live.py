@@ -649,6 +649,24 @@ class LiveRunner(BotRunnerBase):
                         "commission_asset":  comm_asset,
                     })
 
+                # Phase Live-4.5: Pufferzone nach erstem realen Trade
+                # aufheben — analog BT/PT-Logik in grid_bot.py:764. Vor
+                # diesem Fix blieb _buffer_zone_price im LT permanent
+                # gesetzt → 1 Grid-Linie dauerhaft "blocked" (siehe
+                # grid_bot.py:461-463 _update_grid_sides), weil
+                # _sync_limit_orders auf blocked-Linien keine LIMIT-Order
+                # platziert. Reset wirkt symmetrisch fuer BUY- und SELL-
+                # Branch — egal auf welcher Linie der erste reale Trade
+                # fiel. Idempotent: bei mehreren Fills im selben Poll
+                # macht der None-Check nichts mehr nach erstem Reset.
+                # Initial-Buys (_ensure_initial_buys) sind separater
+                # Pfad — beruehren _buffer_zone_price NICHT (analog BT/
+                # PT, wo Initial-Buys in _perform_initial_setup ohne
+                # _execute_trade laufen). Persistierung erfolgt unten
+                # via update_bot (Z.659).
+                if self._grid_bot._buffer_zone_price is not None:
+                    self._grid_bot._buffer_zone_price = None
+
             # Order in jedem Fall aus tracked-Liste raus
             open_orders.pop(cid, None)
             changed = True
